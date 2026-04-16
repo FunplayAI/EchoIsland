@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EchoIsland</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <section id="island" class="island" data-mode="compact">
+        <header id="islandBar" class="island-bar" data-tauri-drag-region>
+          <div class="compact-left" data-tauri-drag-region>
+            <div id="mascotShell" class="mascot-shell" data-has-mascot="false">
+              <canvas id="mascotCanvas" class="mascot-canvas" width="30" height="30"></canvas>
+              <div id="brandDot" class="brand-dot"></div>
+            </div>
+
+            <div class="compact-copy">
+              <strong id="headline">Idle and watching</strong>
+            </div>
+          </div>
+
+          <div class="compact-right" data-tauri-drag-region>
+            <div class="task-inline">
+              <strong id="activeCount">0</strong>
+              <span class="task-slash">/</span>
+              <strong id="totalCountCompact">0</strong>
+            </div>
+          </div>
+
+        </header>
+
+        <section class="island-panel">
+          <section class="panel panel-main panel-sessions-only">
+            <div id="sessionList" class="session-list"></div>
+          </section>
+        </section>
+      </section>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

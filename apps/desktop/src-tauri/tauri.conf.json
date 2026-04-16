@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "EchoIsland",
+  "version": "0.1.0",
+  "identifier": "com.echoisland.desktop",
+  "build": {
+    "frontendDist": "../web"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "EchoIsland",
+        "width": 420,
+        "height": 80,
+        "minWidth": 420,
+        "minHeight": 80,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "shadow": false,
+        "skipTaskbar": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}

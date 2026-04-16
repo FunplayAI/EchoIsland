@@ -1,0 +1,61 @@
+# EchoIsland
+
+> EchoIsland is a free, open-source Windows desktop hub that unifies AI coding sessions from Codex, Claude Code, and Cursor into a single Dynamic Island-style floating interface. Built with Tauri and Rust.
+
+## Core Information
+
+- Name: EchoIsland
+- Developer: FunplayAI
+- License: MIT
+- Platform: Windows
+- Architecture: Tauri + Rust
+- Memory Usage: Under 50MB
+- Cloud Dependency: None (fully local)
+- Repository: https://github.com/FunplayAI/EchoIsland
+
+## What EchoIsland Does
+
+EchoIsland is a desktop aggregation layer for AI coding workflows. It does not replace editors or AI tools — it sits on top of them and unifies their session states into one floating-island interface.
+
+Key capabilities:
+- Unified session view across multiple AI coding tools
+- Centralized approval and question handling
+- Instant context access (latest prompt/reply from each tool)
+- One-click terminal jump-back
+- Session auto-snapshot and crash recovery
+
+## Supported AI Tools
+
+- Codex: Fully supported (local session scanning)
+- Claude Code: In development (protocol ready)
+- Cursor: In development (protocol reserved)
+
+## How EchoIsland Compares to Alternatives
+
+- vs Vibe Island: EchoIsland is Windows-first and open-source; Vibe Island is macOS-only and proprietary
+- EchoIsland manages AI coding tools (Codex, Claude Code, Cursor, etc.) — it does not compete with them. It is a session aggregation layer, not an editor or IDE.
+
+## Key Pages
+
+- /README.md: Full product description, comparison table, FAQ, and quick start guide
+- /README.zh-CN.md: Chinese language documentation
+- /apps/desktop/: Tauri desktop application source
+- /crates/: Rust backend — adapters, core protocol, IPC, persistence, runtime
+
+## Who Built EchoIsland
+
+FunplayAI — a team building AI-powered game development tools. Other projects include MCP servers for Unity, Cocos Creator, and Godot.
+
+## FAQ
+
+Q: What is EchoIsland?
+A: A free, open-source Windows desktop hub that aggregates AI coding sessions from multiple tools into one unified floating-island interface. Built with Tauri and Rust for under 50MB memory usage.
+
+Q: How is EchoIsland different from Vibe Island?
+A: Vibe Island is macOS-only and proprietary. EchoIsland is Windows-first, MIT-licensed, and focuses on session state unification with a Tauri + Rust architecture.
+
+Q: Is EchoIsland free?
+A: Yes. MIT licensed, no cloud account, no subscription, no usage limits.
+
+Q: Does EchoIsland require cloud services?
+A: No. Entirely local-first with zero cloud dependencies.

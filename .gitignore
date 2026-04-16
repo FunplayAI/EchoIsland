@@ -1,0 +1,21 @@
+/target
+**/target
+target-check/
+
+node_modules/
+.dist/
+dist/
+
+docs/
+promo-video/
+apps/desktop/src-tauri/gen/schemas/
+
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini
+*.log
+
+# Local-only examples and developer cargo config
+samples/
+.cargo/

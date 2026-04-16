@@ -1,0 +1,28 @@
+import { invoke } from "./ui-context.js";
+
+export const desktopApi = {
+  ipcAddr: () => invoke("ipc_addr"),
+  codexStatus: () => invoke("codex_status"),
+  claudeStatus: () => invoke("claude_status"),
+  openclawStatus: () => invoke("openclaw_status"),
+  httpReceiverStatus: () => invoke("http_receiver_status"),
+  platformCapabilities: () => invoke("platform_capabilities"),
+  platformPaths: () => invoke("platform_paths"),
+  getSnapshot: () => invoke("get_snapshot"),
+  ingestSample: (fileName) => invoke("ingest_sample", { fileName }),
+  approvePermission: (requestId) => invoke("approve_permission", { requestId }),
+  denyPermission: (requestId) => invoke("deny_permission", { requestId }),
+  answerQuestion: (requestId, answer) => invoke("answer_question", { requestId, answer }),
+  skipQuestion: (requestId) => invoke("skip_question", { requestId }),
+  setIslandPanelStagePassive: (height) => invoke("set_island_panel_stage_passive", { height }),
+  setIslandBarStagePassive: () => invoke("set_island_bar_stage_passive"),
+  setIslandExpandedPassive: (expanded) => invoke("set_island_expanded_passive", { expanded }),
+  showMainWindowInteractive: () => invoke("show_main_window_interactive"),
+  setIslandPanelStage: (height) => invoke("set_island_panel_stage", { height }),
+  setIslandBarStage: () => invoke("set_island_bar_stage"),
+  setIslandExpanded: (expanded) => invoke("set_island_expanded", { expanded }),
+  setMacosSharedExpandedHeight: (height) => invoke("set_macos_shared_expanded_height", { height }),
+  hideMainWindow: () => invoke("hide_main_window"),
+  focusSessionTerminal: (sessionId) => invoke("focus_session_terminal", { sessionId }),
+  bindSessionTerminal: (sessionId) => invoke("bind_session_terminal", { sessionId }),
+};
