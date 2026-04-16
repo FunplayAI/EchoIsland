@@ -1,0 +1,128 @@
+use std::sync::Arc;
+
+use echoisland_runtime::SharedRuntime;
+use tauri::WindowEvent;
+use tracing_subscriber::{EnvFilter, fmt};
+
+mod app_runtime;
+mod claude_scan;
+mod codex_scan;
+mod command_services;
+mod commands;
+mod constants;
+mod focus_store;
+mod http_receiver;
+mod island_window;
+mod macos_native_test_panel;
+mod macos_panel;
+mod macos_shared_expanded_window;
+mod platform;
+mod platform_stub;
+mod session_scan_runner;
+mod startup_service;
+mod terminal_focus;
+mod terminal_focus_service;
+mod tray;
+mod window_surface_service;
+
+use app_runtime::{AppRuntime, spawn_ipc_server};
+use claude_scan::spawn_claude_scan_loop;
+use codex_scan::spawn_codex_scan_loop;
+use commands::{
+    answer_question, approve_permission, bind_session_terminal, claude_status, codex_status,
+    deny_permission, focus_session_terminal, get_snapshot, hide_main_window, http_receiver_status,
+    ingest_sample, ipc_addr, openclaw_status, platform_capabilities, platform_paths,
+    set_island_bar_stage, set_island_bar_stage_passive, set_island_expanded,
+    set_island_expanded_passive, set_island_panel_stage, set_island_panel_stage_passive,
+    set_macos_shared_expanded_height, show_main_window_interactive, skip_question,
+};
+use http_receiver::spawn_http_receiver;
+use startup_service::AppStartupService;
+
+fn main() {
+    setup_tracing();
+
+    let runtime = Arc::new(SharedRuntime::new());
+    let app_runtime = AppRuntime::new(runtime.clone());
+
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_nspanel::init());
+
+    builder
+        .manage(app_runtime.clone())
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .setup(move |app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            let app_handle = app.handle().clone();
+            #[cfg(target_os = "macos")]
+            if macos_native_test_panel::native_ui_enabled() {
+                macos_native_test_panel::create_native_island_panel()
+                    .map_err(std::io::Error::other)?;
+                if macos_shared_expanded_window::shared_expanded_enabled() {
+                    macos_shared_expanded_window::create_shared_expanded_window(&app_handle)
+                        .map_err(std::io::Error::other)?;
+                }
+                macos_native_test_panel::hide_main_webview_window(&app_handle)
+                    .map_err(std::io::Error::other)?;
+                macos_native_test_panel::spawn_native_snapshot_loop(
+                    app_handle.clone(),
+                    app_runtime.clone(),
+                );
+                macos_native_test_panel::spawn_native_hover_loop(app_handle.clone());
+                macos_native_test_panel::spawn_native_count_marquee_loop(app_handle.clone());
+                macos_native_test_panel::spawn_native_status_queue_loop(app_handle.clone());
+            } else {
+                macos_panel::create_main_panel(&app_handle).map_err(std::io::Error::other)?;
+            }
+            #[cfg(not(target_os = "macos"))]
+            macos_panel::create_main_panel(&app_handle).map_err(std::io::Error::other)?;
+            AppStartupService::new(app)
+                .initialize()
+                .map_err(std::io::Error::other)?;
+            spawn_codex_scan_loop(runtime.clone());
+            spawn_claude_scan_loop(runtime.clone());
+            spawn_ipc_server(app_handle, app_runtime.clone());
+            spawn_http_receiver(app.handle().clone(), runtime.clone());
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            get_snapshot,
+            ingest_sample,
+            ipc_addr,
+            codex_status,
+            claude_status,
+            openclaw_status,
+            http_receiver_status,
+            platform_capabilities,
+            platform_paths,
+            approve_permission,
+            deny_permission,
+            answer_question,
+            skip_question,
+            set_island_bar_stage,
+            set_island_bar_stage_passive,
+            set_island_panel_stage,
+            set_island_panel_stage_passive,
+            set_island_expanded,
+            set_island_expanded_passive,
+            show_main_window_interactive,
+            set_macos_shared_expanded_height,
+            hide_main_window,
+            focus_session_terminal,
+            bind_session_terminal
+        ])
+        .run(tauri::generate_context!())
+        .expect("failed to run tauri app");
+}
+
+fn setup_tracing() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let _ = fmt().with_env_filter(filter).with_target(false).try_init();
+}

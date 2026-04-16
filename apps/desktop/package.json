@@ -1,0 +1,16 @@
+{
+  "name": "echoisland-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "tauri:dev": "node ./scripts/run-tauri.mjs dev",
+    "tauri:build": "node ./scripts/run-tauri.mjs build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  }
+}

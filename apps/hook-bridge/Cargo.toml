@@ -1,0 +1,16 @@
+[package]
+name = "echoisland-hook-bridge"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+libc = "0.2"
+serde_json.workspace = true
+tokio.workspace = true
+echoisland-core = { path = "../../crates/core" }
+echoisland-ipc = { path = "../../crates/ipc" }
+echoisland-paths = { path = "../../crates/paths" }

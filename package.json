@@ -1,0 +1,11 @@
+{
+  "name": "echoisland-windows",
+  "private": true,
+  "workspaces": [
+    "apps/desktop"
+  ],
+  "scripts": {
+    "desktop:dev": "npm --workspace apps/desktop run tauri:dev",
+    "desktop:build": "npm --workspace apps/desktop run tauri:build"
+  }
+}

@@ -1,0 +1,15 @@
+[package]
+name = "echoisland-runtime"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+echoisland-core = { path = "../core" }
+echoisland-persistence = { path = "../persistence" }
