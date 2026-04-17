@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "tauri:dev": "node ./scripts/run-tauri.mjs dev",
-    "tauri:build": "node ./scripts/run-tauri.mjs build"
+    "tauri:build": "node ./scripts/run-tauri.mjs build",
+    "tauri:portable": "node ./scripts/run-tauri.mjs portable"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"

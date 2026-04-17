@@ -1,3 +1,5 @@
+#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
+
 use std::sync::Arc;
 
 use echoisland_runtime::SharedRuntime;
@@ -13,6 +15,10 @@ mod constants;
 mod focus_store;
 mod http_receiver;
 mod island_window;
+#[cfg(target_os = "macos")]
+mod macos_native_test_panel;
+#[cfg(not(target_os = "macos"))]
+#[path = "macos_native_test_panel_stub.rs"]
 mod macos_native_test_panel;
 mod macos_panel;
 mod macos_shared_expanded_window;

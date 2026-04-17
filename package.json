@@ -6,6 +6,7 @@
   ],
   "scripts": {
     "desktop:dev": "npm --workspace apps/desktop run tauri:dev",
-    "desktop:build": "npm --workspace apps/desktop run tauri:build"
+    "desktop:build": "npm --workspace apps/desktop run tauri:build",
+    "desktop:build:portable": "npm --workspace apps/desktop run tauri:portable"
   }
 }

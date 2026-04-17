@@ -82,6 +82,6 @@ pub fn create_main_panel(app_handle: &AppHandle) -> tauri::Result<()> {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn create_main_panel(_app_handle: &AppHandle) -> tauri::Result<()> {
+pub fn create_main_panel(_app_handle: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
