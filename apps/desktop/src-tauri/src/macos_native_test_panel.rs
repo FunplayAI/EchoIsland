@@ -152,6 +152,10 @@ const HOVER_POLL_MS: u64 = 120;
 #[cfg(target_os = "macos")]
 const HOVER_DELAY_MS: u64 = 500;
 #[cfg(target_os = "macos")]
+const PENDING_CARD_MIN_VISIBLE_MS: u64 = 2200;
+#[cfg(target_os = "macos")]
+const PENDING_CARD_RELEASE_GRACE_MS: u64 = 1600;
+#[cfg(target_os = "macos")]
 const PANEL_OPEN_TOTAL_MS: u64 = 660;
 #[cfg(target_os = "macos")]
 const PANEL_CLOSE_TOTAL_MS: u64 = 660;
@@ -284,6 +288,26 @@ struct NativeStatusQueueItem {
 
 #[cfg(target_os = "macos")]
 #[derive(Clone)]
+struct NativePendingPermissionCard {
+    request_id: String,
+    payload: PendingPermissionView,
+    started_at: Instant,
+    last_seen_at: Instant,
+    visible_until: Instant,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone)]
+struct NativePendingQuestionCard {
+    request_id: String,
+    payload: PendingQuestionView,
+    started_at: Instant,
+    last_seen_at: Instant,
+    visible_until: Instant,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone)]
 struct NativeCardHitTarget {
     session_id: String,
     frame: NSRect,
@@ -303,8 +327,11 @@ struct NativePanelState {
     transition_cards_progress: f64,
     transition_cards_entering: bool,
     skip_next_close_card_exit: bool,
+    last_raw_snapshot: Option<RuntimeSnapshot>,
     last_snapshot: Option<RuntimeSnapshot>,
     status_queue: Vec<NativeStatusQueueItem>,
+    pending_permission_card: Option<NativePendingPermissionCard>,
+    pending_question_card: Option<NativePendingQuestionCard>,
     status_auto_expanded: bool,
     surface_mode: NativeExpandedSurface,
     shared_body_height: Option<f64>,
@@ -832,8 +859,11 @@ pub fn create_native_island_panel() -> Result<(), String> {
         transition_cards_progress: 1.0,
         transition_cards_entering: false,
         skip_next_close_card_exit: false,
+        last_raw_snapshot: None,
         last_snapshot: None,
         status_queue: Vec::new(),
+        pending_permission_card: None,
+        pending_question_card: None,
         status_auto_expanded: false,
         surface_mode: NativeExpandedSurface::Default,
         shared_body_height: None,
@@ -901,7 +931,16 @@ pub fn update_native_island_snapshot<R: tauri::Runtime>(
         return Ok(());
     };
 
-    let snapshot = snapshot.clone();
+    let raw_snapshot = snapshot.clone();
+    let snapshot = {
+        let Some(state) = native_panel_state() else {
+            return Ok(());
+        };
+        let mut state = state
+            .lock()
+            .map_err(|_| "native panel state poisoned".to_string())?;
+        sync_native_pending_card_visibility(&mut state, &raw_snapshot)
+    };
     if macos_shared_expanded_window::shared_expanded_enabled() {
         if let Err(error) =
             macos_shared_expanded_window::sync_shared_expanded_snapshot(app, &snapshot)
@@ -961,6 +1000,7 @@ pub fn update_native_island_snapshot<R: tauri::Runtime>(
         if was_status_surface != is_status_surface && state.expanded && !state.transitioning {
             surface_transition_snapshot = Some(snapshot.clone());
         }
+        state.last_raw_snapshot = Some(raw_snapshot.clone());
         state.last_snapshot = Some(snapshot.clone());
         (
             state.expanded,
@@ -1152,10 +1192,13 @@ pub fn spawn_native_status_queue_loop<R: tauri::Runtime + 'static>(app: AppHandl
 
             let snapshot = native_panel_state().and_then(|state| {
                 state.lock().ok().and_then(|guard| {
-                    if guard.status_queue.is_empty() {
+                    if guard.status_queue.is_empty()
+                        && guard.pending_permission_card.is_none()
+                        && guard.pending_question_card.is_none()
+                    {
                         None
                     } else {
-                        guard.last_snapshot.clone()
+                        guard.last_raw_snapshot.clone()
                     }
                 })
             });
@@ -1185,25 +1228,25 @@ pub fn hide_main_webview_window<R: tauri::Runtime>(app: &AppHandle<R>) -> Result
 
 #[cfg(target_os = "macos")]
 async fn sync_native_snapshot_once<R: tauri::Runtime>(app: &AppHandle<R>, runtime: &AppRuntime) {
-    let snapshot = runtime.runtime.snapshot().await;
-    if snapshot.pending_permission_count > 0 || snapshot.pending_question_count > 0 {
+    let raw_snapshot = runtime.runtime.snapshot().await;
+    if raw_snapshot.pending_permission_count > 0 || raw_snapshot.pending_question_count > 0 {
         warn!(
-            active_session_count = snapshot.active_session_count,
-            pending_permission_count = snapshot.pending_permission_count,
-            pending_question_count = snapshot.pending_question_count,
+            active_session_count = raw_snapshot.active_session_count,
+            pending_permission_count = raw_snapshot.pending_permission_count,
+            pending_question_count = raw_snapshot.pending_question_count,
             "native snapshot loop observed pending items"
         );
     }
-    if snapshot.active_session_count > 0 {
+    if raw_snapshot.active_session_count > 0 {
         if let Err(error) = TerminalFocusService::new(runtime)
-            .sync_snapshot_focus_bindings(&snapshot)
+            .sync_snapshot_focus_bindings(&raw_snapshot)
             .await
         {
             warn!(error = %error, "failed to sync focus bindings during native snapshot refresh");
         }
     }
 
-    if let Err(error) = update_native_island_snapshot(app, &snapshot) {
+    if let Err(error) = update_native_island_snapshot(app, &raw_snapshot) {
         warn!(error = %error, "failed to update native macOS island panel");
     }
 }
@@ -1339,10 +1382,150 @@ unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static>(app: AppH
 }
 
 #[cfg(target_os = "macos")]
+fn sync_native_pending_card_visibility(
+    state: &mut NativePanelState,
+    snapshot: &RuntimeSnapshot,
+) -> RuntimeSnapshot {
+    let now = Instant::now();
+    let next_permission = resolve_native_pending_permission_card(
+        displayed_pending_permissions(snapshot).into_iter().next(),
+        state.pending_permission_card.as_ref(),
+        now,
+    );
+    let next_question = resolve_native_pending_question_card(
+        displayed_pending_questions(snapshot).into_iter().next(),
+        state.pending_question_card.as_ref(),
+        now,
+    );
+
+    state.pending_permission_card = next_permission.clone();
+    state.pending_question_card = next_question.clone();
+
+    apply_native_pending_cards_to_snapshot(snapshot, next_permission, next_question)
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_native_pending_permission_card(
+    current_payload: Option<PendingPermissionView>,
+    previous: Option<&NativePendingPermissionCard>,
+    now: Instant,
+) -> Option<NativePendingPermissionCard> {
+    if let Some(payload) = current_payload {
+        let started_at = previous
+            .filter(|card| card.request_id == payload.request_id)
+            .map(|card| card.started_at)
+            .unwrap_or(now);
+        return Some(NativePendingPermissionCard {
+            request_id: payload.request_id.clone(),
+            payload,
+            started_at,
+            last_seen_at: now,
+            visible_until: previous
+                .map(|card| card.visible_until)
+                .unwrap_or(started_at + Duration::from_millis(PENDING_CARD_MIN_VISIBLE_MS))
+                .max(started_at + Duration::from_millis(PENDING_CARD_MIN_VISIBLE_MS)),
+        });
+    }
+
+    let previous = previous?;
+    let keep_visible_until = previous
+        .visible_until
+        .max(previous.last_seen_at + Duration::from_millis(PENDING_CARD_RELEASE_GRACE_MS));
+    if now > keep_visible_until {
+        return None;
+    }
+
+    Some(NativePendingPermissionCard {
+        request_id: previous.request_id.clone(),
+        payload: previous.payload.clone(),
+        started_at: previous.started_at,
+        last_seen_at: previous.last_seen_at,
+        visible_until: keep_visible_until,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_native_pending_question_card(
+    current_payload: Option<PendingQuestionView>,
+    previous: Option<&NativePendingQuestionCard>,
+    now: Instant,
+) -> Option<NativePendingQuestionCard> {
+    if let Some(payload) = current_payload {
+        let started_at = previous
+            .filter(|card| card.request_id == payload.request_id)
+            .map(|card| card.started_at)
+            .unwrap_or(now);
+        return Some(NativePendingQuestionCard {
+            request_id: payload.request_id.clone(),
+            payload,
+            started_at,
+            last_seen_at: now,
+            visible_until: previous
+                .map(|card| card.visible_until)
+                .unwrap_or(started_at + Duration::from_millis(PENDING_CARD_MIN_VISIBLE_MS))
+                .max(started_at + Duration::from_millis(PENDING_CARD_MIN_VISIBLE_MS)),
+        });
+    }
+
+    let previous = previous?;
+    let keep_visible_until = previous
+        .visible_until
+        .max(previous.last_seen_at + Duration::from_millis(PENDING_CARD_RELEASE_GRACE_MS));
+    if now > keep_visible_until {
+        return None;
+    }
+
+    Some(NativePendingQuestionCard {
+        request_id: previous.request_id.clone(),
+        payload: previous.payload.clone(),
+        started_at: previous.started_at,
+        last_seen_at: previous.last_seen_at,
+        visible_until: keep_visible_until,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn apply_native_pending_cards_to_snapshot(
+    snapshot: &RuntimeSnapshot,
+    pending_permission_card: Option<NativePendingPermissionCard>,
+    pending_question_card: Option<NativePendingQuestionCard>,
+) -> RuntimeSnapshot {
+    let mut next_snapshot = snapshot.clone();
+
+    if let Some(card) = pending_permission_card {
+        let mut permissions = vec![card.payload];
+        let held_request_id = permissions[0].request_id.clone();
+        permissions.extend(
+            displayed_pending_permissions(snapshot)
+                .into_iter()
+                .filter(|item| item.request_id != held_request_id),
+        );
+        next_snapshot.pending_permission_count = permissions.len();
+        next_snapshot.pending_permission = permissions.first().cloned();
+        next_snapshot.pending_permissions = permissions;
+    }
+
+    if let Some(card) = pending_question_card {
+        let mut questions = vec![card.payload];
+        let held_request_id = questions[0].request_id.clone();
+        questions.extend(
+            displayed_pending_questions(snapshot)
+                .into_iter()
+                .filter(|item| item.request_id != held_request_id),
+        );
+        next_snapshot.pending_question_count = questions.len();
+        next_snapshot.pending_question = questions.first().cloned();
+        next_snapshot.pending_questions = questions;
+    }
+
+    next_snapshot
+}
+
+#[cfg(target_os = "macos")]
 fn sync_native_status_queue(state: &mut NativePanelState, snapshot: &RuntimeSnapshot) -> bool {
     let now = Instant::now();
     let utc_now = Utc::now();
-    let previous_snapshot = state.last_snapshot.as_ref();
+    let previous_snapshot = state.last_raw_snapshot.as_ref();
     let completed_session_ids = previous_snapshot.map_or_else(Vec::new, |previous| {
         detect_completed_sessions(previous, snapshot, utc_now)
     });
@@ -5079,8 +5262,7 @@ fn all_corner_mask() -> CACornerMask {
 
 #[cfg(target_os = "macos")]
 fn compact_headline_y(bar_height: f64) -> f64 {
-    ((bar_height - COMPACT_HEADLINE_LABEL_HEIGHT) / 2.0).round()
-        + COMPACT_HEADLINE_VERTICAL_NUDGE_Y
+    ((bar_height - COMPACT_HEADLINE_LABEL_HEIGHT) / 2.0).round() + COMPACT_HEADLINE_VERTICAL_NUDGE_Y
 }
 
 #[cfg(target_os = "macos")]

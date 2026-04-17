@@ -85,7 +85,7 @@ impl<'a> TerminalFocusService<'a> {
             if target.cli_pid.is_none() {
                 target.cli_pid = inferred_metadata.cli_pid;
             }
-            if target.terminal_pid.is_none() {
+            if inferred_metadata.pid.is_some() {
                 target.terminal_pid = inferred_metadata.pid;
             }
             if self

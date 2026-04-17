@@ -133,9 +133,6 @@ fn enrich_event(obj: &mut Map<String, Value>, source: &str) {
         .or_insert_with(|| Value::Object(Map::new()));
     if let Some(metadata_obj) = metadata.as_object_mut() {
         metadata_obj
-            .entry("pid".to_string())
-            .or_insert_with(|| json!(std::process::id()));
-        metadata_obj
             .entry("host_app".to_string())
             .or_insert_with(|| Value::String(source.to_string()));
         enrich_terminal_metadata(metadata_obj);
@@ -801,6 +798,7 @@ mod tests {
             Some("/dev/ttys001")
         );
         assert_eq!(metadata.get("cli_pid").and_then(Value::as_u64), Some(777));
+        assert!(metadata.get("pid").is_none());
     }
 
     #[test]

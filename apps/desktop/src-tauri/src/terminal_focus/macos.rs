@@ -205,11 +205,16 @@ pub fn infer_terminal_metadata(target: &SessionFocusTarget) -> Option<EventMetad
     let cli_pid = target
         .cli_pid
         .or_else(|| infer_cli_pid_from_running_processes(target));
+    let inferred_terminal = target
+        .terminal_pid
+        .and_then(|pid| known_terminal_target_for_pid(pid).map(|target| (pid, target)))
+        .or_else(|| cli_pid.and_then(terminal_process_from_process_tree));
+    let inferred_terminal_pid = inferred_terminal.map(|(pid, _)| pid);
     let inferred_tty = effective_tty(target)
         .map(str::to_string)
         .or_else(|| cli_pid.and_then(detect_tty_path_from_pid))
-        .or_else(|| target.terminal_pid.and_then(detect_tty_path_from_pid));
-    let inferred_target = cli_pid.and_then(terminal_target_from_process_tree);
+        .or_else(|| inferred_terminal_pid.and_then(detect_tty_path_from_pid));
+    let inferred_target = inferred_terminal.map(|(_, target)| target);
     let (inferred_app, inferred_bundle) = inferred_target
         .and_then(terminal_metadata_for_target)
         .unwrap_or((None, None));
@@ -220,7 +225,7 @@ pub fn infer_terminal_metadata(target: &SessionFocusTarget) -> Option<EventMetad
         host_app: target.host_app.clone(),
         window_title: target.window_title.clone(),
         tty: inferred_tty,
-        pid: target.terminal_pid,
+        pid: inferred_terminal_pid,
         cli_pid: target.cli_pid.or(cli_pid),
         iterm_session_id: target.iterm_session_id.clone(),
         kitty_window_id: target.kitty_window_id.clone(),
@@ -485,7 +490,11 @@ fn resolve_focus_target_from_process_tree(target: &SessionFocusTarget) -> Option
     let pid = match target
         .cli_pid
         .or_else(|| infer_cli_pid_from_running_processes(target))
-    {
+        .or_else(|| {
+            target
+                .terminal_pid
+                .filter(|pid| known_terminal_target_for_pid(*pid).is_some())
+        }) {
         Some(pid) => pid,
         None => {
             info!(
@@ -502,7 +511,7 @@ fn resolve_focus_target_from_process_tree(target: &SessionFocusTarget) -> Option
         }
     };
 
-    let resolved = terminal_target_from_process_tree(pid);
+    let resolved = terminal_process_from_process_tree(pid).map(|(_, target)| target);
     if resolved.is_none() {
         warn!(
             source = %target.source,
@@ -515,18 +524,23 @@ fn resolve_focus_target_from_process_tree(target: &SessionFocusTarget) -> Option
     resolved
 }
 
-fn terminal_target_from_process_tree(mut pid: u32) -> Option<MacFocusTarget> {
+fn terminal_process_from_process_tree(mut pid: u32) -> Option<(u32, MacFocusTarget)> {
     for _ in 0..16 {
         if pid <= 1 {
             return None;
         }
         let info = process_info(pid)?;
         if let Some(target) = terminal_target_from_command(&info.command) {
-            return Some(target);
+            return Some((pid, target));
         }
         pid = info.ppid;
     }
     None
+}
+
+fn known_terminal_target_for_pid(pid: u32) -> Option<MacFocusTarget> {
+    let info = process_info(pid)?;
+    terminal_target_from_command(&info.command)
 }
 
 fn terminal_target_from_command(command: &str) -> Option<MacFocusTarget> {
