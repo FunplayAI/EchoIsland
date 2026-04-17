@@ -1,6 +1,8 @@
 use std::path::Path;
 
 #[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
 use std::process::Command;
 
 use echoisland_paths::user_home_dir;
@@ -49,14 +51,18 @@ fn should_limit_to_current_user_home(home_dir: &Path) -> bool {
 fn active_codex_process_count() -> Option<usize> {
     #[cfg(target_os = "windows")]
     {
-        let output = Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-Command",
-                "(Get-Process codex -ErrorAction SilentlyContinue | Measure-Object).Count",
-            ])
-            .output()
-            .ok()?;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let mut command = Command::new("powershell.exe");
+        command.creation_flags(CREATE_NO_WINDOW).args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            "(Get-Process codex -ErrorAction SilentlyContinue | Measure-Object).Count",
+        ]);
+        let output = command.output().ok()?;
 
         if !output.status.success() {
             return None;

@@ -3,6 +3,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Deserialize;
 use std::{
     io::{BufRead, BufReader, Write},
+    os::windows::process::CommandExt,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{Mutex, OnceLock},
 };
@@ -52,7 +53,8 @@ pub(super) fn select_windows_terminal_tab(
             "cached_title": cached_tab.map(|value| value.title.as_str()).unwrap_or_default(),
             "tokens": tokens,
         }))
-    })?;
+    }, true)?
+    .ok_or_else(|| anyhow::anyhow!("tab helper unavailable"))?;
     info!(
         has_cached_tab = cached_tab.is_some(),
         token_count = tokens.len(),
@@ -90,6 +92,17 @@ pub(super) fn select_windows_terminal_tab(
 }
 
 pub(crate) fn foreground_windows_terminal_tab() -> Result<Option<ForegroundTabInfo>> {
+    foreground_windows_terminal_tab_with_helper(true)
+}
+
+pub(crate) fn foreground_windows_terminal_tab_if_helper_running()
+-> Result<Option<ForegroundTabInfo>> {
+    foreground_windows_terminal_tab_with_helper(false)
+}
+
+fn foreground_windows_terminal_tab_with_helper(
+    start_helper: bool,
+) -> Result<Option<ForegroundTabInfo>> {
     let hwnd = unsafe { GetForegroundWindow() };
     if hwnd.is_null() {
         warn!("foreground window handle is null");
@@ -103,14 +116,18 @@ pub(crate) fn foreground_windows_terminal_tab() -> Result<Option<ForegroundTabIn
         return Ok(None);
     }
 
-    let response = match with_tab_helper(|helper| {
-        helper.request(serde_json::json!({
-            "cmd": "inspect_hwnd",
-            "pid": pid,
-            "hwnd": hwnd as isize as i64,
-        }))
-    }) {
-        Ok(response) => response,
+    let response = match with_tab_helper(
+        |helper| {
+            helper.request(serde_json::json!({
+                "cmd": "inspect_hwnd",
+                "pid": pid,
+                "hwnd": hwnd as isize as i64,
+            }))
+        },
+        start_helper,
+    ) {
+        Ok(Some(response)) => response,
+        Ok(None) => return Ok(None),
         Err(error) => {
             warn!(error = %error, "failed to inspect foreground Windows Terminal tab");
             return Ok(None);
@@ -140,18 +157,24 @@ fn encode_powershell_command(script: &str) -> String {
     STANDARD.encode(bytes)
 }
 
-fn with_tab_helper<T>(action: impl Fn(&mut TabAutomationHelper) -> Result<T>) -> Result<T> {
+fn with_tab_helper<T>(
+    action: impl Fn(&mut TabAutomationHelper) -> Result<T>,
+    start_helper: bool,
+) -> Result<Option<T>> {
     let mutex = TAB_HELPER.get_or_init(|| Mutex::new(None));
     let mut guard = mutex.lock().expect("tab helper mutex poisoned");
 
     for attempt in 0..2 {
         if guard.is_none() {
+            if !start_helper {
+                return Ok(None);
+            }
             *guard = Some(TabAutomationHelper::spawn()?);
         }
 
         if let Some(helper) = guard.as_mut() {
             match action(helper) {
-                Ok(value) => return Ok(value),
+                Ok(value) => return Ok(Some(value)),
                 Err(error) if attempt == 0 => {
                     warn!(error = %error, "tab helper request failed; restarting helper");
                     *guard = None;
@@ -167,11 +190,18 @@ fn with_tab_helper<T>(action: impl Fn(&mut TabAutomationHelper) -> Result<T>) ->
 
 impl TabAutomationHelper {
     fn spawn() -> Result<Self> {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
         let script = tab_helper_script();
         let encoded = encode_powershell_command(&script);
-        let mut child = Command::new("powershell")
+        let mut command = Command::new("powershell");
+        command
+            .creation_flags(CREATE_NO_WINDOW)
             .args([
                 "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-EncodedCommand",
@@ -179,8 +209,8 @@ impl TabAutomationHelper {
             ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
+            .stderr(Stdio::null());
+        let mut child = command.spawn()?;
 
         let stdin = child
             .stdin

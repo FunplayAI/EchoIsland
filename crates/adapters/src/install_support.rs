@@ -18,7 +18,7 @@ pub fn platform_bridge_command(bridge_path: &Path, source: &str) -> String {
 pub fn powershell_bridge_command(bridge_path: &Path, source: &str) -> String {
     let escaped = bridge_path.display().to_string().replace('\'', "''");
     format!(
-        "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"& '{escaped}' --source {source}\""
+        "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command \"& '{escaped}' --source {source}\""
     )
 }
 

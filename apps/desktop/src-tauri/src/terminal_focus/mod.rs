@@ -59,3 +59,11 @@ pub fn foreground_session_terminal_tab() -> Result<Option<ForegroundTabInfo>> {
         return windows::foreground_windows_terminal_tab();
     }
 }
+
+#[cfg(target_os = "windows")]
+pub fn foreground_session_terminal_tab_if_helper_running() -> Result<Option<ForegroundTabInfo>> {
+    #[cfg(target_os = "windows")]
+    {
+        return windows::foreground_windows_terminal_tab_if_helper_running();
+    }
+}

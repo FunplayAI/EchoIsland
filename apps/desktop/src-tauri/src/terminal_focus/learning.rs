@@ -10,7 +10,10 @@ use tracing::warn;
 
 use super::{ObservedTab, SessionObservation, SessionTabCache, is_active_status};
 #[cfg(target_os = "windows")]
-use super::{cwd_leaf, foreground_session_terminal_tab, normalized_token};
+use super::{
+    cwd_leaf, foreground_session_terminal_tab, foreground_session_terminal_tab_if_helper_running,
+    normalized_token,
+};
 
 pub async fn learn_newly_active_session_tabs(
     snapshot: &RuntimeSnapshot,
@@ -132,7 +135,7 @@ pub async fn learn_newly_active_session_tabs(
 pub async fn observe_foreground_terminal_tab(_recent_foreground_tab: &Mutex<Option<ObservedTab>>) {
     #[cfg(target_os = "windows")]
     {
-        if let Ok(Some(tab)) = foreground_session_terminal_tab() {
+        if let Ok(Some(tab)) = foreground_session_terminal_tab_if_helper_running() {
             let mut recent = _recent_foreground_tab.lock().await;
             *recent = Some(ObservedTab {
                 cache: tab.cache,

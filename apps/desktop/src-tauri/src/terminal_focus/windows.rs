@@ -9,8 +9,10 @@ mod window_enum;
 
 use focus_ops::activate_window;
 use matcher::select_window_candidate;
-pub(crate) use tab_helper::foreground_windows_terminal_tab;
 use tab_helper::select_windows_terminal_tab;
+pub(crate) use tab_helper::{
+    foreground_windows_terminal_tab, foreground_windows_terminal_tab_if_helper_running,
+};
 use window_enum::collect_windows;
 
 pub fn focus_session_terminal(
