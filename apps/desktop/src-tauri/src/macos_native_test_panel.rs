@@ -19,7 +19,7 @@ use objc2::{MainThreadMarker, MainThreadOnly};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
     NSBackingStoreType, NSClipView, NSColor, NSEvent, NSFont, NSPanel, NSScreen, NSTextAlignment,
-    NSTextField, NSView, NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSTextField, NSView, NSWindowAnimationBehavior, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 
 #[cfg(target_os = "macos")]
@@ -31,7 +31,7 @@ use objc2_core_graphics::{
 };
 
 #[cfg(target_os = "macos")]
-use objc2_quartz_core::{CACornerMask, CALayer, CAShapeLayer};
+use objc2_quartz_core::{CACornerMask, CALayer, CAShapeLayer, CATransaction};
 
 #[cfg(target_os = "macos")]
 use tauri::{AppHandle, Manager};
@@ -476,6 +476,7 @@ pub fn create_native_island_panel() -> Result<(), String> {
         NSView::alloc(mtm),
         expanded_background_frame(
             size,
+            COLLAPSED_PANEL_HEIGHT,
             0.0,
             0.0,
             compact_width,
@@ -827,6 +828,7 @@ pub fn create_native_island_panel() -> Result<(), String> {
     panel.setBackgroundColor(Some(&panel_background));
     panel.setOpaque(false);
     panel.setHasShadow(false);
+    panel.setAnimationBehavior(NSWindowAnimationBehavior::None);
     panel.setMovableByWindowBackground(false);
     panel.setHidesOnDeactivate(false);
     panel.setAcceptsMouseMovedEvents(true);
@@ -1965,9 +1967,9 @@ unsafe fn apply_snapshot_to_panel(
         COLLAPSED_PANEL_HEIGHT
     };
     if expanded {
-        apply_panel_geometry(handles, total_height, 1.0, 1.0, 1.0, 1.0);
+        apply_panel_geometry(handles, total_height, total_height, 1.0, 1.0, 1.0, 1.0);
     } else {
-        apply_panel_geometry(handles, total_height, 0.0, 0.0, 0.0, 0.0);
+        apply_panel_geometry(handles, total_height, total_height, 0.0, 0.0, 0.0, 0.0);
     }
 
     let cards_container = view_from_ptr(handles.cards_container);
@@ -2050,6 +2052,7 @@ unsafe fn begin_native_panel_transition<R: tauri::Runtime + 'static>(
                 app.clone(),
                 handles,
                 animation_id,
+                start_height,
                 target_height,
                 card_count,
             )
@@ -2077,7 +2080,7 @@ unsafe fn begin_native_panel_transition<R: tauri::Runtime + 'static>(
                 cards_container.setHidden(false);
                 cards_container.setAlphaValue(1.0);
                 apply_card_stack_transition(cards_container, 1.0, true);
-                apply_panel_geometry(handles, target_height, 1.0, 1.0, 1.0, 1.0);
+                apply_panel_geometry(handles, target_height, target_height, 1.0, 1.0, 1.0, 1.0);
                 panel_from_ptr(handles.panel).displayIfNeeded();
             });
         });
@@ -2135,7 +2138,15 @@ unsafe fn begin_native_panel_transition<R: tauri::Runtime + 'static>(
                 ));
                 expanded_container.setHidden(true);
                 expanded_container.setAlphaValue(1.0);
-                apply_panel_geometry(handles, COLLAPSED_PANEL_HEIGHT, 0.0, 0.0, 0.0, 0.0);
+                apply_panel_geometry(
+                    handles,
+                    COLLAPSED_PANEL_HEIGHT,
+                    COLLAPSED_PANEL_HEIGHT,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
                 panel_from_ptr(handles.panel).displayIfNeeded();
             });
         });
@@ -2226,7 +2237,7 @@ unsafe fn begin_native_panel_surface_transition<R: tauri::Runtime + 'static>(
             cards_container.setHidden(false);
             cards_container.setAlphaValue(1.0);
             apply_card_stack_transition(cards_container, 1.0, true);
-            apply_panel_geometry(handles, target_height, 1.0, 1.0, 1.0, 1.0);
+            apply_panel_geometry(handles, target_height, target_height, 1.0, 1.0, 1.0, 1.0);
             panel_from_ptr(handles.panel).displayIfNeeded();
         });
     });
@@ -2237,6 +2248,7 @@ async fn animate_open_transition<R: tauri::Runtime + 'static>(
     app: AppHandle<R>,
     handles: NativePanelHandles,
     animation_id: u64,
+    start_height: f64,
     target_height: f64,
     card_count: usize,
 ) {
@@ -2246,6 +2258,7 @@ async fn animate_open_transition<R: tauri::Runtime + 'static>(
         PANEL_CARD_REVEAL_STAGGER_MS,
     );
     let total_ms = PANEL_OPEN_TOTAL_MS + card_total_ms;
+    let canvas_height = panel_transition_canvas_height(start_height, target_height);
     animate_panel_timeline(
         app,
         handles,
@@ -2265,6 +2278,7 @@ async fn animate_open_transition<R: tauri::Runtime + 'static>(
             let drop_progress = ease_out_cubic(morph_phase);
             let cards_progress = animation_phase(elapsed_ms, PANEL_OPEN_TOTAL_MS, card_total_ms);
             (
+                canvas_height,
                 lerp(COLLAPSED_PANEL_HEIGHT, target_height, height_progress),
                 morph_progress,
                 height_progress,
@@ -2293,6 +2307,7 @@ async fn animate_surface_switch_transition<R: tauri::Runtime + 'static>(
         PANEL_SURFACE_SWITCH_CARD_REVEAL_STAGGER_MS,
     );
     let total_ms = PANEL_SURFACE_SWITCH_HEIGHT_MS.max(card_total_ms);
+    let canvas_height = panel_transition_canvas_height(start_height, target_height);
     animate_panel_timeline(
         app,
         handles,
@@ -2306,6 +2321,7 @@ async fn animate_surface_switch_transition<R: tauri::Runtime + 'static>(
             ));
             let cards_progress = surface_switch_card_progress(elapsed_ms, card_total_ms);
             (
+                canvas_height,
                 lerp(start_height, target_height, height_progress),
                 1.0,
                 1.0,
@@ -2348,6 +2364,7 @@ async fn animate_close_transition<R: tauri::Runtime + 'static>(
     };
     let close_delay_ms = card_total_ms + card_exit_settle_ms;
     let total_ms = close_delay_ms + PANEL_CLOSE_TOTAL_MS;
+    let canvas_height = panel_transition_canvas_height(start_height, COLLAPSED_PANEL_HEIGHT);
     animate_panel_timeline(
         app,
         handles,
@@ -2371,6 +2388,7 @@ async fn animate_close_transition<R: tauri::Runtime + 'static>(
             let drop_progress = 1.0 - ease_out_cubic(morph_phase);
             let cards_progress = animation_phase(elapsed_ms, 0, card_total_ms);
             (
+                canvas_height,
                 lerp(COLLAPSED_PANEL_HEIGHT, start_height, height_progress),
                 morph_progress,
                 height_progress,
@@ -2394,13 +2412,14 @@ async fn animate_panel_timeline<R, F>(
     cards_entering: bool,
 ) where
     R: tauri::Runtime + 'static,
-    F: FnMut(u64) -> (f64, f64, f64, f64, f64, f64) + Send + 'static,
+    F: FnMut(u64) -> (f64, f64, f64, f64, f64, f64, f64) + Send + 'static,
 {
     let started = Instant::now();
     loop {
         let elapsed_ms = started.elapsed().as_millis().min(total_ms as u128) as u64;
         let (
-            height,
+            canvas_height,
+            visible_height,
             bar_progress,
             height_progress,
             shoulder_progress,
@@ -2411,23 +2430,26 @@ async fn animate_panel_timeline<R, F>(
             if NATIVE_TEST_PANEL_ANIMATION_ID.load(Ordering::SeqCst) != animation_id {
                 return;
             }
-            if let Some(state_mutex) = native_panel_state() {
-                if let Ok(mut state) = state_mutex.lock() {
-                    state.transition_cards_progress = cards_progress.clamp(0.0, 1.0);
-                    state.transition_cards_entering = cards_entering;
+            with_disabled_layer_actions(|| {
+                if let Some(state_mutex) = native_panel_state() {
+                    if let Ok(mut state) = state_mutex.lock() {
+                        state.transition_cards_progress = cards_progress.clamp(0.0, 1.0);
+                        state.transition_cards_entering = cards_entering;
+                    }
                 }
-            }
-            apply_panel_geometry(
-                handles,
-                height,
-                bar_progress,
-                height_progress,
-                shoulder_progress,
-                drop_progress,
-            );
-            let cards_container = view_from_ptr(handles.cards_container);
-            apply_card_stack_transition(cards_container, cards_progress, cards_entering);
-            panel_from_ptr(handles.panel).displayIfNeeded();
+                apply_panel_geometry(
+                    handles,
+                    canvas_height,
+                    visible_height,
+                    bar_progress,
+                    height_progress,
+                    shoulder_progress,
+                    drop_progress,
+                );
+                let cards_container = view_from_ptr(handles.cards_container);
+                apply_card_stack_transition(cards_container, cards_progress, cards_entering);
+                panel_from_ptr(handles.panel).displayIfNeeded();
+            });
         });
 
         if elapsed_ms >= total_ms {
@@ -2481,7 +2503,8 @@ unsafe fn apply_snapshot_values_to_panel(handles: NativePanelHandles, snapshot: 
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn apply_panel_geometry(
     handles: NativePanelHandles,
-    total_height: f64,
+    canvas_height: f64,
+    visible_height: f64,
     bar_progress: f64,
     height_progress: f64,
     shoulder_progress: f64,
@@ -2509,10 +2532,12 @@ unsafe fn apply_panel_geometry(
         expanded_panel_width_for_screen_rect(panel.screen().as_deref(), screen_frame);
     let panel_width =
         panel_canvas_width_for_screen_rect(panel.screen().as_deref(), compact_height, screen_frame);
-    let size = NSSize::new(panel_width, total_height);
+    let canvas_height = canvas_height.max(COLLAPSED_PANEL_HEIGHT);
+    let visible_height = visible_height.clamp(COLLAPSED_PANEL_HEIGHT, canvas_height);
+    let size = NSSize::new(panel_width, canvas_height);
     let drop_offset = PANEL_DROP_DISTANCE * drop_progress;
     let panel_frame = centered_top_frame(screen_frame, size);
-    panel.setFrame_display(panel_frame, true);
+    apply_panel_frame(panel, panel_frame);
     content_view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), size));
     let pill_frame = island_bar_frame(
         size,
@@ -2524,6 +2549,7 @@ unsafe fn apply_panel_geometry(
     );
     let expanded_frame = expanded_background_frame(
         size,
+        visible_height,
         bar_progress,
         height_progress,
         compact_width,
@@ -2545,6 +2571,9 @@ unsafe fn apply_panel_geometry(
     body_separator.setFrame(expanded_separator_frame(expanded_frame, compact_height));
     let shell_visible = bar_progress > 0.01 || height_progress > 0.01;
     let content_visibility = native_panel_content_visibility();
+    let transitioning = native_panel_state()
+        .and_then(|state| state.lock().ok().map(|guard| guard.transitioning))
+        .unwrap_or(false);
     let shared_expanded_enabled = macos_shared_expanded_window::shared_expanded_enabled();
     let status_surface_active = native_status_surface_active();
     let (shared_content_visible, shared_content_interactive) = shared_expanded_content_state(
@@ -2556,6 +2585,8 @@ unsafe fn apply_panel_geometry(
         status_surface_active,
         content_visibility,
     );
+    let shared_content_visible = shared_content_visible && !transitioning;
+    let shared_content_interactive = shared_content_interactive && !transitioning;
     expanded_container.setHidden(!shell_visible);
     expanded_container.setAlphaValue(if shell_visible { 1.0 } else { 0.0 });
     let separator_visibility = (height_progress.min(content_visibility) * 0.88).clamp(0.0, 0.88);
@@ -2629,6 +2660,34 @@ fn shared_expanded_content_state(
         && bar_progress > SHARED_CONTENT_INTERACTIVE_PROGRESS
         && content_visibility > SHARED_CONTENT_INTERACTIVE_PROGRESS;
     (visible, interactive)
+}
+
+#[cfg(target_os = "macos")]
+fn rects_nearly_equal(a: NSRect, b: NSRect) -> bool {
+    (a.origin.x - b.origin.x).abs() < 0.5
+        && (a.origin.y - b.origin.y).abs() < 0.5
+        && (a.size.width - b.size.width).abs() < 0.5
+        && (a.size.height - b.size.height).abs() < 0.5
+}
+
+#[cfg(target_os = "macos")]
+fn apply_panel_frame(panel: &NSPanel, frame: NSRect) {
+    let current = panel.frame();
+    if rects_nearly_equal(current, frame) {
+        return;
+    }
+    let top_left = NSPoint::new(frame.origin.x, frame.origin.y + frame.size.height);
+    panel.setContentSize(frame.size);
+    panel.setFrameTopLeftPoint(top_left);
+}
+
+#[cfg(target_os = "macos")]
+fn with_disabled_layer_actions<T>(f: impl FnOnce() -> T) -> T {
+    CATransaction::begin();
+    CATransaction::setDisableActions(true);
+    let result = f();
+    CATransaction::commit();
+    result
 }
 
 #[cfg(target_os = "macos")]
@@ -4477,12 +4536,16 @@ fn set_mascot_face_part_frame(
 
 #[cfg(target_os = "macos")]
 fn centered_top_frame(screen_frame: NSRect, size: NSSize) -> NSRect {
+    let snapped_width = size.width.max(1.0).round();
+    let snapped_height = size.height.max(1.0).round();
+    let top_edge = screen_frame.origin.y + screen_frame.size.height;
     NSRect::new(
         NSPoint::new(
-            screen_frame.origin.x + ((screen_frame.size.width - size.width) / 2.0).max(0.0),
-            screen_frame.origin.y + screen_frame.size.height - size.height,
+            (screen_frame.origin.x + ((screen_frame.size.width - snapped_width) / 2.0).max(0.0))
+                .round(),
+            (top_edge - snapped_height).round(),
         ),
-        size,
+        NSSize::new(snapped_width, snapped_height),
     )
 }
 
@@ -4669,6 +4732,7 @@ fn right_shoulder_frame(pill_frame: NSRect) -> NSRect {
 
 fn expanded_background_frame(
     content_size: NSSize,
+    visible_height: f64,
     _bar_progress: f64,
     height_progress: f64,
     _compact_width: f64,
@@ -4677,9 +4741,12 @@ fn expanded_background_frame(
     drop_offset: f64,
 ) -> NSRect {
     let height_progress = height_progress.clamp(0.0, 1.0);
+    let visible_height = visible_height
+        .max(COLLAPSED_PANEL_HEIGHT)
+        .min(content_size.height.max(COLLAPSED_PANEL_HEIGHT));
     let height = lerp(
         compact_height,
-        (content_size.height - drop_offset).max(compact_height),
+        (visible_height - drop_offset).max(compact_height),
         height_progress,
     );
     NSRect::new(
@@ -4730,6 +4797,11 @@ fn expanded_total_height(
         .unwrap_or(estimated_height)
         .min(EXPANDED_MAX_BODY_HEIGHT);
     compact_height + EXPANDED_CONTENT_TOP_GAP + EXPANDED_CONTENT_BOTTOM_INSET + body_height
+}
+
+#[cfg(target_os = "macos")]
+fn panel_transition_canvas_height(start_height: f64, target_height: f64) -> f64 {
+    start_height.max(target_height).max(COLLAPSED_PANEL_HEIGHT)
 }
 
 #[cfg(target_os = "macos")]
@@ -5782,12 +5854,14 @@ mod tests {
 
     use chrono::Utc;
     use echoisland_runtime::{PendingPermissionView, RuntimeSnapshot, SessionSnapshotView};
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
 
     use super::{
         HOVER_DELAY_MS, NativeExpandedSurface, NativeHoverTransition, NativeMascotRuntime,
         NativePanelState, NativeStatusQueuePayload, PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
-        card_content_visibility_phase, compact_active_count_text, shared_expanded_content_state,
-        summarize_headline, surface_switch_card_progress, sync_native_hover_expansion_state,
+        card_content_visibility_phase, centered_top_frame, compact_active_count_text,
+        panel_transition_canvas_height, shared_expanded_content_state, summarize_headline,
+        surface_switch_card_progress, sync_native_hover_expansion_state,
         sync_native_pending_card_visibility, sync_native_status_queue,
     };
 
@@ -5993,6 +6067,27 @@ mod tests {
 
         assert!(!visible);
         assert!(!interactive);
+    }
+
+    #[test]
+    fn centered_top_frame_snaps_panel_geometry_to_whole_points() {
+        let frame = centered_top_frame(
+            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1512.0, 982.0)),
+            NSSize::new(419.6, 152.4),
+        );
+
+        assert_eq!(frame.origin.x.fract(), 0.0);
+        assert_eq!(frame.origin.y.fract(), 0.0);
+        assert_eq!(frame.size.width, 420.0);
+        assert_eq!(frame.size.height, 152.0);
+        assert_eq!(frame.origin.y + frame.size.height, 982.0);
+    }
+
+    #[test]
+    fn transition_canvas_height_uses_max_height_during_animation() {
+        assert_eq!(panel_transition_canvas_height(80.0, 164.0), 164.0);
+        assert_eq!(panel_transition_canvas_height(196.0, 80.0), 196.0);
+        assert_eq!(panel_transition_canvas_height(148.0, 168.0), 168.0);
     }
 
     #[test]
