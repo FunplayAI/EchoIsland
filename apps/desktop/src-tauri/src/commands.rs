@@ -9,7 +9,7 @@ use echoisland_runtime::RuntimeSnapshot;
 use tauri::{AppHandle, State};
 
 use crate::{
-    app_runtime::AppRuntime,
+    app_runtime::{AppRuntime, maybe_refresh_native_ui_for_event},
     command_services::{SampleIngestService, SnapshotCommandService},
     http_receiver::{HttpReceiverStatus, default_http_receiver_status},
     platform::{
@@ -77,16 +77,22 @@ pub fn platform_paths() -> PlatformPathsPayload {
 pub async fn approve_permission(
     request_id: String,
     runtime: State<'_, AppRuntime>,
+    app: AppHandle,
 ) -> Result<(), String> {
-    runtime.runtime.approve_permission(&request_id).await
+    runtime.runtime.approve_permission(&request_id).await?;
+    maybe_refresh_native_ui_for_event(app, runtime.runtime.clone(), "PermissionResponse");
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn deny_permission(
     request_id: String,
     runtime: State<'_, AppRuntime>,
+    app: AppHandle,
 ) -> Result<(), String> {
-    runtime.runtime.deny_permission(&request_id).await
+    runtime.runtime.deny_permission(&request_id).await?;
+    maybe_refresh_native_ui_for_event(app, runtime.runtime.clone(), "PermissionResponse");
+    Ok(())
 }
 
 #[tauri::command]
@@ -94,16 +100,25 @@ pub async fn answer_question(
     request_id: String,
     answer: String,
     runtime: State<'_, AppRuntime>,
+    app: AppHandle,
 ) -> Result<(), String> {
-    runtime.runtime.answer_question(&request_id, &answer).await
+    runtime
+        .runtime
+        .answer_question(&request_id, &answer)
+        .await?;
+    maybe_refresh_native_ui_for_event(app, runtime.runtime.clone(), "QuestionResponse");
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn skip_question(
     request_id: String,
     runtime: State<'_, AppRuntime>,
+    app: AppHandle,
 ) -> Result<(), String> {
-    runtime.runtime.skip_question(&request_id).await
+    runtime.runtime.skip_question(&request_id).await?;
+    maybe_refresh_native_ui_for_event(app, runtime.runtime.clone(), "QuestionResponse");
+    Ok(())
 }
 
 #[tauri::command]

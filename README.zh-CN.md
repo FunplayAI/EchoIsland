@@ -237,6 +237,20 @@ Vibe Island 是一个仅支持 macOS 的 Swift 原生应用，在 MacBook 刘海
 
 EchoIsland 目前仍是 Windows 优先，但 macOS 原生灵动岛正在迁移中，已经包含原生面板和终端跳转相关工作。Linux 暂未打包，不过 Rust 核心设计上是跨平台可移植的。
 
+### macOS 提示 EchoIsland 已损坏或无法打开怎么办？
+
+在 macOS 实验阶段，本地构建或未完整签名/公证的 `.app` 可能会被 Gatekeeper 加上 `com.apple.quarantine` 隔离属性。如果系统提示“已损坏”“无法验证开发者”或无法打开，可以先移除隔离属性：
+
+```bash
+xattr -r -d com.apple.quarantine
+```
+
+输入上面的命令后先按一次空格，再把 `EchoIsland.app` 拖进终端，让终端自动填入完整路径，然后按回车。最终命令类似：
+
+```bash
+xattr -r -d com.apple.quarantine /Applications/EchoIsland.app
+```
+
 ### 为什么选 Tauri 而不是 Electron？
 
 Tauri 使用操作系统原生 webview，不需要打包完整的 Chromium。对于一个需要和多个 AI 编码工具共存的常驻应用来说，这个差异非常关键：EchoIsland 保持在 50MB 以内，而同等功能的 Electron 应用通常需要 200–500MB。

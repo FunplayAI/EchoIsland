@@ -49,6 +49,13 @@ struct ProcessInfo {
     command: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TitleMatchCandidate {
+    reason: &'static str,
+    value: String,
+    score: u8,
+}
+
 const RUNNING_TERMINAL_CANDIDATES: &[RunningTerminalCandidate] = &[
     RunningTerminalCandidate {
         target: MacFocusTarget::Warp,
@@ -124,8 +131,19 @@ pub fn focus_session_terminal(
         });
     }
 
-    if let Some((bundle_id, display_name)) = source_native_app_bundle(&target.source)
-        && target.terminal_bundle.is_none()
+    let resolved_target = resolve_focus_target(target);
+    info!(
+        source = %target.source,
+        terminal_app = ?target.terminal_app,
+        host_app = ?target.host_app,
+        cwd = ?target.cwd,
+        resolved_target = ?resolved_target,
+        "trying macOS terminal focus"
+    );
+
+    if resolved_target.is_none()
+        && should_use_source_native_app_fallback(target)
+        && let Some((bundle_id, display_name)) = source_native_app_bundle(&target.source)
         && is_bundle_running(bundle_id)
     {
         info!(
@@ -140,41 +158,27 @@ pub fn focus_session_terminal(
         });
     }
 
-    let resolved_target = resolve_focus_target(target);
-    info!(
-        source = %target.source,
-        terminal_app = ?target.terminal_app,
-        host_app = ?target.host_app,
-        cwd = ?target.cwd,
-        resolved_target = ?resolved_target,
-        "trying macOS terminal focus"
-    );
-
     let focused = match resolved_target {
         Some(MacFocusTarget::ITerm2) => activate_iterm2(target),
         Some(MacFocusTarget::Ghostty) => activate_ghostty(target),
         Some(MacFocusTarget::TerminalApp) => activate_terminal_app(target),
         Some(MacFocusTarget::Warp) => {
-            activate_terminal_window("dev.warp.Warp-Stable", target.cwd.as_deref(), "Warp")
+            activate_terminal_window(target, "dev.warp.Warp-Stable", "Warp")
         }
         Some(MacFocusTarget::WezTerm) => activate_wezterm(target),
         Some(MacFocusTarget::Kitty) => activate_kitty(target),
         Some(MacFocusTarget::Alacritty) => {
-            activate_terminal_window("org.alacritty", target.cwd.as_deref(), "Alacritty")
+            activate_terminal_window(target, "org.alacritty", "Alacritty")
         }
-        Some(MacFocusTarget::Hyper) => activate_terminal_window("", target.cwd.as_deref(), "Hyper"),
-        Some(MacFocusTarget::Tabby) => activate_terminal_window("", target.cwd.as_deref(), "Tabby"),
-        Some(MacFocusTarget::Rio) => activate_terminal_window("", target.cwd.as_deref(), "Rio"),
-        Some(MacFocusTarget::Cursor) => activate_ide_window(
-            "com.todesktop.230313mzl4w4u92",
-            target.cwd.as_deref(),
-            "Cursor",
-        ),
-        Some(MacFocusTarget::VSCode) => activate_ide_window(
-            "com.microsoft.VSCode",
-            target.cwd.as_deref(),
-            "Visual Studio Code",
-        ),
+        Some(MacFocusTarget::Hyper) => activate_terminal_window(target, "", "Hyper"),
+        Some(MacFocusTarget::Tabby) => activate_terminal_window(target, "", "Tabby"),
+        Some(MacFocusTarget::Rio) => activate_terminal_window(target, "", "Rio"),
+        Some(MacFocusTarget::Cursor) => {
+            activate_ide_window(target, "com.todesktop.230313mzl4w4u92", "Cursor")
+        }
+        Some(MacFocusTarget::VSCode) => {
+            activate_ide_window(target, "com.microsoft.VSCode", "Visual Studio Code")
+        }
         Some(MacFocusTarget::CodexApp) => activate_app_bundle("com.openai.codex", "Codex"),
         Some(MacFocusTarget::TraeApp) => activate_app_bundle("com.trae.app", "Trae"),
         Some(MacFocusTarget::QoderApp) => activate_app_bundle("com.qoder.ide", "Qoder"),
@@ -380,21 +384,22 @@ fn detect_running_terminal_target(target: &SessionFocusTarget) -> Option<MacFocu
         return Some(configured);
     }
 
-    if should_skip_ambiguous_running_terminal_fallback(target) {
-        warn!(
-            source = %target.source,
-            session_id = %target.session_id,
-            cwd = ?target.cwd,
-            "skipping ambiguous macOS running-terminal fallback because session has no terminal metadata"
-        );
-        return None;
-    }
-
     let mut detected = Vec::new();
     for candidate in RUNNING_TERMINAL_CANDIDATES {
         if is_application_running(candidate) {
             detected.push(*candidate);
         }
+    }
+
+    if should_skip_detected_running_terminal_fallback(target, detected.len()) {
+        warn!(
+            source = %target.source,
+            session_id = %target.session_id,
+            cwd = ?target.cwd,
+            detected_count = detected.len(),
+            "skipping ambiguous macOS running-terminal fallback because session has no reliable terminal metadata"
+        );
+        return None;
     }
 
     let candidate = detected.first()?;
@@ -438,12 +443,58 @@ fn should_detect_running_terminal(target: &SessionFocusTarget) -> bool {
         || terminal_app == "cli"
 }
 
-fn should_skip_ambiguous_running_terminal_fallback(target: &SessionFocusTarget) -> bool {
-    target.source == "codex"
-        && target.terminal_app.is_none()
-        && target.terminal_bundle.is_none()
-        && target.tty.is_none()
-        && target.cli_pid.is_none()
+fn should_skip_detected_running_terminal_fallback(
+    target: &SessionFocusTarget,
+    detected_count: usize,
+) -> bool {
+    detected_count > 1 && !has_reliable_terminal_focus_metadata(target)
+}
+
+fn should_use_source_native_app_fallback(target: &SessionFocusTarget) -> bool {
+    !has_terminal_focus_metadata(target)
+}
+
+fn has_terminal_focus_metadata(target: &SessionFocusTarget) -> bool {
+    target.terminal_app.as_deref().is_some_and(has_text)
+        || target.terminal_bundle.as_deref().is_some_and(has_text)
+        || target.tty.as_deref().is_some_and(is_precise_terminal_tty)
+        || target.terminal_pid.is_some()
+        || target.cli_pid.is_some()
+        || target.iterm_session_id.as_deref().is_some_and(has_text)
+        || target.kitty_window_id.as_deref().is_some_and(has_text)
+        || target.tmux_env.as_deref().is_some_and(has_text)
+        || target.tmux_pane.as_deref().is_some_and(has_text)
+        || target
+            .tmux_client_tty
+            .as_deref()
+            .is_some_and(is_precise_terminal_tty)
+}
+
+fn has_reliable_terminal_focus_metadata(target: &SessionFocusTarget) -> bool {
+    target
+        .terminal_bundle
+        .as_deref()
+        .and_then(resolve_focus_target_bundle)
+        .is_some()
+        || target.tty.as_deref().is_some_and(is_precise_terminal_tty)
+        || target.terminal_pid.is_some()
+        || target.cli_pid.is_some()
+        || target.iterm_session_id.as_deref().is_some_and(has_text)
+        || target.kitty_window_id.as_deref().is_some_and(has_text)
+        || target.tmux_pane.as_deref().is_some_and(has_text)
+        || target
+            .tmux_client_tty
+            .as_deref()
+            .is_some_and(is_precise_terminal_tty)
+        || target
+            .terminal_app
+            .as_deref()
+            .map(normalize_token)
+            .is_some_and(|value| {
+                resolve_focus_target_token(&value).is_some()
+                    && !is_unreliable_terminal_app_token(&value)
+                    && !matches!(value.as_str(), "tmux" | "screen" | "cli")
+            })
 }
 
 fn configured_terminal_target() -> Option<MacFocusTarget> {
@@ -544,7 +595,10 @@ fn known_terminal_target_for_pid(pid: u32) -> Option<MacFocusTarget> {
 }
 
 fn terminal_target_from_command(command: &str) -> Option<MacFocusTarget> {
-    let value = command.to_ascii_lowercase();
+    let value = command.trim().to_ascii_lowercase();
+    if value.is_empty() {
+        return None;
+    }
     if value.contains("/terminal.app/") || value.ends_with("/terminal") {
         return Some(MacFocusTarget::TerminalApp);
     }
@@ -566,7 +620,36 @@ fn terminal_target_from_command(command: &str) -> Option<MacFocusTarget> {
     if value.contains("/alacritty.app/") {
         return Some(MacFocusTarget::Alacritty);
     }
-    None
+    command_executable_name(&value).and_then(terminal_target_from_executable_name)
+}
+
+fn command_executable_name(command: &str) -> Option<&str> {
+    let executable = if let Some(rest) = command.strip_prefix('"') {
+        rest.split_once('"').map(|(value, _)| value).unwrap_or(rest)
+    } else {
+        command.split_whitespace().next()?
+    };
+    let executable = executable.trim().trim_matches('"').trim_end_matches('/');
+    let name = executable
+        .rsplit('/')
+        .find(|segment| !segment.is_empty())
+        .unwrap_or(executable);
+    (!name.is_empty()).then_some(name)
+}
+
+fn terminal_target_from_executable_name(name: &str) -> Option<MacFocusTarget> {
+    match name {
+        "iterm" | "iterm2" => Some(MacFocusTarget::ITerm2),
+        "ghostty" => Some(MacFocusTarget::Ghostty),
+        "terminal" => Some(MacFocusTarget::TerminalApp),
+        "wezterm" | "wezterm-gui" => Some(MacFocusTarget::WezTerm),
+        "kitty" => Some(MacFocusTarget::Kitty),
+        "alacritty" => Some(MacFocusTarget::Alacritty),
+        "hyper" => Some(MacFocusTarget::Hyper),
+        "tabby" => Some(MacFocusTarget::Tabby),
+        "rio" => Some(MacFocusTarget::Rio),
+        _ => None,
+    }
 }
 
 fn terminal_metadata_for_target(
@@ -1262,55 +1345,56 @@ return false
     activate_app_bundle("com.googlecode.iterm2", "iTerm2")
 }
 
-fn activate_terminal_window(bundle_id: &str, cwd: Option<&str>, fallback_name: &str) -> bool {
+fn activate_terminal_window(
+    target: &SessionFocusTarget,
+    bundle_id: &str,
+    fallback_name: &str,
+) -> bool {
     let activated = if bundle_id.is_empty() {
         activate_app_name(fallback_name)
     } else {
         activate_app_bundle(bundle_id, fallback_name)
     };
-    let Some(cwd) = cwd.filter(|value| !value.is_empty()) else {
-        return activated;
-    };
-    let resolved_cwd = resolve_symlinks(cwd);
-    let tilde_cwd = tilde_path(cwd);
-    let folder_name = last_path_component(cwd);
-    if folder_name.is_empty() {
+    let candidates = terminal_window_title_candidates(target);
+    if candidates.is_empty() {
         return activated;
     }
+    let candidate_records = applescript_title_candidate_records(&candidates);
     let script = format!(
         r#"
 tell application "System Events"
     tell process "{app_name}"
         set frontmost to true
+        set titleCandidates to {title_candidates}
         set bestWindow to missing value
         set bestReason to ""
         set bestScore to -1
+        set bestMatchLen to -1
         set bestLen to 999999
         repeat with w in windows
             try
                 set wName to name of w as text
                 set score to 0
                 set reason to ""
-                if "{cwd}" is not "" and wName contains "{cwd}" then
-                    set score to 4
-                    set reason to "cwd"
-                else if "{resolved_cwd}" is not "" and "{resolved_cwd}" is not "{cwd}" and wName contains "{resolved_cwd}" then
-                    set score to 3
-                    set reason to "resolved_cwd"
-                else if "{tilde_cwd}" is not "" and wName contains "{tilde_cwd}" then
-                    set score to 2
-                    set reason to "tilde_cwd"
-                else if "{folder_name}" is not "" and wName contains "{folder_name}" then
-                    set score to 1
-                    set reason to "folder_name"
-                end if
+                set matchLen to 0
+                repeat with candidate in titleCandidates
+                    set matchText to item 1 of candidate
+                    set matchReason to item 2 of candidate
+                    set matchScore to item 3 of candidate
+                    if matchText is not "" and wName contains matchText and matchScore > score then
+                        set score to matchScore
+                        set reason to matchReason
+                        set matchLen to count of matchText
+                    end if
+                end repeat
 
                 if score > 0 then
                     set wLen to count of wName
-                    if score > bestScore or (score = bestScore and wLen < bestLen) then
+                    if score > bestScore or (score = bestScore and matchLen > bestMatchLen) or (score = bestScore and matchLen = bestMatchLen and wLen < bestLen) then
                         set bestWindow to w
                         set bestReason to reason
                         set bestScore to score
+                        set bestMatchLen to matchLen
                         set bestLen to wLen
                     end if
                 end if
@@ -1325,20 +1409,16 @@ end tell
 return false
 "#,
         app_name = escape_applescript(fallback_name),
-        cwd = escape_applescript(cwd),
-        resolved_cwd = escape_applescript(&resolved_cwd),
-        tilde_cwd = escape_applescript(&tilde_cwd),
-        folder_name = escape_applescript(&folder_name),
+        title_candidates = candidate_records,
     );
     match run_osascript_raw(&script, fallback_name) {
         Some(reason) if !reason.trim().eq_ignore_ascii_case("false") => {
             info!(
                 bundle_id,
                 fallback_name,
-                cwd,
-                resolved_cwd = %resolved_cwd,
-                tilde_cwd = %tilde_cwd,
-                folder_name,
+                cwd = ?target.cwd,
+                project_name = ?target.project_name,
+                window_title = ?target.window_title,
                 reason = %reason,
                 "matched generic terminal window"
             );
@@ -1348,10 +1428,9 @@ return false
             info!(
                 bundle_id,
                 fallback_name,
-                cwd,
-                resolved_cwd = %resolved_cwd,
-                tilde_cwd = %tilde_cwd,
-                folder_name,
+                cwd = ?target.cwd,
+                project_name = ?target.project_name,
+                window_title = ?target.window_title,
                 activated,
                 "generic terminal window title match missed; using app activation result"
             );
@@ -1360,29 +1439,47 @@ return false
     }
 }
 
-fn activate_ide_window(bundle_id: &str, cwd: Option<&str>, fallback_name: &str) -> bool {
+fn activate_ide_window(target: &SessionFocusTarget, bundle_id: &str, fallback_name: &str) -> bool {
     let activated = activate_app_bundle(bundle_id, fallback_name);
-    let Some(cwd) = cwd.filter(|value| !value.is_empty()) else {
-        return activated;
-    };
-    let folder_name = last_path_component(cwd);
-    if folder_name.is_empty() {
+    let candidates = ide_window_title_candidates(target);
+    if candidates.is_empty() {
         return activated;
     }
+    let candidate_records = applescript_title_candidate_records(&candidates);
     let script = format!(
         r#"
 tell application "System Events"
     tell process "{app_name}"
         set frontmost to true
+        set titleCandidates to {title_candidates}
         set bestWindow to missing value
+        set bestReason to ""
+        set bestScore to -1
+        set bestMatchLen to -1
         set bestLen to 999999
         repeat with w in windows
             try
                 set wName to name of w as text
-                if wName contains "{folder_name}" then
+                set score to 0
+                set reason to ""
+                set matchLen to 0
+                repeat with candidate in titleCandidates
+                    set matchText to item 1 of candidate
+                    set matchReason to item 2 of candidate
+                    set matchScore to item 3 of candidate
+                    if matchText is not "" and wName contains matchText and matchScore > score then
+                        set score to matchScore
+                        set reason to matchReason
+                        set matchLen to count of matchText
+                    end if
+                end repeat
+                if score > 0 then
                     set wLen to count of wName
-                    if wLen < bestLen then
+                    if score > bestScore or (score = bestScore and matchLen > bestMatchLen) or (score = bestScore and matchLen = bestMatchLen and wLen < bestLen) then
                         set bestWindow to w
+                        set bestReason to reason
+                        set bestScore to score
+                        set bestMatchLen to matchLen
                         set bestLen to wLen
                     end if
                 end if
@@ -1390,16 +1487,119 @@ tell application "System Events"
         end repeat
         if bestWindow is not missing value then
             perform action "AXRaise" of bestWindow
-            return true
+            return bestReason
         end if
     end tell
 end tell
 return false
 "#,
         app_name = escape_applescript(fallback_name),
-        folder_name = escape_applescript(&folder_name),
+        title_candidates = candidate_records,
     );
-    run_osascript_bool(&script, fallback_name) || activated
+    let matched = run_osascript_raw(&script, fallback_name)
+        .filter(|reason| !reason.trim().eq_ignore_ascii_case("false"));
+    if let Some(reason) = matched {
+        info!(
+            bundle_id,
+            fallback_name,
+            cwd = ?target.cwd,
+            project_name = ?target.project_name,
+            window_title = ?target.window_title,
+            reason = %reason,
+            "matched IDE window"
+        );
+        true
+    } else {
+        activated
+    }
+}
+
+fn terminal_window_title_candidates(target: &SessionFocusTarget) -> Vec<TitleMatchCandidate> {
+    let mut candidates = Vec::new();
+    push_title_candidate(
+        &mut candidates,
+        "window_title",
+        target.window_title.as_deref(),
+        6,
+    );
+    if let Some(cwd) = target.cwd.as_deref().filter(|value| has_text(value)) {
+        push_title_candidate(&mut candidates, "cwd", Some(cwd), 5);
+        let resolved_cwd = resolve_symlinks(cwd);
+        if resolved_cwd != cwd {
+            push_title_candidate(&mut candidates, "resolved_cwd", Some(&resolved_cwd), 4);
+        }
+        let tilde_cwd = tilde_path(cwd);
+        push_title_candidate(&mut candidates, "tilde_cwd", Some(&tilde_cwd), 3);
+        let folder_name = last_path_component(cwd);
+        push_title_candidate(&mut candidates, "folder_name", Some(&folder_name), 1);
+    }
+    push_title_candidate(
+        &mut candidates,
+        "project_name",
+        target.project_name.as_deref(),
+        2,
+    );
+    candidates
+}
+
+fn ide_window_title_candidates(target: &SessionFocusTarget) -> Vec<TitleMatchCandidate> {
+    let mut candidates = Vec::new();
+    push_title_candidate(
+        &mut candidates,
+        "window_title",
+        target.window_title.as_deref(),
+        5,
+    );
+    push_title_candidate(
+        &mut candidates,
+        "project_name",
+        target.project_name.as_deref(),
+        4,
+    );
+    if let Some(cwd) = target.cwd.as_deref().filter(|value| has_text(value)) {
+        let folder_name = last_path_component(cwd);
+        push_title_candidate(&mut candidates, "folder_name", Some(&folder_name), 3);
+        push_title_candidate(&mut candidates, "cwd", Some(cwd), 2);
+    }
+    candidates
+}
+
+fn push_title_candidate(
+    candidates: &mut Vec<TitleMatchCandidate>,
+    reason: &'static str,
+    value: Option<&str>,
+    score: u8,
+) {
+    let Some(value) = value.map(str::trim).filter(|value| value.len() >= 2) else {
+        return;
+    };
+    if candidates.iter().any(|candidate| candidate.value == value) {
+        return;
+    }
+    candidates.push(TitleMatchCandidate {
+        reason,
+        value: value.to_string(),
+        score,
+    });
+}
+
+fn applescript_title_candidate_records(candidates: &[TitleMatchCandidate]) -> String {
+    if candidates.is_empty() {
+        return "{}".to_string();
+    }
+    let records = candidates
+        .iter()
+        .map(|candidate| {
+            format!(
+                "{{\"{}\", \"{}\", {}}}",
+                escape_applescript(&candidate.value),
+                escape_applescript(candidate.reason),
+                candidate.score
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{{{records}}}")
 }
 
 fn native_app_bundle_for_terminal(
@@ -1649,10 +1849,6 @@ fn run_osascript(source: &str, label: &str) -> bool {
     true
 }
 
-fn run_osascript_bool(source: &str, label: &str) -> bool {
-    run_osascript_raw(source, label).is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
-}
-
 fn run_osascript_raw(source: &str, label: &str) -> Option<String> {
     let mut child = match Command::new("/usr/bin/osascript")
         .arg("-")
@@ -1760,6 +1956,10 @@ fn is_precise_terminal_tty(value: &str) -> bool {
     !trimmed.is_empty() && trimmed != "/dev/tty" && trimmed != "/dev/console"
 }
 
+fn has_text(value: &str) -> bool {
+    !value.trim().is_empty()
+}
+
 fn escape_applescript(value: &str) -> String {
     value
         .replace('\\', "\\\\")
@@ -1769,7 +1969,12 @@ fn escape_applescript(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{MacFocusTarget, cli_process_patterns, resolve_focus_target};
+    use super::{
+        MacFocusTarget, applescript_title_candidate_records, cli_process_patterns,
+        ide_window_title_candidates, resolve_focus_target,
+        should_skip_detected_running_terminal_fallback, should_use_source_native_app_fallback,
+        terminal_target_from_command, terminal_window_title_candidates,
+    };
     use crate::terminal_focus::SessionFocusTarget;
 
     fn target() -> SessionFocusTarget {
@@ -1831,5 +2036,106 @@ mod tests {
                 .iter()
                 .any(|value| value.contains("/.local/share/claude/versions/"))
         );
+    }
+
+    #[test]
+    fn command_basename_detection_matches_wezterm_gui() {
+        assert_eq!(
+            terminal_target_from_command("/opt/homebrew/bin/wezterm-gui start --cwd /tmp"),
+            Some(MacFocusTarget::WezTerm)
+        );
+    }
+
+    #[test]
+    fn quoted_command_path_detection_matches_kitty_binary() {
+        assert_eq!(
+            terminal_target_from_command("\"/Applications/kitty.app/Contents/MacOS/kitty\" @ ls"),
+            Some(MacFocusTarget::Kitty)
+        );
+    }
+
+    #[test]
+    fn command_basename_detection_matches_ghostty_binary() {
+        assert_eq!(
+            terminal_target_from_command("/usr/local/bin/ghostty +list-fonts"),
+            Some(MacFocusTarget::Ghostty)
+        );
+    }
+
+    #[test]
+    fn multiple_running_terminals_are_not_guessed_without_reliable_metadata() {
+        let target = target();
+
+        assert!(should_skip_detected_running_terminal_fallback(&target, 2));
+    }
+
+    #[test]
+    fn single_running_terminal_can_be_used_for_legacy_metadata_miss() {
+        let target = target();
+
+        assert!(!should_skip_detected_running_terminal_fallback(&target, 1));
+    }
+
+    #[test]
+    fn explicit_terminal_app_allows_running_terminal_fallback_even_when_multiple() {
+        let mut target = target();
+        target.terminal_app = Some("Warp".to_string());
+
+        assert!(!should_skip_detected_running_terminal_fallback(&target, 2));
+    }
+
+    #[test]
+    fn source_native_app_fallback_is_skipped_when_terminal_metadata_exists() {
+        let mut target = target();
+        target.terminal_app = Some("Warp".to_string());
+
+        assert!(!should_use_source_native_app_fallback(&target));
+    }
+
+    #[test]
+    fn terminal_title_candidates_prioritize_precise_window_title_and_cwd() {
+        let mut target = target();
+        target.cwd = Some("/Users/wenuts/Documents/EchoIsland".to_string());
+        target.project_name = Some("EchoIsland".to_string());
+        target.window_title = Some("EchoIsland — codex".to_string());
+
+        let candidates = terminal_window_title_candidates(&target);
+
+        assert_eq!(candidates[0].reason, "window_title");
+        assert_eq!(candidates[0].score, 6);
+        assert_eq!(candidates[1].reason, "cwd");
+        assert_eq!(candidates[1].score, 5);
+        assert!(candidates.iter().any(|candidate| {
+            candidate.reason == "folder_name" && candidate.value == "EchoIsland"
+        }));
+    }
+
+    #[test]
+    fn ide_title_candidates_prefer_project_name_over_folder_and_cwd() {
+        let mut target = target();
+        target.cwd = Some("/Users/wenuts/Documents/EchoIsland".to_string());
+        target.project_name = Some("EchoIsland Workspace".to_string());
+
+        let candidates = ide_window_title_candidates(&target);
+
+        assert_eq!(candidates[0].reason, "project_name");
+        assert_eq!(candidates[0].score, 4);
+        assert_eq!(candidates[1].reason, "folder_name");
+        assert_eq!(candidates[1].score, 3);
+        assert_eq!(candidates[2].reason, "cwd");
+        assert_eq!(candidates[2].score, 2);
+    }
+
+    #[test]
+    fn applescript_title_candidate_records_escape_values() {
+        let mut target = target();
+        target.window_title = Some("Echo \"Island\"".to_string());
+
+        let records =
+            applescript_title_candidate_records(&terminal_window_title_candidates(&target));
+
+        assert!(records.contains("Echo \\\"Island\\\""));
+        assert!(records.starts_with("{{"));
+        assert!(records.ends_with("}"));
     }
 }

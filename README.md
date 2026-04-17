@@ -237,6 +237,20 @@ Codex, Claude Code, and OpenClaw have working integration paths today. Codex and
 
 EchoIsland is Windows-first, but macOS support is actively being migrated with a native island panel and terminal jump-back work. Linux is not packaged yet, although the Rust core is designed to be platform-portable.
 
+### macOS says EchoIsland is damaged or cannot be opened. What should I do?
+
+During the experimental macOS phase, unsigned or locally built `.app` bundles may be tagged by Gatekeeper with the `com.apple.quarantine` attribute. If macOS says the app is damaged or cannot verify the developer, remove the quarantine attribute:
+
+```bash
+xattr -r -d com.apple.quarantine
+```
+
+After typing the command, press Space once, drag `EchoIsland.app` into Terminal to insert its full path, then press Enter. The final command should look like:
+
+```bash
+xattr -r -d com.apple.quarantine /Applications/EchoIsland.app
+```
+
 ### Why Tauri instead of Electron?
 
 Tauri uses the OS-native webview instead of bundling a full Chromium instance. For a tool that runs alongside multiple AI coding agents already consuming significant resources, this difference matters: EchoIsland stays under 50MB while a comparable Electron app would typically use 200–500MB.

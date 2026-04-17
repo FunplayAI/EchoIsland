@@ -196,6 +196,12 @@ const PANEL_SURFACE_SWITCH_CARD_REVEAL_MS: u64 = 220;
 #[cfg(target_os = "macos")]
 const PANEL_SURFACE_SWITCH_CARD_REVEAL_STAGGER_MS: u64 = 42;
 #[cfg(target_os = "macos")]
+const PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS: f64 = 0.24;
+#[cfg(target_os = "macos")]
+const PANEL_CARD_CONTENT_REVEAL_DELAY_PROGRESS: f64 = 0.18;
+#[cfg(target_os = "macos")]
+const PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS: f64 = 0.30;
+#[cfg(target_os = "macos")]
 const PANEL_CARD_REVEAL_Y: f64 = -8.0;
 #[cfg(target_os = "macos")]
 const ACTIVE_COUNT_SLOT_WIDTH: f64 = 11.0;
@@ -314,10 +320,17 @@ struct NativeCardHitTarget {
 }
 
 #[cfg(target_os = "macos")]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NativeExpandedSurface {
     Default,
     Status,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NativeHoverTransition {
+    Expand,
+    Collapse,
 }
 
 #[cfg(target_os = "macos")]
@@ -965,7 +978,7 @@ pub fn update_native_island_snapshot<R: tauri::Runtime>(
             .map_err(|_| "native panel state poisoned".to_string())?;
         let was_status_surface =
             state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
-        let status_queue_added = sync_native_status_queue(&mut state, &snapshot);
+        let status_queue_added = sync_native_status_queue(&mut state, &raw_snapshot);
         if status_queue_added && !state.expanded && !state.transitioning {
             state.expanded = true;
             state.status_auto_expanded = true;
@@ -1325,39 +1338,10 @@ unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static>(app: AppH
         let was_status_surface =
             state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
 
-        if inside {
-            state.pointer_outside_since = None;
-            state.pointer_inside_since.get_or_insert(now);
-            if !state.expanded
-                && state.pointer_inside_since.is_some_and(|entered_at| {
-                    now.duration_since(entered_at).as_millis() >= HOVER_DELAY_MS as u128
-                })
-            {
-                state.expanded = true;
-                state.status_auto_expanded = false;
-                state.surface_mode = NativeExpandedSurface::Default;
-                if let Some(snapshot) = state.last_snapshot.clone() {
-                    transition_snapshot = Some((snapshot, true));
-                }
-            }
-        } else {
-            state.pointer_inside_since = None;
-            state.pointer_outside_since.get_or_insert(now);
-            let keep_open_for_status = state.status_auto_expanded
-                && state.surface_mode == NativeExpandedSurface::Status
-                && !state.status_queue.is_empty();
-            if state.expanded
-                && !keep_open_for_status
-                && state.pointer_outside_since.is_some_and(|left_at| {
-                    now.duration_since(left_at).as_millis() >= HOVER_DELAY_MS as u128
-                })
-            {
-                state.expanded = false;
-                state.status_auto_expanded = false;
-                state.surface_mode = NativeExpandedSurface::Default;
-                if let Some(snapshot) = state.last_snapshot.clone() {
-                    transition_snapshot = Some((snapshot, false));
-                }
+        if let Some(hover_transition) = sync_native_hover_expansion_state(&mut state, inside, now) {
+            if let Some(snapshot) = state.last_snapshot.clone() {
+                transition_snapshot =
+                    Some((snapshot, hover_transition == NativeHoverTransition::Expand));
             }
         }
 
@@ -1379,6 +1363,49 @@ unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static>(app: AppH
     if let Some(session_id) = clicked_session_id {
         spawn_native_focus_session(app, session_id);
     }
+}
+
+#[cfg(target_os = "macos")]
+fn sync_native_hover_expansion_state(
+    state: &mut NativePanelState,
+    inside: bool,
+    now: Instant,
+) -> Option<NativeHoverTransition> {
+    if inside {
+        state.pointer_outside_since = None;
+        state.pointer_inside_since.get_or_insert(now);
+        if !state.expanded
+            && !state.transitioning
+            && state.pointer_inside_since.is_some_and(|entered_at| {
+                now.duration_since(entered_at).as_millis() >= HOVER_DELAY_MS as u128
+            })
+        {
+            state.expanded = true;
+            state.status_auto_expanded = false;
+            state.surface_mode = NativeExpandedSurface::Default;
+            return Some(NativeHoverTransition::Expand);
+        }
+    } else {
+        state.pointer_inside_since = None;
+        state.pointer_outside_since.get_or_insert(now);
+        let keep_open_for_status = state.status_auto_expanded
+            && state.surface_mode == NativeExpandedSurface::Status
+            && !state.status_queue.is_empty();
+        if state.expanded
+            && !state.transitioning
+            && !keep_open_for_status
+            && state.pointer_outside_since.is_some_and(|left_at| {
+                now.duration_since(left_at).as_millis() >= HOVER_DELAY_MS as u128
+            })
+        {
+            state.expanded = false;
+            state.status_auto_expanded = false;
+            state.surface_mode = NativeExpandedSurface::Default;
+            return Some(NativeHoverTransition::Collapse);
+        }
+    }
+
+    None
 }
 
 #[cfg(target_os = "macos")]
@@ -1662,8 +1689,8 @@ fn sync_native_status_queue(state: &mut NativePanelState, snapshot: &RuntimeSnap
         match &mut item.payload {
             NativeStatusQueuePayload::Approval(_) => {
                 item.is_live = false;
-                item.is_removing = false;
-                item.remove_after = None;
+                item.is_removing = true;
+                item.remove_after = Some(now + status_queue_exit_duration());
                 next_items.push(item);
             }
             NativeStatusQueuePayload::Completion(session) => {
@@ -2128,7 +2155,7 @@ unsafe fn begin_native_panel_surface_transition<R: tauri::Runtime + 'static>(
     if let Some(state_mutex) = native_panel_state() {
         if let Ok(mut state) = state_mutex.lock() {
             state.transitioning = true;
-            state.transition_cards_progress = 0.0;
+            state.transition_cards_progress = PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS;
             state.transition_cards_entering = true;
         }
     }
@@ -2156,7 +2183,11 @@ unsafe fn begin_native_panel_surface_transition<R: tauri::Runtime + 'static>(
 
     render_expanded_cards(cards_container, &snapshot, expanded_width);
     let card_count = cards_container.subviews().len();
-    apply_card_stack_transition(cards_container, 0.0, true);
+    apply_card_stack_transition(
+        cards_container,
+        PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
+        true,
+    );
     cards_container.setHidden(false);
     cards_container.setAlphaValue(1.0);
     expanded_container.setHidden(false);
@@ -2273,11 +2304,7 @@ async fn animate_surface_switch_transition<R: tauri::Runtime + 'static>(
                 0,
                 PANEL_SURFACE_SWITCH_HEIGHT_MS,
             ));
-            let cards_progress = if card_total_ms == 0 {
-                1.0
-            } else {
-                animation_phase(elapsed_ms, 0, card_total_ms)
-            };
+            let cards_progress = surface_switch_card_progress(elapsed_ms, card_total_ms);
             (
                 lerp(start_height, target_height, height_progress),
                 1.0,
@@ -2290,6 +2317,18 @@ async fn animate_surface_switch_transition<R: tauri::Runtime + 'static>(
         true,
     )
     .await;
+}
+
+#[cfg(target_os = "macos")]
+fn surface_switch_card_progress(elapsed_ms: u64, card_total_ms: u64) -> f64 {
+    if card_total_ms == 0 {
+        return 1.0;
+    }
+    lerp(
+        PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
+        1.0,
+        animation_phase(elapsed_ms, 0, card_total_ms),
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -2505,17 +2544,18 @@ unsafe fn apply_panel_geometry(
     cards_container.setFrame(cards_frame);
     body_separator.setFrame(expanded_separator_frame(expanded_frame, compact_height));
     let shell_visible = bar_progress > 0.01 || height_progress > 0.01;
+    let content_visibility = native_panel_content_visibility();
     let shared_expanded_enabled = macos_shared_expanded_window::shared_expanded_enabled();
     let status_surface_active = native_status_surface_active();
-    let shared_content_visible = shared_expanded_enabled
-        && shell_visible
-        && height_progress > SHARED_CONTENT_REVEAL_PROGRESS
-        && cards_frame.size.height > 4.0
-        && !status_surface_active;
-    let shared_content_interactive = shared_content_visible
-        && height_progress > SHARED_CONTENT_INTERACTIVE_PROGRESS
-        && bar_progress > SHARED_CONTENT_INTERACTIVE_PROGRESS;
-    let content_visibility = native_panel_content_visibility();
+    let (shared_content_visible, shared_content_interactive) = shared_expanded_content_state(
+        shared_expanded_enabled,
+        shell_visible,
+        height_progress,
+        bar_progress,
+        cards_frame.size.height,
+        status_surface_active,
+        content_visibility,
+    );
     expanded_container.setHidden(!shell_visible);
     expanded_container.setAlphaValue(if shell_visible { 1.0 } else { 0.0 });
     let separator_visibility = (height_progress.min(content_visibility) * 0.88).clamp(0.0, 0.88);
@@ -2569,17 +2609,38 @@ unsafe fn apply_panel_geometry(
 }
 
 #[cfg(target_os = "macos")]
+fn shared_expanded_content_state(
+    shared_expanded_enabled: bool,
+    shell_visible: bool,
+    height_progress: f64,
+    bar_progress: f64,
+    cards_height: f64,
+    status_surface_active: bool,
+    content_visibility: f64,
+) -> (bool, bool) {
+    let visible = shared_expanded_enabled
+        && shell_visible
+        && height_progress > SHARED_CONTENT_REVEAL_PROGRESS
+        && content_visibility > SHARED_CONTENT_REVEAL_PROGRESS
+        && cards_height > 4.0
+        && !status_surface_active;
+    let interactive = visible
+        && height_progress > SHARED_CONTENT_INTERACTIVE_PROGRESS
+        && bar_progress > SHARED_CONTENT_INTERACTIVE_PROGRESS
+        && content_visibility > SHARED_CONTENT_INTERACTIVE_PROGRESS;
+    (visible, interactive)
+}
+
+#[cfg(target_os = "macos")]
 fn native_panel_content_visibility() -> f64 {
     native_panel_state()
         .and_then(|state| {
             state.lock().ok().map(|guard| {
                 if guard.transitioning {
-                    let progress = guard.transition_cards_progress.clamp(0.0, 1.0);
-                    if guard.transition_cards_entering {
-                        progress
-                    } else {
-                        1.0 - progress
-                    }
+                    card_content_visibility_phase(
+                        guard.transition_cards_progress,
+                        guard.transition_cards_entering,
+                    )
                 } else if guard.expanded {
                     1.0
                 } else {
@@ -2760,7 +2821,7 @@ unsafe fn apply_card_stack_transition(
                     lerp(0.96, 1.0, shell_progress),
                     lerp(0.82, 1.0, shell_progress),
                     lerp(PANEL_CARD_REVEAL_Y, 0.0, shell_progress),
-                    ease_out_cubic(((phase - 0.18) / 0.82).clamp(0.0, 1.0)),
+                    card_content_visibility_phase(phase, true),
                 )
             } else {
                 let squeeze_phase = (phase / 0.28).clamp(0.0, 1.0);
@@ -2784,11 +2845,7 @@ unsafe fn apply_card_stack_transition(
                         lerp(0.94, 0.76, exit_phase)
                     },
                     0.0,
-                    if phase <= 0.30 {
-                        1.0 - (0.06 * (phase / 0.30).clamp(0.0, 1.0))
-                    } else {
-                        0.94 * (1.0 - ease_in_cubic(((phase - 0.30) / 0.70).clamp(0.0, 1.0)))
-                    },
+                    card_content_visibility_phase(phase, false),
                 )
             };
 
@@ -2835,11 +2892,7 @@ unsafe fn apply_card_exit_phase(card: &NSView, phase: f64) {
     } else {
         1.0 - ease_in_cubic(exit_phase)
     };
-    let content_progress = if phase <= 0.30 {
-        1.0 - (0.06 * (phase / 0.30).clamp(0.0, 1.0))
-    } else {
-        0.94 * (1.0 - ease_in_cubic(((phase - 0.30) / 0.70).clamp(0.0, 1.0)))
-    };
+    let content_progress = card_content_visibility_phase(phase, false);
     let current_height = (base_layout.frame.size.height * visible_ratio).max(1.0);
     let scale_x = if phase <= 0.28 {
         lerp(1.0, 1.003, squeeze_phase)
@@ -2873,6 +2926,27 @@ unsafe fn apply_card_exit_phase(card: &NSView, phase: f64) {
     }
 
     apply_card_content_phase(card, phase, false, content_progress);
+}
+
+#[cfg(target_os = "macos")]
+fn card_content_visibility_phase(phase: f64, entering: bool) -> f64 {
+    let phase = phase.clamp(0.0, 1.0);
+    if entering {
+        ease_out_cubic(
+            ((phase - PANEL_CARD_CONTENT_REVEAL_DELAY_PROGRESS)
+                / (1.0 - PANEL_CARD_CONTENT_REVEAL_DELAY_PROGRESS))
+                .clamp(0.0, 1.0),
+        )
+    } else if phase <= PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS {
+        1.0 - (0.06 * (phase / PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS).clamp(0.0, 1.0))
+    } else {
+        0.94 * (1.0
+            - ease_in_cubic(
+                ((phase - PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS)
+                    / (1.0 - PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS))
+                    .clamp(0.0, 1.0),
+            ))
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -5704,11 +5778,18 @@ unsafe fn view_from_ptr(ptr: usize) -> &'static NSView {
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use chrono::Utc;
-    use echoisland_runtime::RuntimeSnapshot;
-    use echoisland_runtime::SessionSnapshotView;
+    use std::time::{Duration, Instant};
 
-    use super::{compact_active_count_text, summarize_headline};
+    use chrono::Utc;
+    use echoisland_runtime::{PendingPermissionView, RuntimeSnapshot, SessionSnapshotView};
+
+    use super::{
+        HOVER_DELAY_MS, NativeExpandedSurface, NativeHoverTransition, NativeMascotRuntime,
+        NativePanelState, NativeStatusQueuePayload, PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
+        card_content_visibility_phase, compact_active_count_text, shared_expanded_content_state,
+        summarize_headline, surface_switch_card_progress, sync_native_hover_expansion_state,
+        sync_native_pending_card_visibility, sync_native_status_queue,
+    };
 
     fn snapshot(active: usize, total: usize) -> RuntimeSnapshot {
         RuntimeSnapshot {
@@ -5756,6 +5837,51 @@ mod tests {
         }
     }
 
+    fn pending_permission(request_id: &str, session_id: &str) -> PendingPermissionView {
+        PendingPermissionView {
+            request_id: request_id.to_string(),
+            session_id: session_id.to_string(),
+            source: "claude".to_string(),
+            tool_name: Some("Bash".to_string()),
+            tool_description: Some("Run command".to_string()),
+            requested_at: Utc::now(),
+        }
+    }
+
+    fn snapshot_with_permission(request_id: &str, session_id: &str) -> RuntimeSnapshot {
+        let mut snapshot = snapshot(1, 1);
+        let pending = pending_permission(request_id, session_id);
+        snapshot.pending_permission_count = 1;
+        snapshot.pending_permission = Some(pending.clone());
+        snapshot.pending_permissions = vec![pending];
+        snapshot.sessions = vec![session("WaitingApproval")];
+        snapshot
+    }
+
+    fn panel_state() -> NativePanelState {
+        NativePanelState {
+            expanded: false,
+            transitioning: false,
+            transition_cards_progress: 0.0,
+            transition_cards_entering: false,
+            skip_next_close_card_exit: false,
+            last_raw_snapshot: None,
+            last_snapshot: None,
+            status_queue: Vec::new(),
+            pending_permission_card: None,
+            pending_question_card: None,
+            status_auto_expanded: false,
+            surface_mode: NativeExpandedSurface::Default,
+            shared_body_height: None,
+            pointer_inside_since: None,
+            pointer_outside_since: None,
+            primary_mouse_down: false,
+            last_focus_click: None,
+            card_hit_targets: Vec::new(),
+            mascot_runtime: NativeMascotRuntime::new(Instant::now()),
+        }
+    }
+
     #[test]
     fn summarizes_empty_snapshot() {
         assert_eq!(summarize_headline(&snapshot(0, 0)), "No active tasks");
@@ -5763,7 +5889,9 @@ mod tests {
 
     #[test]
     fn summarizes_active_snapshot() {
-        assert_eq!(summarize_headline(&snapshot(2, 5)), "2 active tasks");
+        let mut snapshot = snapshot(2, 5);
+        snapshot.sessions = vec![session("Running"), session("Processing")];
+        assert_eq!(summarize_headline(&snapshot), "2 active tasks");
     }
 
     #[test]
@@ -5771,5 +5899,148 @@ mod tests {
         let mut snapshot = snapshot(0, 1);
         snapshot.sessions = vec![session("Idle")];
         assert_eq!(compact_active_count_text(&snapshot), "0");
+    }
+
+    #[test]
+    fn resolved_approval_enters_status_queue_exit_instead_of_waiting_for_expiry() {
+        let mut state = panel_state();
+        let live_snapshot = snapshot_with_permission("request-1", "session-1");
+
+        assert!(sync_native_status_queue(&mut state, &live_snapshot));
+        assert_eq!(state.status_queue.len(), 1);
+        state.last_raw_snapshot = Some(live_snapshot);
+
+        let empty_snapshot = snapshot(0, 1);
+        assert!(!sync_native_status_queue(&mut state, &empty_snapshot));
+
+        assert_eq!(state.status_queue.len(), 1);
+        assert!(state.status_queue[0].is_removing);
+        assert!(state.status_queue[0].remove_after.is_some());
+        assert!(matches!(
+            state.status_queue[0].payload,
+            NativeStatusQueuePayload::Approval(_)
+        ));
+    }
+
+    #[test]
+    fn pending_card_grace_snapshot_does_not_readd_status_approval() {
+        let mut state = panel_state();
+        let live_snapshot = snapshot_with_permission("request-1", "session-1");
+        let held_snapshot = sync_native_pending_card_visibility(&mut state, &live_snapshot);
+
+        assert_eq!(held_snapshot.pending_permission_count, 1);
+        state.last_raw_snapshot = Some(live_snapshot);
+
+        let empty_snapshot = snapshot(0, 1);
+        let held_after_resolve = sync_native_pending_card_visibility(&mut state, &empty_snapshot);
+
+        assert_eq!(held_after_resolve.pending_permission_count, 1);
+        assert!(!sync_native_status_queue(&mut state, &empty_snapshot));
+        assert!(state.status_queue.is_empty());
+    }
+
+    #[test]
+    fn surface_switch_card_progress_starts_above_zero_for_continuity() {
+        assert_eq!(
+            surface_switch_card_progress(0, 220),
+            PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS
+        );
+    }
+
+    #[test]
+    fn surface_switch_card_progress_reaches_full_visibility() {
+        assert_eq!(surface_switch_card_progress(220, 220), 1.0);
+        assert_eq!(surface_switch_card_progress(999, 220), 1.0);
+        assert_eq!(surface_switch_card_progress(0, 0), 1.0);
+    }
+
+    #[test]
+    fn entering_content_visibility_waits_for_reveal_delay() {
+        assert_eq!(card_content_visibility_phase(0.10, true), 0.0);
+        assert_eq!(card_content_visibility_phase(0.18, true), 0.0);
+        assert!(card_content_visibility_phase(0.24, true) > 0.0);
+    }
+
+    #[test]
+    fn exiting_content_visibility_fades_to_zero() {
+        assert_eq!(card_content_visibility_phase(0.0, false), 1.0);
+        assert!(card_content_visibility_phase(0.30, false) < 1.0);
+        assert_eq!(card_content_visibility_phase(1.0, false), 0.0);
+    }
+
+    #[test]
+    fn shared_content_waits_for_card_content_reveal() {
+        let (visible, interactive) =
+            shared_expanded_content_state(true, true, 1.0, 1.0, 120.0, false, 0.80);
+
+        assert!(!visible);
+        assert!(!interactive);
+    }
+
+    #[test]
+    fn shared_content_becomes_visible_and_interactive_after_reveal() {
+        let (visible, interactive) =
+            shared_expanded_content_state(true, true, 1.0, 1.0, 120.0, false, 1.0);
+
+        assert!(visible);
+        assert!(interactive);
+    }
+
+    #[test]
+    fn shared_content_stays_hidden_for_status_surface() {
+        let (visible, interactive) =
+            shared_expanded_content_state(true, true, 1.0, 1.0, 120.0, true, 1.0);
+
+        assert!(!visible);
+        assert!(!interactive);
+    }
+
+    #[test]
+    fn hover_does_not_collapse_during_transition_even_after_delay() {
+        let now = Instant::now();
+        let mut state = panel_state();
+        state.expanded = true;
+        state.transitioning = true;
+        state.pointer_outside_since =
+            Some(now - Duration::from_millis(HOVER_DELAY_MS.saturating_add(100)));
+
+        let transition = sync_native_hover_expansion_state(&mut state, false, now);
+
+        assert_eq!(transition, None);
+        assert!(state.expanded);
+    }
+
+    #[test]
+    fn hover_collapse_reuses_existing_timer_after_transition_finishes() {
+        let now = Instant::now();
+        let mut state = panel_state();
+        state.expanded = true;
+        state.transitioning = false;
+        state.pointer_outside_since =
+            Some(now - Duration::from_millis(HOVER_DELAY_MS.saturating_add(100)));
+
+        let transition = sync_native_hover_expansion_state(&mut state, false, now);
+
+        assert_eq!(transition, Some(NativeHoverTransition::Collapse));
+        assert!(!state.expanded);
+    }
+
+    #[test]
+    fn status_auto_hover_keeps_live_status_surface_open_outside() {
+        let now = Instant::now();
+        let mut state = panel_state();
+        let live_snapshot = snapshot_with_permission("request-1", "session-1");
+        assert!(sync_native_status_queue(&mut state, &live_snapshot));
+        state.expanded = true;
+        state.status_auto_expanded = true;
+        state.surface_mode = NativeExpandedSurface::Status;
+        state.pointer_outside_since =
+            Some(now - Duration::from_millis(HOVER_DELAY_MS.saturating_add(100)));
+
+        let transition = sync_native_hover_expansion_state(&mut state, false, now);
+
+        assert_eq!(transition, None);
+        assert!(state.expanded);
+        assert_eq!(state.surface_mode, NativeExpandedSurface::Status);
     }
 }
