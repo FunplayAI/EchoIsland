@@ -251,16 +251,19 @@ fn resolve_focus_target(target: &SessionFocusTarget) -> Option<MacFocusTarget> {
         return Some(bundle_target);
     }
 
-    let terminal_app = target
-        .terminal_app
-        .as_deref()
-        .map(normalize_token)
-        .unwrap_or_default();
-    let host_app = target
-        .host_app
-        .as_deref()
-        .map(normalize_token)
-        .unwrap_or_default();
+    let terminal_app = target.terminal_app.as_deref().unwrap_or_default();
+    let host_app = target.host_app.as_deref().unwrap_or_default();
+
+    if let Some(resolved) = resolve_focus_target_bundle(terminal_app) {
+        return Some(resolved);
+    }
+
+    if let Some(resolved) = resolve_focus_target_bundle(host_app) {
+        return Some(resolved);
+    }
+
+    let terminal_app = normalize_token(terminal_app);
+    let host_app = normalize_token(host_app);
 
     let allow_terminal_app_token =
         target.terminal_bundle.is_some() || !is_unreliable_terminal_app_token(&terminal_app);
@@ -2016,6 +2019,25 @@ mod tests {
             resolve_focus_target(&target),
             Some(MacFocusTarget::TerminalApp)
         );
+    }
+
+    #[test]
+    fn host_app_bundle_resolves_native_desktop_target() {
+        let mut target = target();
+        target.host_app = Some("com.openai.codex".to_string());
+
+        assert_eq!(
+            resolve_focus_target(&target),
+            Some(MacFocusTarget::CodexApp)
+        );
+    }
+
+    #[test]
+    fn terminal_app_bundle_resolves_before_token_normalization() {
+        let mut target = target();
+        target.terminal_app = Some("com.github.wez.wezterm".to_string());
+
+        assert_eq!(resolve_focus_target(&target), Some(MacFocusTarget::WezTerm));
     }
 
     #[test]
