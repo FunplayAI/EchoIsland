@@ -1,17 +1,36 @@
 use std::{
     collections::BTreeSet,
     env,
-    io::Write,
     process::{Command, Stdio},
-    sync::atomic::{AtomicBool, Ordering},
 };
 
 use anyhow::Result;
 use chrono::{Local, NaiveDateTime, TimeZone};
 use echoisland_core::EventMetadata;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use super::{FocusOutcome, ForegroundTabInfo, SessionFocusTarget, SessionTabCache};
+
+mod native_apps;
+mod osascript;
+mod title_match;
+mod tmux;
+mod util;
+
+use native_apps::{
+    activate_app_bundle, activate_app_name, native_app_bundle_for_terminal,
+    source_native_app_bundle,
+};
+use osascript::{escape_applescript, run_osascript_raw};
+use title_match::{
+    applescript_title_candidate_records, ide_window_title_candidates,
+    terminal_window_title_candidates,
+};
+use tmux::{effective_tty, tmux_session_name, tmux_window_key};
+use util::{
+    find_binary, has_text, is_precise_terminal_tty, last_path_component, normalize_token,
+    normalize_tty, resolve_symlinks, run_process, tilde_path,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MacFocusTarget {
@@ -47,13 +66,6 @@ struct RunningTerminalCandidate {
 struct ProcessInfo {
     ppid: u32,
     command: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct TitleMatchCandidate {
-    reason: &'static str,
-    value: String,
-    score: u8,
 }
 
 const RUNNING_TERMINAL_CANDIDATES: &[RunningTerminalCandidate] = &[
@@ -108,9 +120,6 @@ const RUNNING_TERMINAL_CANDIDATES: &[RunningTerminalCandidate] = &[
         process_names: &["Terminal"],
     },
 ];
-
-static DID_WARN_ACCESSIBILITY_PERMISSION: AtomicBool = AtomicBool::new(false);
-static DID_WARN_AUTOMATION_PERMISSION: AtomicBool = AtomicBool::new(false);
 
 pub fn focus_session_terminal(
     target: &SessionFocusTarget,
@@ -1517,277 +1526,6 @@ return false
     }
 }
 
-fn terminal_window_title_candidates(target: &SessionFocusTarget) -> Vec<TitleMatchCandidate> {
-    let mut candidates = Vec::new();
-    push_title_candidate(
-        &mut candidates,
-        "window_title",
-        target.window_title.as_deref(),
-        6,
-    );
-    if let Some(cwd) = target.cwd.as_deref().filter(|value| has_text(value)) {
-        push_title_candidate(&mut candidates, "cwd", Some(cwd), 5);
-        let resolved_cwd = resolve_symlinks(cwd);
-        if resolved_cwd != cwd {
-            push_title_candidate(&mut candidates, "resolved_cwd", Some(&resolved_cwd), 4);
-        }
-        let tilde_cwd = tilde_path(cwd);
-        push_title_candidate(&mut candidates, "tilde_cwd", Some(&tilde_cwd), 3);
-        let folder_name = last_path_component(cwd);
-        push_title_candidate(&mut candidates, "folder_name", Some(&folder_name), 1);
-    }
-    push_title_candidate(
-        &mut candidates,
-        "project_name",
-        target.project_name.as_deref(),
-        2,
-    );
-    candidates
-}
-
-fn ide_window_title_candidates(target: &SessionFocusTarget) -> Vec<TitleMatchCandidate> {
-    let mut candidates = Vec::new();
-    push_title_candidate(
-        &mut candidates,
-        "window_title",
-        target.window_title.as_deref(),
-        5,
-    );
-    push_title_candidate(
-        &mut candidates,
-        "project_name",
-        target.project_name.as_deref(),
-        4,
-    );
-    if let Some(cwd) = target.cwd.as_deref().filter(|value| has_text(value)) {
-        let folder_name = last_path_component(cwd);
-        push_title_candidate(&mut candidates, "folder_name", Some(&folder_name), 3);
-        push_title_candidate(&mut candidates, "cwd", Some(cwd), 2);
-    }
-    candidates
-}
-
-fn push_title_candidate(
-    candidates: &mut Vec<TitleMatchCandidate>,
-    reason: &'static str,
-    value: Option<&str>,
-    score: u8,
-) {
-    let Some(value) = value.map(str::trim).filter(|value| value.len() >= 2) else {
-        return;
-    };
-    if candidates.iter().any(|candidate| candidate.value == value) {
-        return;
-    }
-    candidates.push(TitleMatchCandidate {
-        reason,
-        value: value.to_string(),
-        score,
-    });
-}
-
-fn applescript_title_candidate_records(candidates: &[TitleMatchCandidate]) -> String {
-    if candidates.is_empty() {
-        return "{}".to_string();
-    }
-    let records = candidates
-        .iter()
-        .map(|candidate| {
-            format!(
-                "{{\"{}\", \"{}\", {}}}",
-                escape_applescript(&candidate.value),
-                escape_applescript(candidate.reason),
-                candidate.score
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("{{{records}}}")
-}
-
-fn native_app_bundle_for_terminal(
-    target: &SessionFocusTarget,
-) -> Option<(&'static str, &'static str)> {
-    target
-        .terminal_bundle
-        .as_deref()
-        .and_then(native_app_bundle_display_name)
-}
-
-fn native_app_bundle_display_name(bundle_id: &str) -> Option<(&'static str, &'static str)> {
-    match bundle_id {
-        "com.openai.codex" => Some(("com.openai.codex", "Codex")),
-        "com.trae.app" => Some(("com.trae.app", "Trae")),
-        "com.qoder.ide" => Some(("com.qoder.ide", "Qoder")),
-        "com.factory.app" => Some(("com.factory.app", "Factory")),
-        "com.tencent.codebuddy" => Some(("com.tencent.codebuddy", "CodeBuddy")),
-        "com.tencent.codebuddy.cn" => Some(("com.tencent.codebuddy.cn", "CodyBuddyCN")),
-        "com.stepfun.app" => Some(("com.stepfun.app", "StepFun")),
-        "ai.opencode.desktop" => Some(("ai.opencode.desktop", "OpenCode")),
-        _ => None,
-    }
-}
-
-fn source_native_app_bundle(source: &str) -> Option<(&'static str, &'static str)> {
-    match source {
-        "codex" => Some(("com.openai.codex", "Codex")),
-        "trae" | "traecn" => Some(("com.trae.app", "Trae")),
-        "qoder" => Some(("com.qoder.ide", "Qoder")),
-        "droid" => Some(("com.factory.app", "Factory")),
-        "codebuddy" => Some(("com.tencent.codebuddy", "CodeBuddy")),
-        "codybuddycn" => Some(("com.tencent.codebuddy.cn", "CodyBuddyCN")),
-        "stepfun" => Some(("com.stepfun.app", "StepFun")),
-        "opencode" => Some(("ai.opencode.desktop", "OpenCode")),
-        _ => None,
-    }
-}
-
-fn activate_app_bundle(bundle_id: &str, display_name: &str) -> bool {
-    let opened = run_command_success("/usr/bin/open", &["-b", bundle_id], None);
-    let script = format!(
-        r#"try
-tell application id "{bundle_id}" to activate
-on error
-    tell application "{display_name}" to activate
-end try
-"#,
-        bundle_id = escape_applescript(bundle_id),
-        display_name = escape_applescript(display_name)
-    );
-    run_osascript(&script, display_name) || opened
-}
-
-fn activate_app_name(display_name: &str) -> bool {
-    let opened = run_command_success("/usr/bin/open", &["-a", display_name], None);
-    let script = format!(
-        r#"tell application "{display_name}" to activate
-"#,
-        display_name = escape_applescript(display_name)
-    );
-    run_osascript(&script, display_name) || opened
-}
-
-fn effective_tty(target: &SessionFocusTarget) -> Option<&str> {
-    if target
-        .tmux_pane
-        .as_deref()
-        .is_some_and(|value| !value.trim().is_empty())
-    {
-        return target
-            .tmux_client_tty
-            .as_deref()
-            .filter(|value| is_precise_terminal_tty(value));
-    }
-    target
-        .tty
-        .as_deref()
-        .filter(|value| is_precise_terminal_tty(value))
-}
-
-fn tmux_window_key(target: &SessionFocusTarget) -> String {
-    let Some(tmux_pane) = target
-        .tmux_pane
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    else {
-        return String::new();
-    };
-    let Some(bin) = find_binary("tmux") else {
-        return String::new();
-    };
-    let env_pairs = target
-        .tmux_env
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| [("TMUX", value)]);
-    run_process(
-        &bin,
-        &[
-            "display-message",
-            "-p",
-            "-t",
-            tmux_pane,
-            "-F",
-            "#{session_name}:#{window_index}:#{window_name}",
-        ],
-        env_pairs.as_ref().map(|pairs| &pairs[..]),
-    )
-    .unwrap_or_default()
-}
-
-fn tmux_session_name(target: &SessionFocusTarget) -> String {
-    let Some(tmux_pane) = target
-        .tmux_pane
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    else {
-        return String::new();
-    };
-    let Some(bin) = find_binary("tmux") else {
-        return String::new();
-    };
-    let env_pairs = target
-        .tmux_env
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| [("TMUX", value)]);
-    run_process(
-        &bin,
-        &[
-            "display-message",
-            "-p",
-            "-t",
-            tmux_pane,
-            "-F",
-            "#{session_name}",
-        ],
-        env_pairs.as_ref().map(|pairs| &pairs[..]),
-    )
-    .unwrap_or_default()
-}
-
-fn find_binary(name: &str) -> Option<String> {
-    [
-        format!("/opt/homebrew/bin/{name}"),
-        format!("/usr/local/bin/{name}"),
-        format!("/usr/bin/{name}"),
-    ]
-    .into_iter()
-    .find(|path| std::fs::metadata(path).is_ok())
-}
-
-fn run_process(path: &str, args: &[&str], extra_env: Option<&[(&str, &str)]>) -> Option<String> {
-    let mut command = Command::new(path);
-    command
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    if let Some(extra_env) = extra_env {
-        command.envs(extra_env.iter().copied());
-    }
-    let output = command.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!stdout.is_empty()).then_some(stdout)
-}
-
-fn run_command_success(path: &str, args: &[&str], extra_env: Option<&[(&str, &str)]>) -> bool {
-    let mut command = Command::new(path);
-    command
-        .args(args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if let Some(extra_env) = extra_env {
-        command.envs(extra_env.iter().copied());
-    }
-    command
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
 fn wezterm_tab_id_for_tty(bin: &str, tty: &str) -> Option<String> {
     let json = run_process(bin, &["cli", "list", "--format", "json"], None)?;
     parse_wezterm_tab_id(&json, |pane| {
@@ -1822,152 +1560,6 @@ fn parse_wezterm_tab_id(
             })
             .filter(|value| !value.is_empty())
     })
-}
-
-fn resolve_symlinks(path: &str) -> String {
-    std::fs::canonicalize(path)
-        .ok()
-        .and_then(|value| value.to_str().map(|value| value.to_string()))
-        .unwrap_or_else(|| path.to_string())
-}
-
-fn tilde_path(path: &str) -> String {
-    let Ok(home) = env::var("HOME") else {
-        return String::new();
-    };
-    if path == home {
-        "~".to_string()
-    } else if let Some(suffix) = path.strip_prefix(&(home.clone() + "/")) {
-        format!("~/{suffix}")
-    } else {
-        String::new()
-    }
-}
-
-fn run_osascript(source: &str, label: &str) -> bool {
-    let Some(output) = run_osascript_raw(source, label) else {
-        return false;
-    };
-    debug!(label, output = %output, "osascript command succeeded");
-    true
-}
-
-fn run_osascript_raw(source: &str, label: &str) -> Option<String> {
-    let mut child = match Command::new("/usr/bin/osascript")
-        .arg("-")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(error) => {
-            warn!(label, error = %error, "failed to spawn osascript");
-            return None;
-        }
-    };
-
-    if let Some(stdin) = child.stdin.as_mut()
-        && let Err(error) = stdin.write_all(source.as_bytes())
-    {
-        warn!(label, error = %error, "failed to write osascript source");
-        let _ = child.kill();
-        return None;
-    }
-
-    match child.wait_with_output() {
-        Ok(output) if output.status.success() => {
-            Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            warn_macos_permission_hint(&stderr);
-            warn!(label, stderr, "osascript command failed");
-            None
-        }
-        Err(error) => {
-            warn!(label, error = %error, "failed waiting for osascript");
-            None
-        }
-    }
-}
-
-fn warn_macos_permission_hint(stderr: &str) {
-    if stderr.is_empty() {
-        return;
-    }
-
-    if is_accessibility_permission_error(stderr) {
-        if !DID_WARN_ACCESSIBILITY_PERMISSION.swap(true, Ordering::Relaxed) {
-            warn!(
-                "macOS terminal focus requires Accessibility permission. Enable the terminal app that launched EchoIsland in System Settings > Privacy & Security > Accessibility."
-            );
-        }
-        return;
-    }
-
-    if is_automation_permission_error(stderr)
-        && !DID_WARN_AUTOMATION_PERMISSION.swap(true, Ordering::Relaxed)
-    {
-        warn!(
-            "macOS terminal focus requires Automation permission. Allow the launcher app to control System Events and your terminal app in System Settings > Privacy & Security > Automation."
-        );
-    }
-}
-
-fn is_accessibility_permission_error(stderr: &str) -> bool {
-    let lower = stderr.to_ascii_lowercase();
-    lower.contains("(-25211)") || lower.contains("assistive access") || lower.contains("辅助访问")
-}
-
-fn is_automation_permission_error(stderr: &str) -> bool {
-    let lower = stderr.to_ascii_lowercase();
-    lower.contains("(-1743)")
-        || lower.contains("not authorized to send apple events")
-        || lower.contains("apple events")
-        || lower.contains("不允许发送 apple event")
-        || lower.contains("不允许控制")
-}
-
-fn last_path_component(path: &str) -> String {
-    let trimmed = path.trim_end_matches('/');
-    trimmed
-        .rsplit('/')
-        .find(|segment| !segment.is_empty())
-        .unwrap_or(trimmed)
-        .to_string()
-}
-
-fn normalize_token(value: &str) -> String {
-    value
-        .trim()
-        .to_ascii_lowercase()
-        .replace([' ', '-', '.'], "_")
-}
-
-fn normalize_tty(value: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.starts_with("/dev/") {
-        trimmed.to_string()
-    } else {
-        format!("/dev/{trimmed}")
-    }
-}
-
-fn is_precise_terminal_tty(value: &str) -> bool {
-    let trimmed = value.trim();
-    !trimmed.is_empty() && trimmed != "/dev/tty" && trimmed != "/dev/console"
-}
-
-fn has_text(value: &str) -> bool {
-    !value.trim().is_empty()
-}
-
-fn escape_applescript(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', " ")
 }
 
 #[cfg(test)]
