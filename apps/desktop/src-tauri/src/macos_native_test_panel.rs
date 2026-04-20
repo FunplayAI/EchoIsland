@@ -68,17 +68,35 @@ mod display_helpers;
 #[cfg(target_os = "macos")]
 mod mascot;
 #[cfg(target_os = "macos")]
+mod mascot_render;
+#[cfg(target_os = "macos")]
+mod panel_assembly;
+#[cfg(target_os = "macos")]
 mod panel_geometry;
+#[cfg(target_os = "macos")]
+mod panel_handles_init;
+#[cfg(target_os = "macos")]
+mod panel_interaction;
 #[cfg(target_os = "macos")]
 mod panel_refs;
 #[cfg(target_os = "macos")]
 mod panel_render;
 #[cfg(target_os = "macos")]
+mod panel_setup;
+#[cfg(target_os = "macos")]
 mod panel_shoulder;
+#[cfg(target_os = "macos")]
+mod panel_snapshot;
+#[cfg(target_os = "macos")]
+mod panel_state_init;
 #[cfg(target_os = "macos")]
 mod panel_style;
 #[cfg(target_os = "macos")]
+mod panel_transition_entry;
+#[cfg(target_os = "macos")]
 mod panel_views;
+#[cfg(target_os = "macos")]
+mod panel_window;
 #[cfg(target_os = "macos")]
 mod queue_logic;
 #[cfg(target_os = "macos")]
@@ -103,11 +121,29 @@ use display_helpers::*;
 #[cfg(target_os = "macos")]
 use mascot::*;
 #[cfg(target_os = "macos")]
+use mascot_render::*;
+#[cfg(target_os = "macos")]
+use panel_assembly::*;
+#[cfg(target_os = "macos")]
 use panel_geometry::*;
+#[cfg(target_os = "macos")]
+use panel_handles_init::*;
+#[cfg(target_os = "macos")]
+use panel_interaction::*;
 #[cfg(target_os = "macos")]
 use panel_refs::*;
 #[cfg(target_os = "macos")]
 use panel_render::*;
+#[cfg(target_os = "macos")]
+use panel_setup::*;
+#[cfg(target_os = "macos")]
+use panel_snapshot::*;
+#[cfg(target_os = "macos")]
+pub(crate) use panel_snapshot::{set_shared_expanded_body_height, update_native_island_snapshot};
+#[cfg(target_os = "macos")]
+use panel_state_init::*;
+#[cfg(target_os = "macos")]
+use panel_transition_entry::*;
 #[cfg(target_os = "macos")]
 use panel_views::*;
 #[cfg(target_os = "macos")]
@@ -506,54 +542,34 @@ pub fn create_native_island_panel() -> Result<(), String> {
         return Err("native test panel must be created on the main thread".to_string());
     };
 
-    let screen = NSScreen::mainScreen(mtm)
-        .or_else(|| {
-            let screens = NSScreen::screens(mtm);
-            if screens.is_empty() {
-                None
-            } else {
-                Some(screens.objectAtIndex(0))
-            }
-        })
-        .ok_or_else(|| "failed to resolve a macOS screen".to_string())?;
-
-    let compact_height = compact_pill_height_for_screen(&screen);
-    let compact_width = compact_pill_width_for_screen(&screen, compact_height);
-    let expanded_width = expanded_panel_width_for_screen(&screen);
-    let panel_width = panel_canvas_width_for_screen(&screen, compact_height);
-    let size = NSSize::new(panel_width, COLLAPSED_PANEL_HEIGHT);
-    let pill_size = NSSize::new(compact_width, compact_height);
-    let screen_frame = screen.frame();
-    let frame = centered_top_frame(screen_frame, size);
-
-    let style = NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel;
-    let panel = NSPanel::initWithContentRect_styleMask_backing_defer(
-        NSPanel::alloc(mtm),
-        frame,
-        style,
-        NSBackingStoreType::Buffered,
-        false,
-    );
-
-    let pill_frame = island_bar_frame(
-        size,
-        0.0,
+    let setup = resolve_native_panel_setup(mtm)?;
+    let colors = native_panel_colors();
+    let NativePanelSetup {
+        screen,
+        compact_height,
         compact_width,
         expanded_width,
-        compact_height,
-        0.0,
-    );
-
-    let panel_background = NSColor::clearColor();
-    let pill_background = NSColor::colorWithSRGBRed_green_blue_alpha(0.0, 0.0, 0.0, 1.0);
-    let pill_border = NSColor::colorWithSRGBRed_green_blue_alpha(1.0, 1.0, 1.0, 0.055);
-    let pill_highlight = NSColor::colorWithSRGBRed_green_blue_alpha(1.0, 1.0, 1.0, 0.16);
-    let mascot_shell_border = NSColor::colorWithSRGBRed_green_blue_alpha(1.0, 1.0, 1.0, 0.08);
-    let expanded_background = NSColor::colorWithSRGBRed_green_blue_alpha(0.0, 0.0, 0.0, 1.0);
-    let expanded_border = NSColor::colorWithSRGBRed_green_blue_alpha(1.0, 1.0, 1.0, 0.0);
-    let text_primary = NSColor::colorWithSRGBRed_green_blue_alpha(0.96, 0.97, 0.99, 1.0);
-    let accent_active = NSColor::colorWithSRGBRed_green_blue_alpha(0.40, 0.87, 0.57, 1.0);
-    let separator_color = NSColor::colorWithSRGBRed_green_blue_alpha(1.0, 1.0, 1.0, 0.11);
+        size,
+        pill_size,
+        screen_frame,
+        frame,
+        pill_frame,
+    } = setup;
+    let panel = panel_window::create_native_panel_window(mtm, frame);
+    let NativePanelColors {
+        pill_background,
+        pill_border,
+        pill_highlight,
+        mascot_shell_border,
+        mascot_body_fill,
+        mascot_stroke,
+        mascot_face,
+        expanded_background,
+        expanded_border,
+        text_primary,
+        accent_active,
+        separator_color,
+    } = colors;
 
     let PanelBaseViews {
         content_view,
@@ -579,9 +595,6 @@ pub fn create_native_island_panel() -> Result<(), String> {
         &expanded_border,
         &separator_color,
     );
-    let mascot_body_fill = NSColor::colorWithSRGBRed_green_blue_alpha(0.02, 0.02, 0.02, 1.0);
-    let mascot_stroke = NSColor::colorWithSRGBRed_green_blue_alpha(1.0, 0.48, 0.14, 1.0);
-    let mascot_face = NSColor::colorWithSRGBRed_green_blue_alpha(1.0, 1.0, 1.0, 1.0);
     let MascotViews {
         shell: mascot_shell,
         body: mascot_body,
@@ -613,90 +626,51 @@ pub fn create_native_island_panel() -> Result<(), String> {
         &accent_active,
     );
 
-    pill_view.addSubview(&top_highlight);
-    pill_view.addSubview(&mascot_shell);
-    pill_view.addSubview(&headline);
-    pill_view.addSubview(&active_count_clip);
-    pill_view.addSubview(&slash);
-    pill_view.addSubview(&total_count);
-    content_view.addSubview(&expanded_container);
-    expanded_container.addSubview(&body_separator);
-    content_view.addSubview(&left_shoulder);
-    content_view.addSubview(&right_shoulder);
-    content_view.addSubview(&pill_view);
+    assemble_native_panel_views(NativePanelAssemblyViews {
+        content_view: &content_view,
+        left_shoulder: &left_shoulder,
+        right_shoulder: &right_shoulder,
+        pill_view: &pill_view,
+        expanded_container: &expanded_container,
+        top_highlight: &top_highlight,
+        body_separator: &body_separator,
+        mascot_shell: &mascot_shell,
+        headline: &headline,
+        active_count_clip: &active_count_clip,
+        slash: &slash,
+        total_count: &total_count,
+    });
 
     unsafe {
-        panel.setReleasedWhenClosed(false);
+        panel_window::configure_native_panel_window(&panel, &content_view, frame);
     }
-    panel.setFloatingPanel(true);
-    panel.setBecomesKeyOnlyIfNeeded(false);
-    panel.setWorksWhenModal(true);
-    panel.setLevel(26);
-    panel.setBackgroundColor(Some(&panel_background));
-    panel.setOpaque(false);
-    panel.setHasShadow(false);
-    panel.setAnimationBehavior(NSWindowAnimationBehavior::None);
-    panel.setMovableByWindowBackground(false);
-    panel.setHidesOnDeactivate(false);
-    panel.setAcceptsMouseMovedEvents(true);
-    panel.setIgnoresMouseEvents(true);
-    panel.setCollectionBehavior(
-        NSWindowCollectionBehavior::CanJoinAllSpaces
-            | NSWindowCollectionBehavior::FullScreenAuxiliary
-            | NSWindowCollectionBehavior::Stationary
-            | NSWindowCollectionBehavior::IgnoresCycle,
-    );
-    panel.setContentView(Some(&content_view));
-    panel.setFrame_display(frame, true);
-    panel.orderFrontRegardless();
-    panel.displayIfNeeded();
 
-    let _ = NATIVE_TEST_PANEL_HANDLES.set(NativePanelHandles {
-        panel: (&*panel as *const NSPanel) as usize,
-        content_view: (&*content_view as *const NSView) as usize,
-        left_shoulder: (&*left_shoulder as *const NSView) as usize,
-        right_shoulder: (&*right_shoulder as *const NSView) as usize,
-        pill_view: (&*pill_view as *const NSView) as usize,
-        expanded_container: (&*expanded_container as *const NSView) as usize,
-        cards_container: (&*cards_container as *const NSView) as usize,
-        top_highlight: (&*top_highlight as *const NSView) as usize,
-        body_separator: (&*body_separator as *const NSView) as usize,
-        mascot_shell: (&*mascot_shell as *const NSView) as usize,
-        mascot_body: (&*mascot_body as *const NSView) as usize,
-        mascot_left_eye: (&*mascot_left_eye as *const NSView) as usize,
-        mascot_right_eye: (&*mascot_right_eye as *const NSView) as usize,
-        mascot_mouth: (&*mascot_mouth as *const NSView) as usize,
-        mascot_bubble: (&*mascot_bubble as *const NSView) as usize,
-        mascot_sleep_label: (&*mascot_sleep_label as *const NSTextField) as usize,
-        headline: (&*headline as *const NSTextField) as usize,
-        active_count_clip: (&*active_count_clip as *const NSClipView) as usize,
-        active_count: (&*active_count as *const NSTextField) as usize,
-        active_count_next: (&*active_count_next as *const NSTextField) as usize,
-        slash: (&*slash as *const NSTextField) as usize,
-        total_count: (&*total_count as *const NSTextField) as usize,
+    initialize_native_panel_handles(NativePanelHandleViews {
+        panel: &panel,
+        content_view: &content_view,
+        left_shoulder: &left_shoulder,
+        right_shoulder: &right_shoulder,
+        pill_view: &pill_view,
+        expanded_container: &expanded_container,
+        cards_container: &cards_container,
+        top_highlight: &top_highlight,
+        body_separator: &body_separator,
+        mascot_shell: &mascot_shell,
+        mascot_body: &mascot_body,
+        mascot_left_eye: &mascot_left_eye,
+        mascot_right_eye: &mascot_right_eye,
+        mascot_mouth: &mascot_mouth,
+        mascot_bubble: &mascot_bubble,
+        mascot_sleep_label: &mascot_sleep_label,
+        headline: &headline,
+        active_count_clip: &active_count_clip,
+        active_count: &active_count,
+        active_count_next: &active_count_next,
+        slash: &slash,
+        total_count: &total_count,
     });
-    let _ = NATIVE_TEST_PANEL_STATE.set(Mutex::new(NativePanelState {
-        expanded: false,
-        transitioning: false,
-        transition_cards_progress: 1.0,
-        transition_cards_entering: false,
-        skip_next_close_card_exit: false,
-        last_raw_snapshot: None,
-        last_snapshot: None,
-        status_queue: Vec::new(),
-        pending_permission_card: None,
-        pending_question_card: None,
-        status_auto_expanded: false,
-        surface_mode: NativeExpandedSurface::Default,
-        shared_body_height: None,
-        pointer_inside_since: None,
-        pointer_outside_since: None,
-        primary_mouse_down: false,
-        last_focus_click: None,
-        card_hit_targets: Vec::new(),
-        mascot_runtime: NativeMascotRuntime::new(Instant::now()),
-    }));
-    let _ = ACTIVE_COUNT_SCROLL_TEXT.set(Mutex::new("0".to_string()));
+    initialize_native_panel_state();
+    initialize_active_count_scroll_text();
 
     info!(
         panel_x = frame.origin.x,
@@ -738,202 +712,6 @@ pub fn hide_native_island_panel<R: tauri::Runtime>(app: &AppHandle<R>) -> Result
         }
     })
     .map_err(|error| error.to_string())
-}
-
-#[cfg(target_os = "macos")]
-pub fn update_native_island_snapshot<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    snapshot: &RuntimeSnapshot,
-) -> Result<(), String> {
-    if !native_ui_enabled() {
-        return Ok(());
-    }
-
-    let Some(handles) = native_panel_handles() else {
-        return Ok(());
-    };
-
-    let raw_snapshot = snapshot.clone();
-    let snapshot = {
-        let Some(state) = native_panel_state() else {
-            return Ok(());
-        };
-        let mut state = state
-            .lock()
-            .map_err(|_| "native panel state poisoned".to_string())?;
-        sync_native_pending_card_visibility(&mut state, &raw_snapshot)
-    };
-    if macos_shared_expanded_window::shared_expanded_enabled() {
-        if let Err(error) =
-            macos_shared_expanded_window::sync_shared_expanded_snapshot(app, &snapshot)
-        {
-            warn!(error = %error, "failed to sync shared expanded snapshot");
-        }
-    }
-    let mut transition_snapshot: Option<(RuntimeSnapshot, bool)> = None;
-    let mut surface_transition_snapshot: Option<RuntimeSnapshot> = None;
-    let (
-        expanded,
-        shared_body_height,
-        transitioning,
-        transition_cards_progress,
-        transition_cards_entering,
-    ) = {
-        let Some(state) = native_panel_state() else {
-            return Ok(());
-        };
-        let mut state = state
-            .lock()
-            .map_err(|_| "native panel state poisoned".to_string())?;
-        let was_status_surface =
-            state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
-        let status_queue_added = sync_native_status_queue(&mut state, &raw_snapshot);
-        if status_queue_added && !state.expanded && !state.transitioning {
-            state.expanded = true;
-            state.status_auto_expanded = true;
-            state.surface_mode = NativeExpandedSurface::Status;
-            transition_snapshot = Some((snapshot.clone(), true));
-        } else if status_queue_added
-            && state.expanded
-            && !state.transitioning
-            && state.pointer_inside_since.is_none()
-        {
-            state.status_auto_expanded = true;
-            state.surface_mode = NativeExpandedSurface::Status;
-        } else if state.status_auto_expanded
-            && state.status_queue.is_empty()
-            && state.expanded
-            && !state.transitioning
-            && state.pointer_inside_since.is_none()
-        {
-            state.expanded = false;
-            state.status_auto_expanded = false;
-            state.surface_mode = NativeExpandedSurface::Default;
-            state.skip_next_close_card_exit = true;
-            transition_snapshot = Some((snapshot.clone(), false));
-        } else if state.status_queue.is_empty()
-            && state.surface_mode == NativeExpandedSurface::Status
-        {
-            state.surface_mode = NativeExpandedSurface::Default;
-            state.status_auto_expanded = false;
-        }
-        let is_status_surface =
-            state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
-        if was_status_surface != is_status_surface && state.expanded && !state.transitioning {
-            surface_transition_snapshot = Some(snapshot.clone());
-        }
-        state.last_raw_snapshot = Some(raw_snapshot.clone());
-        state.last_snapshot = Some(snapshot.clone());
-        (
-            state.expanded,
-            state.shared_body_height,
-            state.transitioning,
-            state.transition_cards_progress,
-            state.transition_cards_entering,
-        )
-    };
-
-    if let Some((transition_snapshot, expanded)) = transition_snapshot {
-        let app_for_transition = app.clone();
-        return app
-            .run_on_main_thread(move || unsafe {
-                begin_native_panel_transition(
-                    app_for_transition,
-                    handles,
-                    transition_snapshot,
-                    expanded,
-                );
-            })
-            .map_err(|error| error.to_string());
-    }
-
-    if let Some(snapshot) = surface_transition_snapshot {
-        let app_for_transition = app.clone();
-        return app
-            .run_on_main_thread(move || unsafe {
-                begin_native_panel_surface_transition(app_for_transition, handles, snapshot);
-            })
-            .map_err(|error| error.to_string());
-    }
-
-    app.run_on_main_thread(move || unsafe {
-        apply_snapshot_to_panel(
-            handles,
-            &snapshot,
-            expanded,
-            shared_body_height,
-            transitioning,
-            transition_cards_progress,
-            transition_cards_entering,
-        );
-    })
-    .map_err(|error| error.to_string())
-}
-
-#[cfg(target_os = "macos")]
-pub fn set_shared_expanded_body_height<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    body_height: f64,
-) -> Result<(), String> {
-    if !native_ui_enabled() {
-        return Ok(());
-    }
-
-    let Some(handles) = native_panel_handles() else {
-        return Ok(());
-    };
-    let Some(state_mutex) = native_panel_state() else {
-        return Ok(());
-    };
-
-    let rerender_payload = {
-        let mut state = state_mutex
-            .lock()
-            .map_err(|_| "native panel state poisoned".to_string())?;
-        let next_height = body_height.max(0.0);
-        if state
-            .shared_body_height
-            .is_some_and(|current| (current - next_height).abs() < 1.0)
-        {
-            return Ok(());
-        }
-        state.shared_body_height = Some(next_height);
-        state.last_snapshot.clone().map(|snapshot| {
-            (
-                snapshot,
-                state.expanded,
-                state.shared_body_height,
-                state.transitioning,
-                state.transition_cards_progress,
-                state.transition_cards_entering,
-            )
-        })
-    };
-
-    if let Some((
-        snapshot,
-        expanded,
-        shared_body_height,
-        transitioning,
-        transition_cards_progress,
-        transition_cards_entering,
-    )) = rerender_payload
-    {
-        app.run_on_main_thread(move || unsafe {
-            apply_snapshot_to_panel(
-                handles,
-                &snapshot,
-                expanded,
-                shared_body_height,
-                transitioning,
-                transition_cards_progress,
-                transition_cards_entering,
-            );
-        })
-        .map_err(|error| error.to_string())?;
-    }
-
-    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -1047,469 +825,6 @@ pub fn hide_main_webview_window<R: tauri::Runtime>(app: &AppHandle<R>) -> Result
     }
 
     Ok(())
-}
-
-#[cfg(target_os = "macos")]
-async fn sync_native_snapshot_once<R: tauri::Runtime>(app: &AppHandle<R>, runtime: &AppRuntime) {
-    let raw_snapshot = runtime.runtime.snapshot().await;
-    if raw_snapshot.pending_permission_count > 0 || raw_snapshot.pending_question_count > 0 {
-        warn!(
-            active_session_count = raw_snapshot.active_session_count,
-            pending_permission_count = raw_snapshot.pending_permission_count,
-            pending_question_count = raw_snapshot.pending_question_count,
-            "native snapshot loop observed pending items"
-        );
-    }
-    if raw_snapshot.active_session_count > 0 {
-        if let Err(error) = TerminalFocusService::new(runtime)
-            .sync_snapshot_focus_bindings(&raw_snapshot)
-            .await
-        {
-            warn!(error = %error, "failed to sync focus bindings during native snapshot refresh");
-        }
-    }
-
-    if let Err(error) = update_native_island_snapshot(app, &raw_snapshot) {
-        warn!(error = %error, "failed to update native macOS island panel");
-    }
-}
-
-#[cfg(target_os = "macos")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static>(app: AppHandle<R>) {
-    let Some(handles) = native_panel_handles() else {
-        return;
-    };
-    let Some(state_mutex) = native_panel_state() else {
-        return;
-    };
-
-    let refs = resolve_native_panel_refs(handles);
-    sync_active_count_marquee(&refs);
-
-    let panel = panel_from_ptr(handles.panel);
-    let mouse = NSEvent::mouseLocation();
-    let primary_mouse_down = (NSEvent::pressedMouseButtons() & 1) != 0;
-    let panel_frame = panel.frame();
-    let pill_frame = absolute_rect(panel_frame, compact_pill_frame(panel, panel_frame.size));
-    let expanded_container = view_from_ptr(handles.expanded_container);
-    let cards_container = view_from_ptr(handles.cards_container);
-    let inside = if panel_frame.size.height > COLLAPSED_PANEL_HEIGHT + 0.5 {
-        point_in_rect(
-            mouse,
-            absolute_rect(panel_frame, expanded_container.frame()),
-        )
-    } else {
-        point_in_rect(mouse, pill_frame)
-    };
-    panel.setIgnoresMouseEvents(!inside);
-
-    let now = Instant::now();
-    let mut transition_snapshot: Option<(RuntimeSnapshot, bool)> = None;
-    let mut surface_transition_snapshot: Option<RuntimeSnapshot> = None;
-    let mut clicked_session_id: Option<String> = None;
-
-    {
-        let mut state = match state_mutex.lock() {
-            Ok(guard) => guard,
-            Err(_) => return,
-        };
-        if primary_mouse_down
-            && !state.primary_mouse_down
-            && inside
-            && state.expanded
-            && !state.transitioning
-            && !cards_container.isHidden()
-        {
-            clicked_session_id = find_clicked_card_session_id(
-                &state.card_hit_targets,
-                panel_frame,
-                expanded_container.frame(),
-                cards_container.frame(),
-                mouse,
-            );
-            if let Some(session_id) = clicked_session_id.as_ref() {
-                let suppressed =
-                    state
-                        .last_focus_click
-                        .as_ref()
-                        .is_some_and(|(last_session_id, last_at)| {
-                            last_session_id == session_id
-                                && now.duration_since(*last_at).as_millis()
-                                    < CARD_FOCUS_CLICK_DEBOUNCE_MS
-                        });
-                if suppressed {
-                    clicked_session_id = None;
-                } else {
-                    state.last_focus_click = Some((session_id.clone(), now));
-                }
-            }
-        }
-        state.primary_mouse_down = primary_mouse_down;
-        let was_status_surface =
-            state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
-
-        if let Some(hover_transition) = sync_native_hover_expansion_state(&mut state, inside, now) {
-            if let Some(snapshot) = state.last_snapshot.clone() {
-                transition_snapshot =
-                    Some((snapshot, hover_transition == NativeHoverTransition::Expand));
-            }
-        }
-
-        let is_status_surface =
-            state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
-        if was_status_surface != is_status_surface && state.expanded && !state.transitioning {
-            if let Some(snapshot) = state.last_snapshot.clone() {
-                surface_transition_snapshot = Some(snapshot);
-            }
-        }
-    }
-
-    if let Some((snapshot, expanded)) = transition_snapshot {
-        begin_native_panel_transition(app.clone(), handles, snapshot, expanded);
-    } else if let Some(snapshot) = surface_transition_snapshot {
-        begin_native_panel_surface_transition(app.clone(), handles, snapshot);
-    }
-
-    if let Some(session_id) = clicked_session_id {
-        spawn_native_focus_session(app, session_id);
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn sync_native_hover_expansion_state(
-    state: &mut NativePanelState,
-    inside: bool,
-    now: Instant,
-) -> Option<NativeHoverTransition> {
-    if inside {
-        state.pointer_outside_since = None;
-        state.pointer_inside_since.get_or_insert(now);
-        if !state.expanded
-            && !state.transitioning
-            && state.pointer_inside_since.is_some_and(|entered_at| {
-                now.duration_since(entered_at).as_millis() >= HOVER_DELAY_MS as u128
-            })
-        {
-            state.expanded = true;
-            state.status_auto_expanded = false;
-            state.surface_mode = NativeExpandedSurface::Default;
-            return Some(NativeHoverTransition::Expand);
-        }
-    } else {
-        state.pointer_inside_since = None;
-        state.pointer_outside_since.get_or_insert(now);
-        let keep_open_for_status = state.status_auto_expanded
-            && state.surface_mode == NativeExpandedSurface::Status
-            && !state.status_queue.is_empty();
-        if state.expanded
-            && !state.transitioning
-            && !keep_open_for_status
-            && state.pointer_outside_since.is_some_and(|left_at| {
-                now.duration_since(left_at).as_millis() >= HOVER_DELAY_MS as u128
-            })
-        {
-            state.expanded = false;
-            state.status_auto_expanded = false;
-            state.surface_mode = NativeExpandedSurface::Default;
-            return Some(NativeHoverTransition::Collapse);
-        }
-    }
-
-    None
-}
-
-#[cfg(target_os = "macos")]
-fn native_status_surface_active() -> bool {
-    native_panel_state()
-        .and_then(|state| {
-            state.lock().ok().map(|guard| {
-                guard.surface_mode == NativeExpandedSurface::Status
-                    && !guard.status_queue.is_empty()
-            })
-        })
-        .unwrap_or(false)
-}
-
-#[cfg(target_os = "macos")]
-fn replace_native_card_hit_targets(targets: Vec<NativeCardHitTarget>) {
-    if let Some(state) = native_panel_state() {
-        if let Ok(mut guard) = state.lock() {
-            guard.card_hit_targets = targets;
-        }
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn find_clicked_card_session_id(
-    targets: &[NativeCardHitTarget],
-    panel_frame: NSRect,
-    expanded_frame: NSRect,
-    cards_frame: NSRect,
-    mouse: NSPoint,
-) -> Option<String> {
-    targets
-        .iter()
-        .find(|target| {
-            point_in_rect(
-                mouse,
-                absolute_rect(
-                    panel_frame,
-                    compose_local_rect(
-                        expanded_frame,
-                        compose_local_rect(cards_frame, target.frame),
-                    ),
-                ),
-            )
-        })
-        .map(|target| target.session_id.clone())
-}
-
-#[cfg(target_os = "macos")]
-fn spawn_native_focus_session<R: tauri::Runtime + 'static>(app: AppHandle<R>, session_id: String) {
-    let runtime = app.state::<AppRuntime>().inner().clone();
-    tauri::async_runtime::spawn(async move {
-        match TerminalFocusService::new(&runtime)
-            .focus_session(&session_id)
-            .await
-        {
-            Ok(true) => {
-                info!(session_id = %session_id, "native card click focused terminal session");
-            }
-            Ok(false) => {
-                warn!(
-                    session_id = %session_id,
-                    "native card click did not find a focusable terminal target"
-                );
-            }
-            Err(error) => {
-                warn!(
-                    session_id = %session_id,
-                    error = %error,
-                    "native card click failed to focus terminal session"
-                );
-            }
-        }
-    });
-}
-
-#[cfg(target_os = "macos")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn apply_snapshot_to_panel(
-    handles: NativePanelHandles,
-    snapshot: &RuntimeSnapshot,
-    expanded: bool,
-    shared_body_height: Option<f64>,
-    transitioning: bool,
-    transition_cards_progress: f64,
-    transition_cards_entering: bool,
-) {
-    apply_snapshot_values_to_panel(handles, snapshot);
-    let context = resolve_native_transition_context(handles);
-    let panel = context.refs.panel;
-
-    if transitioning {
-        if expanded {
-            if context.refs.cards_container.subviews().is_empty() {
-                render_transition_cards(context, snapshot);
-            }
-            apply_card_stack_transition(
-                context.refs.cards_container,
-                transition_cards_progress,
-                transition_cards_entering,
-            );
-            context.refs.panel.displayIfNeeded();
-        }
-        return;
-    }
-
-    let total_height = if expanded {
-        let shared_body_height = if macos_shared_expanded_window::shared_expanded_enabled()
-            && !native_status_surface_active()
-        {
-            shared_body_height
-        } else {
-            None
-        };
-        expanded_total_height(
-            snapshot,
-            compact_pill_height_for_screen_rect(panel.screen().as_deref(), context.screen_frame),
-            shared_body_height,
-        )
-    } else {
-        COLLAPSED_PANEL_HEIGHT
-    };
-    if expanded {
-        apply_panel_geometry(handles, NativePanelTransitionFrame::expanded(total_height));
-    } else {
-        apply_panel_geometry(handles, NativePanelTransitionFrame::collapsed(total_height));
-    }
-
-    if expanded {
-        render_transition_cards(context, snapshot);
-    } else {
-        reset_collapsed_cards(context);
-    }
-
-    context.refs.panel.displayIfNeeded();
-}
-
-#[cfg(target_os = "macos")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn begin_native_panel_transition<R: tauri::Runtime + 'static>(
-    app: AppHandle<R>,
-    handles: NativePanelHandles,
-    snapshot: RuntimeSnapshot,
-    expanded: bool,
-) {
-    let animation_id = NATIVE_TEST_PANEL_ANIMATION_ID.fetch_add(1, Ordering::SeqCst) + 1;
-    apply_snapshot_values_to_panel(handles, &snapshot);
-    let skip_close_card_exit = take_skip_close_card_exit_and_begin_transition(expanded);
-
-    let context = resolve_native_transition_context(handles);
-    let panel = context.refs.panel;
-
-    let start_height = panel.frame().size.height;
-    let target_height = if expanded {
-        resolved_expanded_target_height(context, &snapshot)
-    } else {
-        COLLAPSED_PANEL_HEIGHT
-    };
-
-    if expanded {
-        let card_count = prepare_open_transition(context, &snapshot);
-        set_transition_cards_state(0.0, true);
-        tauri::async_runtime::spawn(async move {
-            animate_open_transition(
-                app.clone(),
-                handles,
-                animation_id,
-                start_height,
-                target_height,
-                card_count,
-            )
-            .await;
-
-            let _ = app.run_on_main_thread(move || unsafe {
-                if NATIVE_TEST_PANEL_ANIMATION_ID.load(Ordering::SeqCst) != animation_id {
-                    return;
-                }
-
-                finish_transition_state(1.0, true);
-                let context = resolve_native_transition_context(handles);
-                finalize_open_transition(handles, context, &snapshot, target_height);
-            });
-        });
-    } else {
-        let card_count = prepare_close_transition(context, skip_close_card_exit);
-        set_transition_cards_state(0.0, false);
-
-        tauri::async_runtime::spawn(async move {
-            animate_close_transition(app.clone(), handles, animation_id, start_height, card_count)
-                .await;
-
-            let _ = app.run_on_main_thread(move || unsafe {
-                if NATIVE_TEST_PANEL_ANIMATION_ID.load(Ordering::SeqCst) != animation_id {
-                    return;
-                }
-
-                finish_transition_state(0.0, false);
-                let context = resolve_native_transition_context(handles);
-                finalize_close_transition(handles, context);
-            });
-        });
-    }
-}
-
-#[cfg(target_os = "macos")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn begin_native_panel_surface_transition<R: tauri::Runtime + 'static>(
-    app: AppHandle<R>,
-    handles: NativePanelHandles,
-    snapshot: RuntimeSnapshot,
-) {
-    let animation_id = NATIVE_TEST_PANEL_ANIMATION_ID.fetch_add(1, Ordering::SeqCst) + 1;
-    apply_snapshot_values_to_panel(handles, &snapshot);
-    let _ = take_skip_close_card_exit_and_begin_transition(true);
-    set_transition_cards_state(PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS, true);
-
-    let context = resolve_native_transition_context(handles);
-    let panel = context.refs.panel;
-    let start_height = panel.frame().size.height;
-    let target_height = resolved_expanded_target_height(context, &snapshot);
-
-    let card_count = prepare_surface_switch_transition(context, &snapshot);
-
-    tauri::async_runtime::spawn(async move {
-        animate_surface_switch_transition(
-            app.clone(),
-            handles,
-            animation_id,
-            start_height,
-            target_height,
-            card_count,
-        )
-        .await;
-
-        let _ = app.run_on_main_thread(move || unsafe {
-            if NATIVE_TEST_PANEL_ANIMATION_ID.load(Ordering::SeqCst) != animation_id {
-                return;
-            }
-
-            finish_transition_state(1.0, true);
-            let context = resolve_native_transition_context(handles);
-            finalize_surface_switch_transition(handles, context, &snapshot, target_height);
-        });
-    });
-}
-
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn apply_snapshot_values_to_panel(handles: NativePanelHandles, snapshot: &RuntimeSnapshot) {
-    let refs = resolve_native_panel_refs(handles);
-    let headline = refs.headline;
-    let active_count = refs.active_count;
-    let active_count_next = refs.active_count_next;
-    let total_count = refs.total_count;
-
-    let headline_value = NSString::from_str(&summarize_headline(snapshot));
-    let active_count_text = compact_active_count_text(snapshot);
-    let total_count_text = snapshot.total_session_count.to_string();
-    let active_count_value = NSString::from_str(&active_count_text);
-    let total_count_value = NSString::from_str(&total_count_text);
-    let style = compact_style(snapshot);
-    let headline_color = ns_color(style.headline_color);
-    let active_count_color = ns_color(style.active_count_color);
-    let total_count_color = ns_color(style.total_count_color);
-
-    headline.setStringValue(&headline_value);
-    headline.setTextColor(Some(&headline_color));
-    headline.setHidden(compact_headline_should_hide(&refs));
-    active_count.setTextColor(Some(&active_count_color));
-    active_count_next.setTextColor(Some(&active_count_color));
-    total_count.setStringValue(&total_count_value);
-    total_count.setTextColor(Some(&total_count_color));
-    if let Some(source) = ACTIVE_COUNT_SCROLL_TEXT.get() {
-        if let Ok(mut value) = source.lock() {
-            *value = active_count_text;
-        }
-    }
-    active_count.setStringValue(&active_count_value);
-    sync_active_count_marquee(&refs);
-
-    headline.displayIfNeeded();
-    refs.active_count_clip.displayIfNeeded();
-    active_count.displayIfNeeded();
-    active_count_next.displayIfNeeded();
-    total_count.displayIfNeeded();
-}
-
-#[cfg(target_os = "macos")]
-fn with_disabled_layer_actions<T>(f: impl FnOnce() -> T) -> T {
-    CATransaction::begin();
-    CATransaction::setDisableActions(true);
-    let result = f();
-    CATransaction::commit();
-    result
 }
 
 #[cfg(target_os = "macos")]

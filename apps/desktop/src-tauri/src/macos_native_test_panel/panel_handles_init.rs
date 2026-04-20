@@ -1,0 +1,53 @@
+use super::*;
+
+pub(super) struct NativePanelHandleViews<'a> {
+    pub(super) panel: &'a NSPanel,
+    pub(super) content_view: &'a NSView,
+    pub(super) left_shoulder: &'a NSView,
+    pub(super) right_shoulder: &'a NSView,
+    pub(super) pill_view: &'a NSView,
+    pub(super) expanded_container: &'a NSView,
+    pub(super) cards_container: &'a NSView,
+    pub(super) top_highlight: &'a NSView,
+    pub(super) body_separator: &'a NSView,
+    pub(super) mascot_shell: &'a NSView,
+    pub(super) mascot_body: &'a NSView,
+    pub(super) mascot_left_eye: &'a NSView,
+    pub(super) mascot_right_eye: &'a NSView,
+    pub(super) mascot_mouth: &'a NSView,
+    pub(super) mascot_bubble: &'a NSView,
+    pub(super) mascot_sleep_label: &'a NSTextField,
+    pub(super) headline: &'a NSTextField,
+    pub(super) active_count_clip: &'a NSClipView,
+    pub(super) active_count: &'a NSTextField,
+    pub(super) active_count_next: &'a NSTextField,
+    pub(super) slash: &'a NSTextField,
+    pub(super) total_count: &'a NSTextField,
+}
+
+pub(super) fn initialize_native_panel_handles(views: NativePanelHandleViews<'_>) {
+    let _ = NATIVE_TEST_PANEL_HANDLES.set(NativePanelHandles {
+        panel: (views.panel as *const NSPanel) as usize,
+        content_view: (views.content_view as *const NSView) as usize,
+        left_shoulder: (views.left_shoulder as *const NSView) as usize,
+        right_shoulder: (views.right_shoulder as *const NSView) as usize,
+        pill_view: (views.pill_view as *const NSView) as usize,
+        expanded_container: (views.expanded_container as *const NSView) as usize,
+        cards_container: (views.cards_container as *const NSView) as usize,
+        top_highlight: (views.top_highlight as *const NSView) as usize,
+        body_separator: (views.body_separator as *const NSView) as usize,
+        mascot_shell: (views.mascot_shell as *const NSView) as usize,
+        mascot_body: (views.mascot_body as *const NSView) as usize,
+        mascot_left_eye: (views.mascot_left_eye as *const NSView) as usize,
+        mascot_right_eye: (views.mascot_right_eye as *const NSView) as usize,
+        mascot_mouth: (views.mascot_mouth as *const NSView) as usize,
+        mascot_bubble: (views.mascot_bubble as *const NSView) as usize,
+        mascot_sleep_label: (views.mascot_sleep_label as *const NSTextField) as usize,
+        headline: (views.headline as *const NSTextField) as usize,
+        active_count_clip: (views.active_count_clip as *const NSClipView) as usize,
+        active_count: (views.active_count as *const NSTextField) as usize,
+        active_count_next: (views.active_count_next as *const NSTextField) as usize,
+        slash: (views.slash as *const NSTextField) as usize,
+        total_count: (views.total_count as *const NSTextField) as usize,
+    });
+}

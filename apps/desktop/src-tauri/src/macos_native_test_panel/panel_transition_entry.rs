@@ -1,0 +1,108 @@
+use super::*;
+
+#[allow(unsafe_op_in_unsafe_fn)]
+pub(super) unsafe fn begin_native_panel_transition<R: tauri::Runtime + 'static>(
+    app: AppHandle<R>,
+    handles: NativePanelHandles,
+    snapshot: RuntimeSnapshot,
+    expanded: bool,
+) {
+    let animation_id = NATIVE_TEST_PANEL_ANIMATION_ID.fetch_add(1, Ordering::SeqCst) + 1;
+    apply_snapshot_values_to_panel(handles, &snapshot);
+    let skip_close_card_exit = take_skip_close_card_exit_and_begin_transition(expanded);
+
+    let context = resolve_native_transition_context(handles);
+    let panel = context.refs.panel;
+
+    let start_height = panel.frame().size.height;
+    let target_height = if expanded {
+        resolved_expanded_target_height(context, &snapshot)
+    } else {
+        COLLAPSED_PANEL_HEIGHT
+    };
+
+    if expanded {
+        let card_count = prepare_open_transition(context, &snapshot);
+        set_transition_cards_state(0.0, true);
+        tauri::async_runtime::spawn(async move {
+            animate_open_transition(
+                app.clone(),
+                handles,
+                animation_id,
+                start_height,
+                target_height,
+                card_count,
+            )
+            .await;
+
+            let _ = app.run_on_main_thread(move || unsafe {
+                if NATIVE_TEST_PANEL_ANIMATION_ID.load(Ordering::SeqCst) != animation_id {
+                    return;
+                }
+
+                finish_transition_state(1.0, true);
+                let context = resolve_native_transition_context(handles);
+                finalize_open_transition(handles, context, &snapshot, target_height);
+            });
+        });
+    } else {
+        let card_count = prepare_close_transition(context, skip_close_card_exit);
+        set_transition_cards_state(0.0, false);
+
+        tauri::async_runtime::spawn(async move {
+            animate_close_transition(app.clone(), handles, animation_id, start_height, card_count)
+                .await;
+
+            let _ = app.run_on_main_thread(move || unsafe {
+                if NATIVE_TEST_PANEL_ANIMATION_ID.load(Ordering::SeqCst) != animation_id {
+                    return;
+                }
+
+                finish_transition_state(0.0, false);
+                let context = resolve_native_transition_context(handles);
+                finalize_close_transition(handles, context);
+            });
+        });
+    }
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+pub(super) unsafe fn begin_native_panel_surface_transition<R: tauri::Runtime + 'static>(
+    app: AppHandle<R>,
+    handles: NativePanelHandles,
+    snapshot: RuntimeSnapshot,
+) {
+    let animation_id = NATIVE_TEST_PANEL_ANIMATION_ID.fetch_add(1, Ordering::SeqCst) + 1;
+    apply_snapshot_values_to_panel(handles, &snapshot);
+    let _ = take_skip_close_card_exit_and_begin_transition(true);
+    set_transition_cards_state(PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS, true);
+
+    let context = resolve_native_transition_context(handles);
+    let panel = context.refs.panel;
+    let start_height = panel.frame().size.height;
+    let target_height = resolved_expanded_target_height(context, &snapshot);
+
+    let card_count = prepare_surface_switch_transition(context, &snapshot);
+
+    tauri::async_runtime::spawn(async move {
+        animate_surface_switch_transition(
+            app.clone(),
+            handles,
+            animation_id,
+            start_height,
+            target_height,
+            card_count,
+        )
+        .await;
+
+        let _ = app.run_on_main_thread(move || unsafe {
+            if NATIVE_TEST_PANEL_ANIMATION_ID.load(Ordering::SeqCst) != animation_id {
+                return;
+            }
+
+            finish_transition_state(1.0, true);
+            let context = resolve_native_transition_context(handles);
+            finalize_surface_switch_transition(handles, context, &snapshot, target_height);
+        });
+    });
+}
