@@ -74,6 +74,12 @@ mod panel_refs;
 #[cfg(target_os = "macos")]
 mod panel_render;
 #[cfg(target_os = "macos")]
+mod panel_shoulder;
+#[cfg(target_os = "macos")]
+mod panel_style;
+#[cfg(target_os = "macos")]
+mod panel_views;
+#[cfg(target_os = "macos")]
 mod queue_logic;
 #[cfg(target_os = "macos")]
 mod transition_logic;
@@ -102,6 +108,8 @@ use panel_geometry::*;
 use panel_refs::*;
 #[cfg(target_os = "macos")]
 use panel_render::*;
+#[cfg(target_os = "macos")]
+use panel_views::*;
 #[cfg(target_os = "macos")]
 use queue_logic::*;
 #[cfg(target_os = "macos")]
@@ -527,15 +535,6 @@ pub fn create_native_island_panel() -> Result<(), String> {
         false,
     );
 
-    let content_view = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        NSRect::new(NSPoint::new(0.0, 0.0), size),
-    );
-    content_view.setWantsLayer(true);
-    let content_layer = CALayer::layer();
-    content_layer.setBackgroundColor(Some(&NSColor::clearColor().CGColor()));
-    content_layer.setMasksToBounds(false);
-    content_view.setLayer(Some(&content_layer));
     let pill_frame = island_bar_frame(
         size,
         0.0,
@@ -544,29 +543,6 @@ pub fn create_native_island_panel() -> Result<(), String> {
         compact_height,
         0.0,
     );
-    let left_shoulder = NSView::initWithFrame(NSView::alloc(mtm), left_shoulder_frame(pill_frame));
-    let right_shoulder =
-        NSView::initWithFrame(NSView::alloc(mtm), right_shoulder_frame(pill_frame));
-    let pill_view = NSView::initWithFrame(NSView::alloc(mtm), pill_frame);
-    let expanded_container = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        expanded_background_frame(
-            size,
-            COLLAPSED_PANEL_HEIGHT,
-            0.0,
-            0.0,
-            compact_width,
-            expanded_width,
-            compact_height,
-            0.0,
-        ),
-    );
-    expanded_container.setHidden(true);
-    let cards_container = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        expanded_cards_frame(expanded_container.frame(), pill_size.height),
-    );
-    expanded_container.addSubview(&cards_container);
 
     let panel_background = NSColor::clearColor();
     let pill_background = NSColor::colorWithSRGBRed_green_blue_alpha(0.0, 0.0, 0.0, 1.0);
@@ -579,309 +555,64 @@ pub fn create_native_island_panel() -> Result<(), String> {
     let accent_active = NSColor::colorWithSRGBRed_green_blue_alpha(0.40, 0.87, 0.57, 1.0);
     let separator_color = NSColor::colorWithSRGBRed_green_blue_alpha(1.0, 1.0, 1.0, 0.11);
 
-    apply_shoulder_layer(&left_shoulder, &pill_background, true);
-    apply_shoulder_layer(&right_shoulder, &pill_background, false);
-
-    expanded_container.setWantsLayer(true);
-    let expanded_layer = CALayer::layer();
-    expanded_layer.setCornerRadius(EXPANDED_PANEL_RADIUS);
-    expanded_layer.setMasksToBounds(true);
-    expanded_layer.setBackgroundColor(Some(&expanded_background.CGColor()));
-    expanded_layer.setBorderWidth(0.0);
-    expanded_layer.setBorderColor(Some(&expanded_border.CGColor()));
-    expanded_container.setLayer(Some(&expanded_layer));
-
-    let top_highlight = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        NSRect::new(
-            NSPoint::new(12.0, pill_size.height - 1.0),
-            NSSize::new(pill_size.width - 24.0, 1.0),
-        ),
+    let PanelBaseViews {
+        content_view,
+        left_shoulder,
+        right_shoulder,
+        pill_view,
+        expanded_container,
+        cards_container,
+        top_highlight,
+        body_separator,
+    } = create_panel_base_views(
+        mtm,
+        size,
+        pill_frame,
+        pill_size,
+        compact_width,
+        expanded_width,
+        compact_height,
+        &pill_background,
+        &pill_border,
+        &pill_highlight,
+        &expanded_background,
+        &expanded_border,
+        &separator_color,
     );
-    top_highlight.setWantsLayer(true);
-    let top_highlight_layer = CALayer::layer();
-    top_highlight_layer.setCornerRadius(0.5);
-    top_highlight_layer.setBackgroundColor(Some(&pill_highlight.CGColor()));
-    top_highlight_layer.setOpacity(0.0);
-    top_highlight.setLayer(Some(&top_highlight_layer));
-    top_highlight.setHidden(true);
-
-    let body_separator = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        NSRect::new(
-            NSPoint::new(14.0, 0.0),
-            NSSize::new(expanded_width - 28.0, 1.0),
-        ),
-    );
-    body_separator.setWantsLayer(true);
-    let body_separator_layer = CALayer::layer();
-    body_separator_layer.setCornerRadius(0.5);
-    body_separator_layer.setBackgroundColor(Some(&separator_color.CGColor()));
-    body_separator_layer.setOpacity(0.0);
-    body_separator.setLayer(Some(&body_separator_layer));
-    let metrics_trailing = 2.0;
-    let metrics_gap = 0.0;
-    let active_width = ACTIVE_COUNT_SLOT_WIDTH;
-    let slash_width = 10.0;
-    let total_width = 24.0;
-    let total_x = pill_size.width - metrics_trailing - total_width;
-    let slash_x = total_x - metrics_gap - slash_width;
-    let active_x = slash_x - metrics_gap - active_width + ACTIVE_COUNT_SLOT_NUDGE_X;
-
-    let mascot_shell = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        NSRect::new(
-            NSPoint::new(10.0, 6.0 + MASCOT_VERTICAL_NUDGE_Y),
-            NSSize::new(28.0, 28.0),
-        ),
-    );
-    mascot_shell.setWantsLayer(true);
-    let mascot_shell_layer = CALayer::layer();
-    mascot_shell_layer.setCornerRadius(7.0);
-    mascot_shell_layer.setMasksToBounds(false);
-    mascot_shell_layer.setBackgroundColor(Some(&NSColor::clearColor().CGColor()));
-    mascot_shell_layer.setBorderWidth(0.0);
-    mascot_shell_layer.setBorderColor(Some(&mascot_shell_border.CGColor()));
-    mascot_shell.setLayer(Some(&mascot_shell_layer));
-
     let mascot_body_fill = NSColor::colorWithSRGBRed_green_blue_alpha(0.02, 0.02, 0.02, 1.0);
     let mascot_stroke = NSColor::colorWithSRGBRed_green_blue_alpha(1.0, 0.48, 0.14, 1.0);
     let mascot_face = NSColor::colorWithSRGBRed_green_blue_alpha(1.0, 1.0, 1.0, 1.0);
-
-    let mascot_body = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        NSRect::new(
-            NSPoint::new(2.0, 4.0 + MASCOT_VERTICAL_NUDGE_Y),
-            NSSize::new(24.0, 20.0),
-        ),
-    );
-    mascot_body.setWantsLayer(true);
-    let mascot_body_layer = CALayer::layer();
-    mascot_body_layer.setCornerRadius(6.0);
-    mascot_body_layer.setMasksToBounds(false);
-    mascot_body_layer.setBackgroundColor(Some(&mascot_body_fill.CGColor()));
-    mascot_body_layer.setBorderWidth(2.2);
-    mascot_body_layer.setBorderColor(Some(&mascot_stroke.CGColor()));
-    mascot_body_layer.setShadowColor(Some(&mascot_stroke.CGColor()));
-    mascot_body_layer.setShadowOpacity(0.18);
-    mascot_body_layer.setShadowRadius(4.0);
-    mascot_body.setLayer(Some(&mascot_body_layer));
-    mascot_shell.addSubview(&mascot_body);
-
-    let mascot_left_eye = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        NSRect::new(NSPoint::new(7.0, 14.1), NSSize::new(5.7, 4.8)),
-    );
-    mascot_left_eye.setWantsLayer(true);
-    let mascot_left_eye_layer = CALayer::layer();
-    mascot_left_eye_layer.setCornerRadius(2.4);
-    mascot_left_eye_layer.setMasksToBounds(true);
-    mascot_left_eye_layer.setBackgroundColor(Some(&mascot_face.CGColor()));
-    mascot_left_eye_layer.setShadowColor(Some(&mascot_face.CGColor()));
-    mascot_left_eye_layer.setShadowOpacity(0.22);
-    mascot_left_eye_layer.setShadowRadius(6.0);
-    mascot_left_eye.setLayer(Some(&mascot_left_eye_layer));
-    mascot_shell.addSubview(&mascot_left_eye);
-
-    let mascot_right_eye = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        NSRect::new(NSPoint::new(15.3, 14.1), NSSize::new(5.7, 4.8)),
-    );
-    mascot_right_eye.setWantsLayer(true);
-    let mascot_right_eye_layer = CALayer::layer();
-    mascot_right_eye_layer.setCornerRadius(2.4);
-    mascot_right_eye_layer.setMasksToBounds(true);
-    mascot_right_eye_layer.setBackgroundColor(Some(&mascot_face.CGColor()));
-    mascot_right_eye_layer.setShadowColor(Some(&mascot_face.CGColor()));
-    mascot_right_eye_layer.setShadowOpacity(0.22);
-    mascot_right_eye_layer.setShadowRadius(6.0);
-    mascot_right_eye.setLayer(Some(&mascot_right_eye_layer));
-    mascot_shell.addSubview(&mascot_right_eye);
-
-    let mascot_mouth = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        NSRect::new(NSPoint::new(10.5, 9.0), NSSize::new(7.0, 2.2)),
-    );
-    mascot_mouth.setWantsLayer(true);
-    let mascot_mouth_layer = CALayer::layer();
-    mascot_mouth_layer.setCornerRadius(1.1);
-    mascot_mouth_layer.setMasksToBounds(true);
-    mascot_mouth_layer.setBackgroundColor(Some(&mascot_face.CGColor()));
-    mascot_mouth_layer.setShadowColor(Some(&mascot_face.CGColor()));
-    mascot_mouth_layer.setShadowOpacity(0.20);
-    mascot_mouth_layer.setShadowRadius(6.0);
-    mascot_mouth.setLayer(Some(&mascot_mouth_layer));
-    mascot_shell.addSubview(&mascot_mouth);
-
-    let mascot_bubble = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        NSRect::new(NSPoint::new(18.0, 19.5), NSSize::new(14.0, 7.5)),
-    );
-    mascot_bubble.setWantsLayer(true);
-    let mascot_bubble_layer = CALayer::layer();
-    mascot_bubble_layer.setCornerRadius(3.7);
-    mascot_bubble_layer.setMasksToBounds(true);
-    mascot_bubble_layer.setBackgroundColor(Some(&mascot_face.CGColor()));
-    mascot_bubble_layer.setShadowColor(Some(&mascot_face.CGColor()));
-    mascot_bubble_layer.setShadowOpacity(0.24);
-    mascot_bubble_layer.setShadowRadius(7.0);
-    mascot_bubble.setLayer(Some(&mascot_bubble_layer));
-    mascot_bubble.setHidden(true);
-    for x in [3.6, 6.8, 10.0] {
-        let dot = NSView::initWithFrame(
-            NSView::alloc(mtm),
-            NSRect::new(NSPoint::new(x, 3.0), NSSize::new(1.6, 1.6)),
-        );
-        dot.setWantsLayer(true);
-        let dot_layer = CALayer::layer();
-        dot_layer.setCornerRadius(0.8);
-        dot_layer.setMasksToBounds(true);
-        dot_layer.setBackgroundColor(Some(
-            &NSColor::colorWithSRGBRed_green_blue_alpha(0.02, 0.02, 0.02, 0.72).CGColor(),
-        ));
-        dot.setLayer(Some(&dot_layer));
-        mascot_bubble.addSubview(&dot);
-    }
-    mascot_shell.addSubview(&mascot_bubble);
-
-    let mascot_sleep_label = NSTextField::labelWithString(ns_string!("Z"), mtm);
-    mascot_sleep_label.setFrame(NSRect::new(
-        NSPoint::new(20.0, 18.0),
-        NSSize::new(10.0, 10.0),
-    ));
-    mascot_sleep_label.setAlignment(NSTextAlignment::Center);
-    mascot_sleep_label.setTextColor(Some(&mascot_face));
-    mascot_sleep_label.setFont(Some(&NSFont::boldSystemFontOfSize(8.0)));
-    mascot_sleep_label.setDrawsBackground(false);
-    mascot_sleep_label.setBezeled(false);
-    mascot_sleep_label.setBordered(false);
-    mascot_sleep_label.setEditable(false);
-    mascot_sleep_label.setSelectable(false);
-    mascot_sleep_label.setHidden(true);
-    mascot_shell.addSubview(&mascot_sleep_label);
-
-    let headline = NSTextField::labelWithString(ns_string!("No active tasks"), mtm);
-    headline.setFrame(NSRect::new(
-        NSPoint::new(44.0, compact_headline_y(pill_size.height)),
-        NSSize::new(136.0, COMPACT_HEADLINE_LABEL_HEIGHT),
-    ));
-    headline.setAlignment(NSTextAlignment::Center);
-    headline.setTextColor(Some(&text_primary));
-    headline.setFont(Some(&NSFont::boldSystemFontOfSize(13.0)));
-    headline.setDrawsBackground(false);
-    headline.setBezeled(false);
-    headline.setBordered(false);
-    headline.setEditable(false);
-    headline.setSelectable(false);
-    headline.setHidden(screen_has_camera_housing(&screen));
-
-    let active_count_clip = NSClipView::initWithFrame(
-        NSClipView::alloc(mtm),
-        NSRect::new(
-            NSPoint::new(
-                active_x,
-                ((pill_size.height - ACTIVE_COUNT_LABEL_HEIGHT) / 2.0).round() - 0.5,
-            ),
-            NSSize::new(active_width, ACTIVE_COUNT_LABEL_HEIGHT),
-        ),
-    );
-    active_count_clip.setDrawsBackground(false);
-    active_count_clip.setBackgroundColor(&NSColor::clearColor());
-
-    let active_count_doc = NSView::initWithFrame(
-        NSView::alloc(mtm),
-        NSRect::new(
-            NSPoint::new(0.0, 0.0),
-            NSSize::new(
-                ACTIVE_COUNT_SCROLL_TRAVEL + ACTIVE_COUNT_TEXT_WIDTH,
-                ACTIVE_COUNT_LABEL_HEIGHT,
-            ),
-        ),
+    let MascotViews {
+        shell: mascot_shell,
+        body: mascot_body,
+        left_eye: mascot_left_eye,
+        right_eye: mascot_right_eye,
+        mouth: mascot_mouth,
+        bubble: mascot_bubble,
+        sleep_label: mascot_sleep_label,
+    } = create_mascot_views(
+        mtm,
+        &mascot_shell_border,
+        &mascot_body_fill,
+        &mascot_stroke,
+        &mascot_face,
     );
 
-    let active_count = NSTextField::labelWithString(ns_string!("1"), mtm);
-    active_count.setFrame(NSRect::new(
-        NSPoint::new(ACTIVE_COUNT_TEXT_OFFSET_X, 0.0),
-        NSSize::new(ACTIVE_COUNT_TEXT_WIDTH, ACTIVE_COUNT_LABEL_HEIGHT),
-    ));
-    active_count.setAlignment(NSTextAlignment::Right);
-    active_count.setTextColor(Some(&accent_active));
-    active_count.setFont(Some(&NSFont::monospacedDigitSystemFontOfSize_weight(
-        15.0,
-        unsafe { objc2_app_kit::NSFontWeightSemibold },
-    )));
-    active_count.setDrawsBackground(false);
-    active_count.setBezeled(false);
-    active_count.setBordered(false);
-    active_count.setEditable(false);
-    active_count.setSelectable(false);
-    active_count.setWantsLayer(true);
-    active_count_doc.addSubview(&active_count);
+    let CompactBarViews {
+        headline,
+        active_count_clip,
+        active_count,
+        active_count_next,
+        slash,
+        total_count,
+    } = create_compact_bar_views(
+        mtm,
+        pill_size,
+        screen_has_camera_housing(&screen),
+        &text_primary,
+        &accent_active,
+    );
 
-    let active_count_next = NSTextField::labelWithString(ns_string!("2"), mtm);
-    active_count_next.setFrame(NSRect::new(
-        NSPoint::new(ACTIVE_COUNT_SCROLL_TRAVEL + ACTIVE_COUNT_TEXT_OFFSET_X, 0.0),
-        NSSize::new(ACTIVE_COUNT_TEXT_WIDTH, ACTIVE_COUNT_LABEL_HEIGHT),
-    ));
-    active_count_next.setAlignment(NSTextAlignment::Right);
-    active_count_next.setTextColor(Some(&accent_active));
-    active_count_next.setFont(Some(&NSFont::monospacedDigitSystemFontOfSize_weight(
-        15.0,
-        unsafe { objc2_app_kit::NSFontWeightSemibold },
-    )));
-    active_count_next.setDrawsBackground(false);
-    active_count_next.setBezeled(false);
-    active_count_next.setBordered(false);
-    active_count_next.setEditable(false);
-    active_count_next.setSelectable(false);
-    active_count_next.setWantsLayer(true);
-    active_count_doc.addSubview(&active_count_next);
-    active_count_clip.setDocumentView(Some(&active_count_doc));
-
-    let slash = NSTextField::labelWithString(ns_string!("/"), mtm);
-    slash.setFrame(NSRect::new(
-        NSPoint::new(
-            slash_x,
-            ((pill_size.height - ACTIVE_COUNT_LABEL_HEIGHT) / 2.0).round() - 0.5,
-        ),
-        NSSize::new(slash_width, ACTIVE_COUNT_LABEL_HEIGHT),
-    ));
-    slash.setAlignment(NSTextAlignment::Center);
-    slash.setTextColor(Some(&text_primary));
-    slash.setFont(Some(&NSFont::systemFontOfSize_weight(15.0, unsafe {
-        objc2_app_kit::NSFontWeightSemibold
-    })));
-    slash.setDrawsBackground(false);
-    slash.setBezeled(false);
-    slash.setBordered(false);
-    slash.setEditable(false);
-    slash.setSelectable(false);
-
-    let total_count = NSTextField::labelWithString(ns_string!("99"), mtm);
-    total_count.setFrame(NSRect::new(
-        NSPoint::new(total_x, ((pill_size.height - 24.0) / 2.0).round() - 0.5),
-        NSSize::new(total_width, 24.0),
-    ));
-    total_count.setAlignment(NSTextAlignment::Left);
-    total_count.setTextColor(Some(&text_primary));
-    total_count.setFont(Some(&NSFont::systemFontOfSize_weight(15.0, unsafe {
-        objc2_app_kit::NSFontWeightSemibold
-    })));
-    total_count.setDrawsBackground(false);
-    total_count.setBezeled(false);
-    total_count.setBordered(false);
-    total_count.setEditable(false);
-    total_count.setSelectable(false);
-
-    pill_view.setWantsLayer(true);
-    let pill_layer = CALayer::layer();
-    pill_layer.setCornerRadius(COMPACT_PILL_RADIUS);
-    pill_layer.setMasksToBounds(true);
-    pill_layer.setMaskedCorners(compact_pill_corner_mask());
-    pill_layer.setBackgroundColor(Some(&pill_background.CGColor()));
-    pill_layer.setBorderWidth(1.0);
-    pill_layer.setBorderColor(Some(&pill_border.CGColor()));
-    pill_view.setLayer(Some(&pill_layer));
     pill_view.addSubview(&top_highlight);
     pill_view.addSubview(&mascot_shell);
     pill_view.addSubview(&headline);
@@ -1949,68 +1680,6 @@ fn status_pill_colors(status: &str, emphasize: bool) -> ([f64; 4], [f64; 4]) {
 }
 
 #[cfg(target_os = "macos")]
-fn compact_pill_corner_mask() -> CACornerMask {
-    CACornerMask::LayerMinXMinYCorner | CACornerMask::LayerMaxXMinYCorner
-}
-
-#[cfg(target_os = "macos")]
-fn all_corner_mask() -> CACornerMask {
-    CACornerMask::LayerMinXMinYCorner
-        | CACornerMask::LayerMaxXMinYCorner
-        | CACornerMask::LayerMinXMaxYCorner
-        | CACornerMask::LayerMaxXMaxYCorner
-}
-
-fn apply_shoulder_layer(view: &NSView, background: &NSColor, align_right: bool) {
-    let size = COMPACT_SHOULDER_SIZE;
-    let control = size * SHOULDER_CURVE_FACTOR;
-    let path = CGMutablePath::new();
-
-    unsafe {
-        if align_right {
-            CGMutablePath::move_to_point(Some(path.as_ref()), std::ptr::null(), 0.0, size);
-            CGMutablePath::add_line_to_point(Some(path.as_ref()), std::ptr::null(), size, size);
-            CGMutablePath::add_line_to_point(Some(path.as_ref()), std::ptr::null(), size, 0.0);
-            CGMutablePath::add_curve_to_point(
-                Some(path.as_ref()),
-                std::ptr::null(),
-                size,
-                control,
-                control,
-                size,
-                0.0,
-                size,
-            );
-            CGMutablePath::close_subpath(Some(path.as_ref()));
-        } else {
-            CGMutablePath::move_to_point(Some(path.as_ref()), std::ptr::null(), size, size);
-            CGMutablePath::add_line_to_point(Some(path.as_ref()), std::ptr::null(), 0.0, size);
-            CGMutablePath::add_line_to_point(Some(path.as_ref()), std::ptr::null(), 0.0, 0.0);
-            CGMutablePath::add_curve_to_point(
-                Some(path.as_ref()),
-                std::ptr::null(),
-                0.0,
-                control,
-                control,
-                size,
-                size,
-                size,
-            );
-            CGMutablePath::close_subpath(Some(path.as_ref()));
-        }
-    }
-
-    let immutable_path = CGPath::new_copy(Some(path.as_ref())).expect("shoulder path copy");
-    let shape_layer = CAShapeLayer::layer();
-    shape_layer.setMasksToBounds(false);
-    shape_layer.setBackgroundColor(Some(&NSColor::clearColor().CGColor()));
-    shape_layer.setFillColor(Some(&background.CGColor()));
-    shape_layer.setPath(Some(immutable_path.as_ref()));
-    view.setWantsLayer(true);
-    view.setLayer(Some(shape_layer.as_ref()));
-}
-
-#[cfg(target_os = "macos")]
 fn ns_color(rgba: [f64; 4]) -> objc2::rc::Retained<NSColor> {
     NSColor::colorWithSRGBRed_green_blue_alpha(rgba[0], rgba[1], rgba[2], rgba[3])
 }
@@ -2027,7 +1696,8 @@ mod tests {
     use super::{
         HOVER_DELAY_MS, NativeExpandedSurface, NativeHoverTransition, NativeMascotRuntime,
         NativePanelGeometryMetrics, NativePanelState, NativePanelTransitionFrame,
-        NativeStatusQueuePayload, PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
+        NativeStatusQueuePayload, PANEL_CLOSE_MORPH_DELAY_MS, PANEL_CLOSE_SHOULDER_DELAY_MS,
+        PANEL_MORPH_DELAY_MS, PANEL_SHOULDER_HIDE_MS, PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
         card_content_visibility_phase, centered_top_frame, compact_active_count_text,
         panel_transition_canvas_height, resolve_close_transition_frame,
         resolve_native_panel_layout, resolve_open_transition_frame,
@@ -2329,7 +1999,21 @@ mod tests {
         assert_eq!(frame.visible_height, 80.0);
         assert_eq!(frame.bar_progress, 0.0);
         assert_eq!(frame.height_progress, 0.0);
+        assert_eq!(frame.shoulder_progress, 0.0);
         assert_eq!(frame.cards_progress, 0.0);
+    }
+
+    #[test]
+    fn open_transition_contracts_shoulders_before_rounding_top_corners() {
+        let shoulder_frame =
+            resolve_open_transition_frame(PANEL_SHOULDER_HIDE_MS / 2, 164.0, 164.0, 220);
+        assert_eq!(shoulder_frame.bar_progress, 0.0);
+        assert!(shoulder_frame.shoulder_progress > 0.0);
+        assert!(shoulder_frame.shoulder_progress < 1.0);
+
+        let morph_start = resolve_open_transition_frame(PANEL_MORPH_DELAY_MS, 164.0, 164.0, 220);
+        assert_eq!(morph_start.bar_progress, 0.0);
+        assert_eq!(morph_start.shoulder_progress, 1.0);
     }
 
     #[test]
@@ -2357,6 +2041,32 @@ mod tests {
         assert_eq!(frame.shoulder_progress, 0.0);
         assert_eq!(frame.drop_progress, 0.0);
         assert!(frame.cards_progress >= 1.0);
+    }
+
+    #[test]
+    fn close_transition_squares_top_corners_before_expanding_shoulders() {
+        let close_delay_ms = 220;
+        let contracting = resolve_close_transition_frame(
+            close_delay_ms + PANEL_CLOSE_MORPH_DELAY_MS + 135,
+            164.0,
+            164.0,
+            close_delay_ms,
+            220,
+        );
+        assert!(contracting.bar_progress > 0.0);
+        assert!(contracting.bar_progress < 1.0);
+        assert_eq!(contracting.shoulder_progress, 1.0);
+
+        let shoulder_frame = resolve_close_transition_frame(
+            close_delay_ms + PANEL_CLOSE_SHOULDER_DELAY_MS + 60,
+            164.0,
+            164.0,
+            close_delay_ms,
+            220,
+        );
+        assert_eq!(shoulder_frame.bar_progress, 0.0);
+        assert!(shoulder_frame.shoulder_progress > 0.0);
+        assert!(shoulder_frame.shoulder_progress < 1.0);
     }
 
     #[test]

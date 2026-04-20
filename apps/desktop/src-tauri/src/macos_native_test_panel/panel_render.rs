@@ -1,3 +1,5 @@
+use super::panel_shoulder::apply_shoulder_path_scale_x;
+use super::panel_style::{PanelLayerStyleState, apply_panel_layer_styles};
 use super::*;
 
 #[derive(Clone, Copy)]
@@ -38,7 +40,16 @@ pub(super) unsafe fn apply_panel_geometry(
 
     apply_panel_view_frames(&refs, &layout, progress);
     let shared_state = shared_expanded_render_state(&layout, progress, content_visibility);
-    apply_panel_layer_styles(&refs, &layout, progress, shared_state);
+    apply_panel_layer_styles(
+        &refs,
+        PanelLayerStyleState {
+            shell_visible: layout.shell_visible,
+            separator_visibility: layout.separator_visibility,
+            shared_visible: shared_state.visible,
+            bar_progress: progress.bar,
+            height_progress: progress.height,
+        },
+    );
     sync_shared_expanded_render_frame(&layout, shared_state);
     invalidate_panel_render_views(&refs);
 }
@@ -70,12 +81,18 @@ unsafe fn apply_panel_view_frames(
     apply_panel_frame(panel, layout.panel_frame);
     content_view.setFrame(layout.content_frame);
     pill_view.setFrame(layout.pill_frame);
-    left_shoulder.setFrame(layout.left_shoulder_frame);
-    right_shoulder.setFrame(layout.right_shoulder_frame);
-    left_shoulder.setAlphaValue(1.0 - progress.shoulder);
-    right_shoulder.setAlphaValue(1.0 - progress.shoulder);
-    left_shoulder.setHidden(progress.shoulder >= 0.98);
-    right_shoulder.setHidden(progress.shoulder >= 0.98);
+    apply_shoulder_path_scale_x(
+        left_shoulder,
+        layout.left_shoulder_frame,
+        progress.shoulder,
+        true,
+    );
+    apply_shoulder_path_scale_x(
+        right_shoulder,
+        layout.right_shoulder_frame,
+        progress.shoulder,
+        false,
+    );
     relayout_compact_content(refs, layout.pill_frame.size);
     expanded_container.setFrame(layout.expanded_frame);
     cards_container.setFrame(layout.cards_frame);
@@ -106,47 +123,6 @@ fn shared_expanded_render_state(
         enabled: shared_expanded_enabled,
         visible: shared_content_visible && !transitioning,
         interactive: shared_content_interactive && !transitioning,
-    }
-}
-
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn apply_panel_layer_styles(
-    refs: &NativePanelRefs,
-    layout: &NativePanelLayout,
-    progress: PanelRenderProgress,
-    shared_state: SharedExpandedRenderState,
-) {
-    let expanded_container = refs.expanded_container;
-    let body_separator = refs.body_separator;
-    let cards_container = refs.cards_container;
-
-    expanded_container.setHidden(!layout.shell_visible);
-    expanded_container.setAlphaValue(if layout.shell_visible { 1.0 } else { 0.0 });
-    body_separator.setHidden(layout.separator_visibility <= 0.02);
-    body_separator.setAlphaValue(layout.separator_visibility);
-    cards_container.setHidden(shared_state.visible);
-
-    if let Some(layer) = refs.pill_view.layer() {
-        layer.setCornerRadius(lerp(
-            COMPACT_PILL_RADIUS,
-            PANEL_MORPH_PILL_RADIUS,
-            progress.bar,
-        ));
-        if progress.bar <= 0.01 {
-            layer.setMaskedCorners(compact_pill_corner_mask());
-        } else {
-            layer.setMaskedCorners(all_corner_mask());
-        }
-        layer.setBorderWidth(lerp(1.0, 0.0, progress.bar));
-    }
-    if let Some(layer) = expanded_container.layer() {
-        layer.setCornerRadius(lerp(
-            COMPACT_PILL_RADIUS,
-            EXPANDED_PANEL_RADIUS,
-            progress.bar.max(progress.height),
-        ));
-        layer.setBorderWidth(0.0);
-        layer.setOpacity(if layout.shell_visible { 1.0 } else { 0.0 });
     }
 }
 
