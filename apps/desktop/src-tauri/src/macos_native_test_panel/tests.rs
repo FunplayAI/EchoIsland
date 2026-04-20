@@ -1,0 +1,419 @@
+use std::time::{Duration, Instant};
+
+use chrono::Utc;
+use echoisland_runtime::{PendingPermissionView, RuntimeSnapshot, SessionSnapshotView};
+use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+use super::*;
+
+fn snapshot(active: usize, total: usize) -> RuntimeSnapshot {
+    RuntimeSnapshot {
+        status: "Idle".to_string(),
+        primary_source: "claude".to_string(),
+        active_session_count: active,
+        total_session_count: total,
+        pending_permission_count: 0,
+        pending_question_count: 0,
+        pending_permission: None,
+        pending_question: None,
+        pending_permissions: Vec::new(),
+        pending_questions: Vec::new(),
+        sessions: Vec::new(),
+    }
+}
+
+fn session(status: &str) -> SessionSnapshotView {
+    SessionSnapshotView {
+        session_id: "session-1".to_string(),
+        source: "claude".to_string(),
+        project_name: None,
+        cwd: None,
+        model: None,
+        terminal_app: None,
+        terminal_bundle: None,
+        host_app: None,
+        window_title: None,
+        tty: None,
+        terminal_pid: None,
+        cli_pid: None,
+        iterm_session_id: None,
+        kitty_window_id: None,
+        tmux_env: None,
+        tmux_pane: None,
+        tmux_client_tty: None,
+        status: status.to_string(),
+        current_tool: None,
+        tool_description: None,
+        last_user_prompt: None,
+        last_assistant_message: None,
+        tool_history_count: 0,
+        tool_history: Vec::new(),
+        last_activity: Utc::now(),
+    }
+}
+
+fn pending_permission(request_id: &str, session_id: &str) -> PendingPermissionView {
+    PendingPermissionView {
+        request_id: request_id.to_string(),
+        session_id: session_id.to_string(),
+        source: "claude".to_string(),
+        tool_name: Some("Bash".to_string()),
+        tool_description: Some("Run command".to_string()),
+        requested_at: Utc::now(),
+    }
+}
+
+fn snapshot_with_permission(request_id: &str, session_id: &str) -> RuntimeSnapshot {
+    let mut snapshot = snapshot(1, 1);
+    let pending = pending_permission(request_id, session_id);
+    snapshot.pending_permission_count = 1;
+    snapshot.pending_permission = Some(pending.clone());
+    snapshot.pending_permissions = vec![pending];
+    snapshot.sessions = vec![session("WaitingApproval")];
+    snapshot
+}
+
+fn panel_state() -> NativePanelState {
+    NativePanelState {
+        expanded: false,
+        transitioning: false,
+        transition_cards_progress: 0.0,
+        transition_cards_entering: false,
+        skip_next_close_card_exit: false,
+        last_raw_snapshot: None,
+        last_snapshot: None,
+        status_queue: Vec::new(),
+        pending_permission_card: None,
+        pending_question_card: None,
+        status_auto_expanded: false,
+        surface_mode: NativeExpandedSurface::Default,
+        shared_body_height: None,
+        pointer_inside_since: None,
+        pointer_outside_since: None,
+        primary_mouse_down: false,
+        last_focus_click: None,
+        card_hit_targets: Vec::new(),
+        mascot_runtime: NativeMascotRuntime::new(Instant::now()),
+    }
+}
+
+#[test]
+fn summarizes_empty_snapshot() {
+    assert_eq!(summarize_headline(&snapshot(0, 0)), "No active tasks");
+}
+
+#[test]
+fn summarizes_active_snapshot() {
+    let mut snapshot = snapshot(2, 5);
+    snapshot.sessions = vec![session("Running"), session("Processing")];
+    assert_eq!(summarize_headline(&snapshot), "2 active tasks");
+}
+
+#[test]
+fn formats_empty_active_count_as_single_zero() {
+    let mut snapshot = snapshot(0, 1);
+    snapshot.sessions = vec![session("Idle")];
+    assert_eq!(compact_active_count_text(&snapshot), "0");
+}
+
+#[test]
+fn resolved_approval_enters_status_queue_exit_instead_of_waiting_for_expiry() {
+    let mut state = panel_state();
+    let live_snapshot = snapshot_with_permission("request-1", "session-1");
+
+    assert!(sync_native_status_queue(&mut state, &live_snapshot));
+    assert_eq!(state.status_queue.len(), 1);
+    state.last_raw_snapshot = Some(live_snapshot);
+
+    let empty_snapshot = snapshot(0, 1);
+    assert!(!sync_native_status_queue(&mut state, &empty_snapshot));
+
+    assert_eq!(state.status_queue.len(), 1);
+    assert!(state.status_queue[0].is_removing);
+    assert!(state.status_queue[0].remove_after.is_some());
+    assert!(matches!(
+        state.status_queue[0].payload,
+        NativeStatusQueuePayload::Approval(_)
+    ));
+}
+
+#[test]
+fn pending_card_grace_snapshot_does_not_readd_status_approval() {
+    let mut state = panel_state();
+    let live_snapshot = snapshot_with_permission("request-1", "session-1");
+    let held_snapshot = sync_native_pending_card_visibility(&mut state, &live_snapshot);
+
+    assert_eq!(held_snapshot.pending_permission_count, 1);
+    state.last_raw_snapshot = Some(live_snapshot);
+
+    let empty_snapshot = snapshot(0, 1);
+    let held_after_resolve = sync_native_pending_card_visibility(&mut state, &empty_snapshot);
+
+    assert_eq!(held_after_resolve.pending_permission_count, 1);
+    assert!(!sync_native_status_queue(&mut state, &empty_snapshot));
+    assert!(state.status_queue.is_empty());
+}
+
+#[test]
+fn surface_switch_card_progress_starts_above_zero_for_continuity() {
+    assert_eq!(
+        surface_switch_card_progress(0, 220),
+        PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS
+    );
+}
+
+#[test]
+fn surface_switch_card_progress_reaches_full_visibility() {
+    assert_eq!(surface_switch_card_progress(220, 220), 1.0);
+    assert_eq!(surface_switch_card_progress(999, 220), 1.0);
+    assert_eq!(surface_switch_card_progress(0, 0), 1.0);
+}
+
+#[test]
+fn entering_content_visibility_waits_for_reveal_delay() {
+    assert_eq!(card_content_visibility_phase(0.10, true), 0.0);
+    assert_eq!(card_content_visibility_phase(0.18, true), 0.0);
+    assert!(card_content_visibility_phase(0.24, true) > 0.0);
+}
+
+#[test]
+fn exiting_content_visibility_fades_to_zero() {
+    assert_eq!(card_content_visibility_phase(0.0, false), 1.0);
+    assert!(card_content_visibility_phase(0.30, false) < 1.0);
+    assert_eq!(card_content_visibility_phase(1.0, false), 0.0);
+}
+
+#[test]
+fn shared_content_waits_for_card_content_reveal() {
+    let (visible, interactive) =
+        shared_expanded_content_state(true, true, 1.0, 1.0, 120.0, false, 0.80);
+
+    assert!(!visible);
+    assert!(!interactive);
+}
+
+#[test]
+fn shared_content_becomes_visible_and_interactive_after_reveal() {
+    let (visible, interactive) =
+        shared_expanded_content_state(true, true, 1.0, 1.0, 120.0, false, 1.0);
+
+    assert!(visible);
+    assert!(interactive);
+}
+
+#[test]
+fn shared_content_stays_hidden_for_status_surface() {
+    let (visible, interactive) =
+        shared_expanded_content_state(true, true, 1.0, 1.0, 120.0, true, 1.0);
+
+    assert!(!visible);
+    assert!(!interactive);
+}
+
+#[test]
+fn centered_top_frame_snaps_panel_geometry_to_whole_points() {
+    let frame = centered_top_frame(
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1512.0, 982.0)),
+        NSSize::new(419.6, 152.4),
+    );
+
+    assert_eq!(frame.origin.x.fract(), 0.0);
+    assert_eq!(frame.origin.y.fract(), 0.0);
+    assert_eq!(frame.size.width, 420.0);
+    assert_eq!(frame.size.height, 152.0);
+    assert_eq!(frame.origin.y + frame.size.height, 982.0);
+}
+
+#[test]
+fn transition_canvas_height_uses_max_height_during_animation() {
+    assert_eq!(panel_transition_canvas_height(80.0, 164.0), 164.0);
+    assert_eq!(panel_transition_canvas_height(196.0, 80.0), 196.0);
+    assert_eq!(panel_transition_canvas_height(148.0, 168.0), 168.0);
+}
+
+#[test]
+fn transition_frame_uses_named_fields_for_progress() {
+    let frame = NativePanelTransitionFrame {
+        canvas_height: 196.0,
+        visible_height: 148.0,
+        bar_progress: 0.4,
+        height_progress: 0.6,
+        shoulder_progress: 0.8,
+        drop_progress: 0.3,
+        cards_progress: 0.7,
+    };
+
+    assert_eq!(frame.canvas_height, 196.0);
+    assert_eq!(frame.visible_height, 148.0);
+    assert_eq!(frame.bar_progress, 0.4);
+    assert_eq!(frame.height_progress, 0.6);
+    assert_eq!(frame.shoulder_progress, 0.8);
+    assert_eq!(frame.drop_progress, 0.3);
+    assert_eq!(frame.cards_progress, 0.7);
+}
+
+#[test]
+fn static_transition_frames_match_expected_end_states() {
+    let expanded = NativePanelTransitionFrame::expanded(164.0);
+    let collapsed = NativePanelTransitionFrame::collapsed(80.0);
+
+    assert_eq!(expanded.canvas_height, 164.0);
+    assert_eq!(expanded.visible_height, 164.0);
+    assert_eq!(expanded.bar_progress, 1.0);
+    assert_eq!(expanded.cards_progress, 1.0);
+    assert_eq!(collapsed.canvas_height, 80.0);
+    assert_eq!(collapsed.visible_height, 80.0);
+    assert_eq!(collapsed.bar_progress, 0.0);
+    assert_eq!(collapsed.cards_progress, 0.0);
+}
+
+#[test]
+fn native_panel_layout_clamps_visible_height_to_canvas() {
+    let layout = resolve_native_panel_layout(
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1512.0, 982.0)),
+        NativePanelGeometryMetrics {
+            compact_height: 38.0,
+            compact_width: 126.0,
+            expanded_width: 356.0,
+            panel_width: 356.0,
+        },
+        120.0,
+        220.0,
+        1.0,
+        1.0,
+        0.0,
+        1.0,
+    );
+
+    assert_eq!(layout.content_frame.size.height, 120.0);
+    assert_eq!(layout.expanded_frame.size.height, 120.0);
+    assert!(layout.shell_visible);
+    assert_eq!(layout.separator_visibility, 0.88);
+}
+
+#[test]
+fn open_transition_sampler_starts_collapsed_and_reveals_cards_later() {
+    let frame = resolve_open_transition_frame(0, 164.0, 164.0, 220);
+
+    assert_eq!(frame.canvas_height, 164.0);
+    assert_eq!(frame.visible_height, 80.0);
+    assert_eq!(frame.bar_progress, 0.0);
+    assert_eq!(frame.height_progress, 0.0);
+    assert_eq!(frame.shoulder_progress, 0.0);
+    assert_eq!(frame.cards_progress, 0.0);
+}
+
+#[test]
+fn open_transition_contracts_shoulders_before_rounding_top_corners() {
+    let shoulder_frame =
+        resolve_open_transition_frame(PANEL_SHOULDER_HIDE_MS / 2, 164.0, 164.0, 220);
+    assert_eq!(shoulder_frame.bar_progress, 0.0);
+    assert!(shoulder_frame.shoulder_progress > 0.0);
+    assert!(shoulder_frame.shoulder_progress < 1.0);
+
+    let morph_start = resolve_open_transition_frame(PANEL_MORPH_DELAY_MS, 164.0, 164.0, 220);
+    assert_eq!(morph_start.bar_progress, 0.0);
+    assert_eq!(morph_start.shoulder_progress, 1.0);
+}
+
+#[test]
+fn surface_switch_sampler_keeps_shell_fully_open() {
+    let frame = resolve_surface_switch_transition_frame(0, 164.0, 120.0, 164.0, 220);
+
+    assert_eq!(frame.bar_progress, 1.0);
+    assert_eq!(frame.height_progress, 1.0);
+    assert_eq!(frame.shoulder_progress, 1.0);
+    assert_eq!(frame.drop_progress, 1.0);
+    assert_eq!(
+        frame.cards_progress,
+        PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS
+    );
+}
+
+#[test]
+fn close_transition_sampler_reports_completed_exit_after_delays() {
+    let frame = resolve_close_transition_frame(999, 164.0, 164.0, 220, 220);
+
+    assert_eq!(frame.canvas_height, 164.0);
+    assert_eq!(frame.visible_height, 80.0);
+    assert_eq!(frame.bar_progress, 0.0);
+    assert_eq!(frame.height_progress, 0.0);
+    assert_eq!(frame.shoulder_progress, 0.0);
+    assert_eq!(frame.drop_progress, 0.0);
+    assert!(frame.cards_progress >= 1.0);
+}
+
+#[test]
+fn close_transition_squares_top_corners_before_expanding_shoulders() {
+    let close_delay_ms = 220;
+    let contracting = resolve_close_transition_frame(
+        close_delay_ms + PANEL_CLOSE_MORPH_DELAY_MS + 135,
+        164.0,
+        164.0,
+        close_delay_ms,
+        220,
+    );
+    assert!(contracting.bar_progress > 0.0);
+    assert!(contracting.bar_progress < 1.0);
+    assert_eq!(contracting.shoulder_progress, 1.0);
+
+    let shoulder_frame = resolve_close_transition_frame(
+        close_delay_ms + PANEL_CLOSE_SHOULDER_DELAY_MS + 60,
+        164.0,
+        164.0,
+        close_delay_ms,
+        220,
+    );
+    assert_eq!(shoulder_frame.bar_progress, 0.0);
+    assert!(shoulder_frame.shoulder_progress > 0.0);
+    assert!(shoulder_frame.shoulder_progress < 1.0);
+}
+
+#[test]
+fn hover_does_not_collapse_during_transition_even_after_delay() {
+    let now = Instant::now();
+    let mut state = panel_state();
+    state.expanded = true;
+    state.transitioning = true;
+    state.pointer_outside_since =
+        Some(now - Duration::from_millis(HOVER_DELAY_MS.saturating_add(100)));
+
+    let transition = sync_native_hover_expansion_state(&mut state, false, now);
+
+    assert_eq!(transition, None);
+    assert!(state.expanded);
+}
+
+#[test]
+fn hover_collapse_reuses_existing_timer_after_transition_finishes() {
+    let now = Instant::now();
+    let mut state = panel_state();
+    state.expanded = true;
+    state.transitioning = false;
+    state.pointer_outside_since =
+        Some(now - Duration::from_millis(HOVER_DELAY_MS.saturating_add(100)));
+
+    let transition = sync_native_hover_expansion_state(&mut state, false, now);
+
+    assert_eq!(transition, Some(NativeHoverTransition::Collapse));
+    assert!(!state.expanded);
+}
+
+#[test]
+fn status_auto_hover_keeps_live_status_surface_open_outside() {
+    let now = Instant::now();
+    let mut state = panel_state();
+    let live_snapshot = snapshot_with_permission("request-1", "session-1");
+    assert!(sync_native_status_queue(&mut state, &live_snapshot));
+    state.expanded = true;
+    state.status_auto_expanded = true;
+    state.surface_mode = NativeExpandedSurface::Status;
+    state.pointer_outside_since =
+        Some(now - Duration::from_millis(HOVER_DELAY_MS.saturating_add(100)));
+
+    let transition = sync_native_hover_expansion_state(&mut state, false, now);
+
+    assert_eq!(transition, None);
+    assert!(state.expanded);
+    assert_eq!(state.surface_mode, NativeExpandedSurface::Status);
+}
