@@ -11,6 +11,8 @@ pub(super) struct NativePanelHandles {
     pub(super) cards_container: usize,
     pub(super) top_highlight: usize,
     pub(super) body_separator: usize,
+    pub(super) settings_button: usize,
+    pub(super) quit_button: usize,
     pub(super) mascot_shell: usize,
     pub(super) mascot_body: usize,
     pub(super) mascot_left_eye: usize,
@@ -18,6 +20,8 @@ pub(super) struct NativePanelHandles {
     pub(super) mascot_mouth: usize,
     pub(super) mascot_bubble: usize,
     pub(super) mascot_sleep_label: usize,
+    pub(super) mascot_completion_badge: usize,
+    pub(super) mascot_completion_badge_label: usize,
     pub(super) headline: usize,
     pub(super) active_count_clip: usize,
     pub(super) active_count: usize,
@@ -129,6 +133,20 @@ pub(super) struct NativePendingQuestionCard {
 }
 
 #[derive(Clone)]
+pub(super) struct NativeCompletionBadgeItem {
+    pub(super) session_id: String,
+    pub(super) completed_at: chrono::DateTime<Utc>,
+    pub(super) last_user_prompt: Option<String>,
+    pub(super) last_assistant_message: Option<String>,
+}
+
+#[derive(Clone, Copy, Default)]
+pub(super) struct NativeStatusQueueSyncResult {
+    pub(super) added_approvals: usize,
+    pub(super) added_completions: usize,
+}
+
+#[derive(Clone)]
 pub(super) struct NativeCardHitTarget {
     pub(super) session_id: String,
     pub(super) frame: NSRect,
@@ -155,6 +173,7 @@ pub(super) struct NativePanelState {
     pub(super) last_raw_snapshot: Option<RuntimeSnapshot>,
     pub(super) last_snapshot: Option<RuntimeSnapshot>,
     pub(super) status_queue: Vec<NativeStatusQueueItem>,
+    pub(super) completion_badge_items: Vec<NativeCompletionBadgeItem>,
     pub(super) pending_permission_card: Option<NativePendingPermissionCard>,
     pub(super) pending_question_card: Option<NativePendingQuestionCard>,
     pub(super) status_auto_expanded: bool,

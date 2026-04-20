@@ -1,7 +1,7 @@
 :root {
   color-scheme: dark;
   --platform-compact-bar-width: 253px;
-  --platform-expanded-bar-width: 364px;
+  --platform-expanded-bar-width: 283px;
   --platform-menu-bar-height: 560px;
   --platform-morph-drop-distance: 6px;
   --platform-session-card-height: 92px;
@@ -52,7 +52,7 @@
 
 :root[data-platform="windows"] {
   --platform-compact-bar-width: 253px;
-  --platform-expanded-bar-width: 364px;
+  --platform-expanded-bar-width: 283px;
   --platform-menu-bar-height: 560px;
   --platform-morph-drop-distance: 6px;
   --platform-session-card-height: 92px;
@@ -66,7 +66,7 @@
 
 :root[data-platform="macos"] {
   --platform-compact-bar-width: 253px;
-  --platform-expanded-bar-width: 364px;
+  --platform-expanded-bar-width: 283px;
   --platform-menu-bar-height: 560px;
   --platform-morph-drop-distance: 6px;
   --platform-session-card-height: 92px;
@@ -426,9 +426,37 @@ body[data-content-host="shared-expanded"] .shared-expanded-host .panel-main {
   pointer-events: none;
 }
 
+.mascot-completion-badge {
+  position: absolute;
+  right: -4px;
+  top: 2px;
+  z-index: 2;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(239, 255, 245, 0.92);
+  border-radius: 999px;
+  background: #67df91;
+  color: rgba(5, 7, 6, 0.92);
+  box-shadow: 0 0 10px rgba(103, 223, 145, 0.34);
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+  pointer-events: none;
+}
+
+.mascot-completion-badge[hidden] {
+  display: none;
+}
+
 .task-inline {
   display: flex;
   align-items: center;
+  transform: translateY(1px);
   gap: 7px;
   padding-left: 4px;
   min-height: 28px;
@@ -535,6 +563,68 @@ button {
     transform 70ms linear,
     border-color 70ms linear,
     background 70ms linear;
+}
+
+.expanded-edge-action {
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 0;
+  width: 0;
+  height: 26px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: rgba(245, 247, 251, 0.86);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px) scale(0.82);
+  transform-origin: center;
+  transition:
+    flex-basis 140ms ease-out,
+    width 140ms ease-out,
+    opacity 140ms ease-out,
+    color 120ms ease-out,
+    transform 140ms ease-out;
+}
+
+.expanded-edge-action:hover {
+  transform: translateY(0) scale(1);
+  color: rgba(255, 255, 255, 0.98);
+}
+
+.expanded-edge-action-left {
+  position: relative;
+  top: -2px;
+  margin-left: 14px;
+  margin-right: 6px;
+}
+
+.expanded-edge-action-right {
+  position: relative;
+  top: 1px;
+  margin-right: 0;
+  color: rgba(255, 92, 92, 0.95);
+  font-size: 16px;
+}
+
+.expanded-edge-action-right:hover {
+  color: rgba(255, 68, 68, 1);
+}
+
+.island[data-panel-state="tallening"] .expanded-edge-action,
+.island[data-panel-state="expanded"] .expanded-edge-action,
+.island[data-panel-state="flattening"] .expanded-edge-action {
+  flex-basis: 26px;
+  width: 26px;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
 }
 
 button:hover {

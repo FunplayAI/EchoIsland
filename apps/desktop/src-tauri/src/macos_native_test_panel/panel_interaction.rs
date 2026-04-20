@@ -18,14 +18,14 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
     let mouse = NSEvent::mouseLocation();
     let primary_mouse_down = (NSEvent::pressedMouseButtons() & 1) != 0;
     let panel_frame = panel.frame();
-    let pill_frame = absolute_rect(panel_frame, compact_pill_frame(panel, panel_frame.size));
+    let pill_frame = absolute_rect(panel_frame, refs.pill_view.frame());
     let expanded_container = view_from_ptr(handles.expanded_container);
     let cards_container = view_from_ptr(handles.cards_container);
     let inside = if panel_frame.size.height > COLLAPSED_PANEL_HEIGHT + 0.5 {
         point_in_rect(
             mouse,
             absolute_rect(panel_frame, expanded_container.frame()),
-        )
+        ) || point_in_rect(mouse, pill_frame)
     } else {
         point_in_rect(mouse, pill_frame)
     };
@@ -35,17 +35,39 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
     let mut transition_snapshot: Option<(RuntimeSnapshot, bool)> = None;
     let mut surface_transition_snapshot: Option<RuntimeSnapshot> = None;
     let mut clicked_session_id: Option<String> = None;
+    let mut settings_clicked = false;
+    let mut quit_clicked = false;
 
     {
         let mut state = match state_mutex.lock() {
             Ok(guard) => guard,
             Err(_) => return,
         };
-        if primary_mouse_down
-            && !state.primary_mouse_down
-            && inside
+        let primary_click_started = primary_mouse_down && !state.primary_mouse_down && inside;
+        if primary_click_started && state.expanded && !state.transitioning {
+            settings_clicked = point_in_rect(
+                mouse,
+                native_edge_action_button_rect(
+                    panel_frame,
+                    refs.pill_view.frame(),
+                    refs.settings_button.frame(),
+                ),
+            );
+            quit_clicked = !settings_clicked
+                && point_in_rect(
+                    mouse,
+                    native_edge_action_button_rect(
+                        panel_frame,
+                        refs.pill_view.frame(),
+                        refs.quit_button.frame(),
+                    ),
+                );
+        }
+        if primary_click_started
             && state.expanded
             && !state.transitioning
+            && !settings_clicked
+            && !quit_clicked
             && !cards_container.isHidden()
         {
             clicked_session_id = find_clicked_card_session_id(
@@ -100,6 +122,10 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
 
     if let Some(session_id) = clicked_session_id {
         spawn_native_focus_session(app, session_id);
+    } else if settings_clicked {
+        spawn_native_open_settings_location();
+    } else if quit_clicked {
+        app.exit(0);
     }
 }
 
@@ -118,6 +144,7 @@ pub(super) fn sync_native_hover_expansion_state(
             })
         {
             state.expanded = true;
+            state.completion_badge_items.clear();
             state.status_auto_expanded = false;
             state.surface_mode = NativeExpandedSurface::Default;
             return Some(NativeHoverTransition::Expand);
@@ -188,6 +215,14 @@ fn find_clicked_card_session_id(
         .map(|target| target.session_id.clone())
 }
 
+fn native_edge_action_button_rect(
+    panel_frame: NSRect,
+    pill_frame: NSRect,
+    button_frame: NSRect,
+) -> NSRect {
+    absolute_rect(panel_frame, compose_local_rect(pill_frame, button_frame))
+}
+
 fn spawn_native_focus_session<R: tauri::Runtime + 'static>(app: AppHandle<R>, session_id: String) {
     let runtime = app.state::<AppRuntime>().inner().clone();
     tauri::async_runtime::spawn(async move {
@@ -211,6 +246,14 @@ fn spawn_native_focus_session<R: tauri::Runtime + 'static>(app: AppHandle<R>, se
                     "native card click failed to focus terminal session"
                 );
             }
+        }
+    });
+}
+
+fn spawn_native_open_settings_location() {
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = crate::commands::open_settings_location() {
+            warn!(error = %error, "native settings button failed to open settings location");
         }
     });
 }

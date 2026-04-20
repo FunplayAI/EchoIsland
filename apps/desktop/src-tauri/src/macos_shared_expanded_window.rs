@@ -204,7 +204,7 @@ pub unsafe fn sync_shared_expanded_frame(
 
     if !window.is_visible().unwrap_or(false) {
         window.show().map_err(|error| error.to_string())?;
-        ns_window.orderFrontRegardless();
+        ns_window.orderFront(None);
     }
 
     if let Some(state_mutex) = state_mutex {

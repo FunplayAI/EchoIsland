@@ -72,7 +72,7 @@ pub(super) fn resolve_open_transition_frame(
         bar_progress: morph_progress,
         height_progress,
         shoulder_progress: ease_in_cubic(animation_phase(elapsed_ms, 0, PANEL_SHOULDER_HIDE_MS)),
-        drop_progress: ease_out_cubic(morph_phase),
+        drop_progress: ease_out_cubic(height_phase),
         cards_progress: animation_phase(elapsed_ms, PANEL_OPEN_TOTAL_MS, card_total_ms),
     }
 }

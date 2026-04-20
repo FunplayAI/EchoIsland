@@ -70,6 +70,25 @@ export function setCompletionSessionIds(uiState, sessionIds) {
   uiState.surface.completionSessionIds = Array.from(new Set((sessionIds ?? []).filter(Boolean)));
 }
 
+export function getCompletionBadgeItems(uiState) {
+  return uiState.surface.completionBadgeItems;
+}
+
+export function setCompletionBadgeItems(uiState, items) {
+  uiState.surface.completionBadgeItems = items ?? [];
+}
+
+export function clearCompletionBadgeItems(uiState) {
+  uiState.surface.completionBadgeItems = [];
+  if (uiState.mascot.state === "complete") {
+    uiState.mascot.state = "idle";
+  }
+}
+
+export function getCompletionBadgeCount(uiState) {
+  return uiState.surface.completionBadgeItems.length;
+}
+
 export function getStatusQueueItems(uiState) {
   return uiState.surface.statusQueueItems;
 }

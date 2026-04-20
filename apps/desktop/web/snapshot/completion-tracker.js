@@ -1,5 +1,11 @@
 import { normalizeStatus } from "../utils.js";
 import { wasSessionRecentlyUpdated } from "../renderers.js";
+import {
+  clearCompletionBadgeItems,
+  getCompletionBadgeItems,
+  isExpanded,
+  setCompletionBadgeItems,
+} from "../state-helpers.js";
 
 export function detectCompletedSessions(previousSnapshot, snapshot) {
   if (!previousSnapshot) return [];
@@ -28,4 +34,49 @@ export function detectCompletedSessions(previousSnapshot, snapshot) {
   }
 
   return completed;
+}
+
+function sessionActivityMs(session) {
+  const value = new Date(session?.last_activity ?? 0).getTime();
+  return Number.isFinite(value) ? value : 0;
+}
+
+function buildCompletionBadgeItem(session) {
+  return {
+    sessionId: session.session_id,
+    completedAtMs: sessionActivityMs(session),
+    lastUserPrompt: session.last_user_prompt ?? null,
+    lastAssistantMessage: session.last_assistant_message ?? null,
+  };
+}
+
+function hasNewDialogueAfterCompletion(session, item) {
+  return (
+    sessionActivityMs(session) > Number(item.completedAtMs ?? 0) &&
+    (normalizeStatus(session.status) !== "idle" ||
+      (session.last_user_prompt ?? null) !== (item.lastUserPrompt ?? null) ||
+      (session.last_assistant_message ?? null) !== (item.lastAssistantMessage ?? null))
+  );
+}
+
+export function syncCompletionBadges(snapshot, completedSessionIds, uiState) {
+  if (isExpanded(uiState)) {
+    clearCompletionBadgeItems(uiState);
+    return;
+  }
+
+  const sessionsById = new Map((snapshot.sessions ?? []).map((session) => [session.session_id, session]));
+  const nextItems = getCompletionBadgeItems(uiState).filter((item) => {
+    const session = sessionsById.get(item.sessionId);
+    return session && !hasNewDialogueAfterCompletion(session, item);
+  });
+  const nextById = new Map(nextItems.map((item) => [item.sessionId, item]));
+
+  for (const sessionId of completedSessionIds ?? []) {
+    const session = sessionsById.get(sessionId);
+    if (!session) continue;
+    nextById.set(sessionId, buildCompletionBadgeItem(session));
+  }
+
+  setCompletionBadgeItems(uiState, Array.from(nextById.values()));
 }

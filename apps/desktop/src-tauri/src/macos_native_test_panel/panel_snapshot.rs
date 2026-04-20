@@ -44,15 +44,24 @@ pub(crate) fn update_native_island_snapshot<R: tauri::Runtime>(
         let mut state = state
             .lock()
             .map_err(|_| "native panel state poisoned".to_string())?;
+        let completed_session_ids = state
+            .last_raw_snapshot
+            .as_ref()
+            .map_or_else(Vec::new, |previous| {
+                detect_completed_sessions(previous, &raw_snapshot, Utc::now())
+            });
         let was_status_surface =
             state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
-        let status_queue_added = sync_native_status_queue(&mut state, &raw_snapshot);
-        if status_queue_added && !state.expanded && !state.transitioning {
+        sync_native_completion_badge(&mut state, &raw_snapshot, &completed_session_ids);
+        let status_queue_sync = sync_native_status_queue(&mut state, &raw_snapshot);
+        let _completion_queue_added = status_queue_sync.added_completions;
+        if status_queue_sync.added_approvals > 0 && !state.expanded && !state.transitioning {
             state.expanded = true;
+            state.completion_badge_items.clear();
             state.status_auto_expanded = true;
             state.surface_mode = NativeExpandedSurface::Status;
             transition_snapshot = Some((snapshot.clone(), true));
-        } else if status_queue_added
+        } else if status_queue_sync.added_approvals > 0
             && state.expanded
             && !state.transitioning
             && state.pointer_inside_since.is_none()

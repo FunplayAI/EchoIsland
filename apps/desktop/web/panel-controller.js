@@ -1,4 +1,5 @@
 import {
+  clearCompletionBadgeItems,
   getSurfaceMode,
   getInteraction,
   getLastSnapshot,
@@ -203,6 +204,7 @@ export function createPanelController({
     try {
       if (expanded) {
         setExpanded(uiState, true);
+        clearCompletionBadgeItems(uiState);
         if (syncWindowSurface) {
           await desktopApi.setIslandBarStagePassive();
         }

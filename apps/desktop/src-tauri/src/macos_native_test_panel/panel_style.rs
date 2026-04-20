@@ -14,12 +14,28 @@ pub(super) unsafe fn apply_panel_layer_styles(refs: &NativePanelRefs, state: Pan
     let expanded_container = refs.expanded_container;
     let body_separator = refs.body_separator;
     let cards_container = refs.cards_container;
+    let settings_button = refs.settings_button;
+    let quit_button = refs.quit_button;
 
     expanded_container.setHidden(!state.shell_visible);
     expanded_container.setAlphaValue(if state.shell_visible { 1.0 } else { 0.0 });
     body_separator.setHidden(state.separator_visibility <= 0.02);
     body_separator.setAlphaValue(state.separator_visibility);
     cards_container.setHidden(state.shared_visible);
+    let action_progress = edge_action_progress(state.bar_progress);
+    let action_alpha = action_progress;
+    let action_scale = lerp(0.82, 1.0, action_progress);
+    let actions_hidden = action_alpha <= 0.02;
+    settings_button.setHidden(actions_hidden);
+    settings_button.setAlphaValue(action_alpha);
+    quit_button.setHidden(actions_hidden);
+    quit_button.setAlphaValue(action_alpha);
+    if let Some(layer) = settings_button.layer() {
+        layer.setAffineTransform(CGAffineTransformMakeScale(action_scale, action_scale));
+    }
+    if let Some(layer) = quit_button.layer() {
+        layer.setAffineTransform(CGAffineTransformMakeScale(action_scale, action_scale));
+    }
 
     if let Some(layer) = refs.pill_view.layer() {
         layer.setCornerRadius(lerp(
@@ -54,4 +70,8 @@ fn all_corner_mask() -> CACornerMask {
         | CACornerMask::LayerMaxXMinYCorner
         | CACornerMask::LayerMinXMaxYCorner
         | CACornerMask::LayerMaxXMaxYCorner
+}
+
+fn edge_action_progress(bar_progress: f64) -> f64 {
+    ((bar_progress - 0.48) / 0.52).clamp(0.0, 1.0)
 }

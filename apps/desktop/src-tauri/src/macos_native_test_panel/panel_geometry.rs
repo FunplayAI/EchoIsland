@@ -168,7 +168,31 @@ pub(super) fn screen_has_camera_housing(screen: &NSScreen) -> bool {
     (left_width > 0.0 || right_width > 0.0) && center_gap > 40.0
 }
 
+pub(super) fn shell_width_for_non_camera_housing_screen(
+    _screen_width: f64,
+    compact_height: f64,
+) -> f64 {
+    let mascot_size = (compact_height - 6.0).min(27.0).max(20.0);
+    let minimum_content_width = mascot_size + 14.0 + 138.0;
+    DEFAULT_COMPACT_PILL_WIDTH.max(minimum_content_width)
+}
+
+pub(super) fn expanded_width_for_non_camera_housing_screen() -> f64 {
+    DEFAULT_EXPANDED_PILL_WIDTH
+}
+
+pub(super) fn expanded_width_for_camera_housing_screen(compact_width: f64) -> f64 {
+    (compact_width + EXPANDED_PILL_WIDTH_DELTA).clamp(compact_width, DEFAULT_PANEL_CANVAS_WIDTH)
+}
+
 pub(super) fn shell_width_for_screen(screen: &NSScreen, compact_height: f64) -> f64 {
+    if !screen_has_camera_housing(screen) {
+        return shell_width_for_non_camera_housing_screen(
+            screen.frame().size.width,
+            compact_height,
+        );
+    }
+
     let mascot_size = (compact_height - 6.0).min(27.0).max(20.0);
     let compact_wing = mascot_size + 14.0;
     let notch_width = notch_width_for_screen(screen);
@@ -209,8 +233,12 @@ pub(super) fn compact_pill_width_for_screen_rect(
 }
 
 pub(super) fn expanded_panel_width_for_screen(screen: &NSScreen) -> f64 {
+    if !screen_has_camera_housing(screen) {
+        return expanded_width_for_non_camera_housing_screen();
+    }
+
     let compact_height = compact_pill_height_for_screen(screen);
-    shell_width_for_screen(screen, compact_height)
+    expanded_width_for_camera_housing_screen(shell_width_for_screen(screen, compact_height))
 }
 
 pub(super) fn expanded_panel_width_for_screen_rect(
@@ -239,41 +267,21 @@ pub(super) fn panel_canvas_width_for_screen_rect(
         .unwrap_or_else(|| fallback_rect.size.width.max(DEFAULT_PANEL_CANVAS_WIDTH))
 }
 
-pub(super) fn compact_pill_frame(panel: &NSPanel, content_size: NSSize) -> NSRect {
-    let compact_height = compact_pill_height_for_screen_rect(
-        panel.screen().as_deref(),
-        resolve_screen_frame_for_panel(panel).unwrap_or(panel.frame()),
-    );
-    let compact_width =
-        compact_pill_width_for_screen_rect(panel.screen().as_deref(), compact_height);
-    let expanded_width = expanded_panel_width_for_screen_rect(
-        panel.screen().as_deref(),
-        resolve_screen_frame_for_panel(panel).unwrap_or(panel.frame()),
-    );
-    island_bar_frame(
-        content_size,
-        0.0,
-        compact_width,
-        expanded_width,
-        compact_height,
-        0.0,
-    )
-}
-
 pub(super) fn island_bar_frame(
     content_size: NSSize,
-    _progress: f64,
+    progress: f64,
     compact_width: f64,
-    _expanded_width: f64,
+    expanded_width: f64,
     compact_height: f64,
     drop_offset: f64,
 ) -> NSRect {
+    let width = lerp(compact_width, expanded_width, progress);
     NSRect::new(
         NSPoint::new(
-            (content_size.width - compact_width) / 2.0,
+            (content_size.width - width) / 2.0,
             content_size.height - compact_height - drop_offset,
         ),
-        NSSize::new(compact_width, compact_height),
+        NSSize::new(width, compact_height),
     )
 }
 
@@ -300,14 +308,15 @@ pub(super) fn right_shoulder_frame(pill_frame: NSRect) -> NSRect {
 pub(super) fn expanded_background_frame(
     content_size: NSSize,
     visible_height: f64,
-    _bar_progress: f64,
+    bar_progress: f64,
     height_progress: f64,
-    _compact_width: f64,
+    compact_width: f64,
     expanded_width: f64,
     compact_height: f64,
     drop_offset: f64,
 ) -> NSRect {
     let height_progress = height_progress.clamp(0.0, 1.0);
+    let width = lerp(compact_width, expanded_width, bar_progress);
     let visible_height = visible_height
         .max(COLLAPSED_PANEL_HEIGHT)
         .min(content_size.height.max(COLLAPSED_PANEL_HEIGHT));
@@ -318,10 +327,10 @@ pub(super) fn expanded_background_frame(
     );
     NSRect::new(
         NSPoint::new(
-            (content_size.width - expanded_width) / 2.0,
+            (content_size.width - width) / 2.0,
             content_size.height - drop_offset - height,
         ),
-        NSSize::new(expanded_width, height),
+        NSSize::new(width, height),
     )
 }
 

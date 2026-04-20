@@ -83,6 +83,7 @@ fn panel_state() -> NativePanelState {
         last_raw_snapshot: None,
         last_snapshot: None,
         status_queue: Vec::new(),
+        completion_badge_items: Vec::new(),
         pending_permission_card: None,
         pending_question_card: None,
         status_auto_expanded: false,
@@ -121,12 +122,15 @@ fn resolved_approval_enters_status_queue_exit_instead_of_waiting_for_expiry() {
     let mut state = panel_state();
     let live_snapshot = snapshot_with_permission("request-1", "session-1");
 
-    assert!(sync_native_status_queue(&mut state, &live_snapshot));
+    assert!(sync_native_status_queue(&mut state, &live_snapshot).added_approvals > 0);
     assert_eq!(state.status_queue.len(), 1);
     state.last_raw_snapshot = Some(live_snapshot);
 
     let empty_snapshot = snapshot(0, 1);
-    assert!(!sync_native_status_queue(&mut state, &empty_snapshot));
+    assert_eq!(
+        sync_native_status_queue(&mut state, &empty_snapshot).added_approvals,
+        0
+    );
 
     assert_eq!(state.status_queue.len(), 1);
     assert!(state.status_queue[0].is_removing);
@@ -150,8 +154,60 @@ fn pending_card_grace_snapshot_does_not_readd_status_approval() {
     let held_after_resolve = sync_native_pending_card_visibility(&mut state, &empty_snapshot);
 
     assert_eq!(held_after_resolve.pending_permission_count, 1);
-    assert!(!sync_native_status_queue(&mut state, &empty_snapshot));
+    assert_eq!(
+        sync_native_status_queue(&mut state, &empty_snapshot).added_approvals,
+        0
+    );
     assert!(state.status_queue.is_empty());
+}
+
+#[test]
+fn completion_badge_tracks_completed_session_until_new_dialogue() {
+    let mut state = panel_state();
+    let mut previous = snapshot(1, 1);
+    previous.sessions = vec![session("Running")];
+
+    let mut current = snapshot(0, 1);
+    let mut completed = session("Idle");
+    completed.last_assistant_message = Some("Done".to_string());
+    current.sessions = vec![completed.clone()];
+
+    let completed_session_ids = detect_completed_sessions(&previous, &current, Utc::now());
+    sync_native_completion_badge(&mut state, &current, &completed_session_ids);
+
+    assert_eq!(state.completion_badge_items.len(), 1);
+    assert_eq!(
+        state.completion_badge_items[0].session_id,
+        completed.session_id
+    );
+
+    let mut next = current.clone();
+    let next_session = next.sessions.first_mut().unwrap();
+    next_session.status = "Running".to_string();
+    next_session.last_user_prompt = Some("continue".to_string());
+    next_session.last_activity = completed.last_activity + chrono::Duration::seconds(1);
+
+    sync_native_completion_badge(&mut state, &next, &[]);
+
+    assert!(state.completion_badge_items.is_empty());
+}
+
+#[test]
+fn completion_badge_clears_when_island_expands() {
+    let mut state = panel_state();
+    let mut current = snapshot(0, 1);
+    current.sessions = vec![session("Idle")];
+    sync_native_completion_badge(
+        &mut state,
+        &current,
+        &[current.sessions[0].session_id.clone()],
+    );
+    assert_eq!(state.completion_badge_items.len(), 1);
+
+    state.expanded = true;
+    sync_native_completion_badge(&mut state, &current, &[]);
+
+    assert!(state.completion_badge_items.is_empty());
 }
 
 #[test]
@@ -253,6 +309,64 @@ fn transition_frame_uses_named_fields_for_progress() {
 }
 
 #[test]
+fn non_camera_housing_shell_width_stays_close_to_default_on_1440_screen() {
+    let width = shell_width_for_non_camera_housing_screen(1440.0, DEFAULT_COMPACT_PILL_HEIGHT);
+
+    assert_eq!(width, DEFAULT_COMPACT_PILL_WIDTH);
+}
+
+#[test]
+fn non_camera_housing_expanded_width_matches_web_shell() {
+    assert_eq!(
+        expanded_width_for_non_camera_housing_screen(),
+        DEFAULT_COMPACT_PILL_WIDTH + EXPANDED_PILL_WIDTH_DELTA
+    );
+}
+
+#[test]
+fn camera_housing_expanded_width_is_wider_than_compact_width() {
+    let compact_width = 312.0;
+    let expanded_width = expanded_width_for_camera_housing_screen(compact_width);
+
+    assert_eq!(expanded_width, compact_width + EXPANDED_PILL_WIDTH_DELTA);
+    assert!(expanded_width <= DEFAULT_PANEL_CANVAS_WIDTH);
+}
+
+#[test]
+fn island_bar_frame_interpolates_width_before_height_growth() {
+    let content_size = NSSize::new(420.0, 164.0);
+    let compact = island_bar_frame(
+        content_size,
+        0.0,
+        DEFAULT_COMPACT_PILL_WIDTH,
+        DEFAULT_EXPANDED_PILL_WIDTH,
+        DEFAULT_COMPACT_PILL_HEIGHT,
+        0.0,
+    );
+    let expanding = island_bar_frame(
+        content_size,
+        0.5,
+        DEFAULT_COMPACT_PILL_WIDTH,
+        DEFAULT_EXPANDED_PILL_WIDTH,
+        DEFAULT_COMPACT_PILL_HEIGHT,
+        0.0,
+    );
+    let expanded = island_bar_frame(
+        content_size,
+        1.0,
+        DEFAULT_COMPACT_PILL_WIDTH,
+        DEFAULT_EXPANDED_PILL_WIDTH,
+        DEFAULT_COMPACT_PILL_HEIGHT,
+        0.0,
+    );
+
+    assert_eq!(compact.size.width, DEFAULT_COMPACT_PILL_WIDTH);
+    assert!(expanding.size.width > compact.size.width);
+    assert!(expanding.size.width < expanded.size.width);
+    assert_eq!(expanded.size.width, DEFAULT_EXPANDED_PILL_WIDTH);
+}
+
+#[test]
 fn static_transition_frames_match_expected_end_states() {
     let expanded = NativePanelTransitionFrame::expanded(164.0);
     let collapsed = NativePanelTransitionFrame::collapsed(80.0);
@@ -314,6 +428,30 @@ fn open_transition_contracts_shoulders_before_rounding_top_corners() {
     let morph_start = resolve_open_transition_frame(PANEL_MORPH_DELAY_MS, 164.0, 164.0, 220);
     assert_eq!(morph_start.bar_progress, 0.0);
     assert_eq!(morph_start.shoulder_progress, 1.0);
+}
+
+#[test]
+fn open_transition_expands_width_before_dropping_downward() {
+    let width_expanding = resolve_open_transition_frame(
+        PANEL_MORPH_DELAY_MS + (PANEL_MORPH_MS / 2),
+        164.0,
+        164.0,
+        220,
+    );
+    assert!(width_expanding.bar_progress > 0.0);
+    assert!(width_expanding.bar_progress < 1.0);
+    assert_eq!(width_expanding.height_progress, 0.0);
+    assert_eq!(width_expanding.drop_progress, 0.0);
+
+    let height_growing = resolve_open_transition_frame(
+        PANEL_MORPH_DELAY_MS + PANEL_MORPH_MS + (PANEL_HEIGHT_MS / 2),
+        164.0,
+        164.0,
+        220,
+    );
+    assert_eq!(height_growing.bar_progress, 1.0);
+    assert!(height_growing.height_progress > 0.0);
+    assert!(height_growing.drop_progress > 0.0);
 }
 
 #[test]
@@ -404,7 +542,7 @@ fn status_auto_hover_keeps_live_status_surface_open_outside() {
     let now = Instant::now();
     let mut state = panel_state();
     let live_snapshot = snapshot_with_permission("request-1", "session-1");
-    assert!(sync_native_status_queue(&mut state, &live_snapshot));
+    assert!(sync_native_status_queue(&mut state, &live_snapshot).added_approvals > 0);
     state.expanded = true;
     state.status_auto_expanded = true;
     state.surface_mode = NativeExpandedSurface::Status;

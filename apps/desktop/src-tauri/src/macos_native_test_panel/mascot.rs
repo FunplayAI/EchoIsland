@@ -9,6 +9,8 @@ pub(super) struct MascotViews {
     pub(super) mouth: Retained<NSView>,
     pub(super) bubble: Retained<NSView>,
     pub(super) sleep_label: Retained<NSTextField>,
+    pub(super) completion_badge: Retained<NSView>,
+    pub(super) completion_badge_label: Retained<NSTextField>,
 }
 
 pub(super) fn create_mascot_views(
@@ -69,6 +71,9 @@ pub(super) fn create_mascot_views(
     let sleep_label = create_sleep_label(mtm, face);
     shell.addSubview(&sleep_label);
 
+    let (completion_badge, completion_badge_label) = create_completion_badge(mtm);
+    shell.addSubview(&completion_badge);
+
     MascotViews {
         shell,
         body,
@@ -77,6 +82,8 @@ pub(super) fn create_mascot_views(
         mouth,
         bubble,
         sleep_label,
+        completion_badge,
+        completion_badge_label,
     }
 }
 
@@ -165,6 +172,47 @@ fn create_sleep_label(mtm: MainThreadMarker, face: &NSColor) -> Retained<NSTextF
     sleep_label
 }
 
+fn create_completion_badge(mtm: MainThreadMarker) -> (Retained<NSView>, Retained<NSTextField>) {
+    let badge = NSView::initWithFrame(
+        NSView::alloc(mtm),
+        NSRect::new(NSPoint::new(21.0, 17.0), NSSize::new(13.0, 13.0)),
+    );
+    badge.setWantsLayer(true);
+    if let Some(layer) = badge.layer() {
+        layer.setCornerRadius(6.5);
+        layer.setMasksToBounds(true);
+        layer.setBackgroundColor(Some(
+            &NSColor::colorWithSRGBRed_green_blue_alpha(0.40, 0.87, 0.57, 1.0).CGColor(),
+        ));
+        layer.setBorderWidth(1.0);
+        layer.setBorderColor(Some(
+            &NSColor::colorWithSRGBRed_green_blue_alpha(0.94, 1.0, 0.96, 0.92).CGColor(),
+        ));
+        layer.setShadowColor(Some(
+            &NSColor::colorWithSRGBRed_green_blue_alpha(0.40, 0.87, 0.57, 1.0).CGColor(),
+        ));
+        layer.setShadowOpacity(0.30);
+        layer.setShadowRadius(4.0);
+    }
+    badge.setHidden(true);
+
+    let label = NSTextField::labelWithString(ns_string!("1"), mtm);
+    label.setFrame(NSRect::new(NSPoint::new(0.0, 1.0), NSSize::new(13.0, 11.0)));
+    label.setAlignment(NSTextAlignment::Center);
+    label.setTextColor(Some(&NSColor::colorWithSRGBRed_green_blue_alpha(
+        0.02, 0.02, 0.02, 0.90,
+    )));
+    label.setFont(Some(&NSFont::boldSystemFontOfSize(8.0)));
+    label.setDrawsBackground(false);
+    label.setBezeled(false);
+    label.setBordered(false);
+    label.setEditable(false);
+    label.setSelectable(false);
+    badge.addSubview(&label);
+
+    (badge, label)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum NativeMascotState {
     Idle,
@@ -172,6 +220,7 @@ pub(super) enum NativeMascotState {
     Approval,
     Question,
     MessageBubble,
+    Complete,
     Sleepy,
     WakeAngry,
 }
@@ -193,6 +242,7 @@ pub(super) struct NativeMascotFrame {
     pub(super) t: f64,
     pub(super) motion: NativeMascotMotion,
     pub(super) color: [f64; 4],
+    pub(super) completion_count: usize,
 }
 
 pub(super) struct NativeMascotRuntime {
@@ -241,6 +291,7 @@ impl NativeMascotRuntime {
         &mut self,
         base_state: NativeMascotState,
         expanded: bool,
+        completion_count: usize,
         now: Instant,
     ) -> NativeMascotFrame {
         let t = now
@@ -271,6 +322,7 @@ impl NativeMascotRuntime {
             t,
             motion,
             color: native_mascot_color(visual_state, t, self.wake_started_at, now),
+            completion_count,
         }
     }
 
@@ -330,6 +382,7 @@ impl NativeMascotRuntime {
 fn infer_native_mascot_base_state(
     snapshot: Option<&RuntimeSnapshot>,
     has_status_completion: bool,
+    has_completion_badge: bool,
 ) -> NativeMascotState {
     let Some(snapshot) = snapshot else {
         return NativeMascotState::Idle;
@@ -343,6 +396,9 @@ fn infer_native_mascot_base_state(
     }
     if has_status_completion {
         return NativeMascotState::MessageBubble;
+    }
+    if has_completion_badge {
+        return NativeMascotState::Complete;
     }
     if compact_active_count_value(snapshot) > 0 || snapshot.active_session_count > 0 {
         return NativeMascotState::Bouncing;
@@ -408,6 +464,18 @@ fn native_mascot_target_motion(
                 shadow_radius: 5.2,
             }
         }
+        NativeMascotState::Complete => {
+            let bob = ((t * 2.4).sin() + 1.0) * 0.5;
+            NativeMascotMotion {
+                offset_x: 0.0,
+                offset_y: bob * 0.8,
+                scale_x: 1.0 + bob * 0.010,
+                scale_y: 1.0 - bob * 0.006,
+                shell_alpha: 1.0,
+                shadow_opacity: 0.48,
+                shadow_radius: 5.4,
+            }
+        }
         NativeMascotState::Sleepy => {
             let breath = ((t * 0.9).sin() + 1.0) * 0.5;
             let sleepy_phase = (t + 0.9).rem_euclid(7.6);
@@ -464,7 +532,7 @@ fn native_mascot_color(
 ) -> [f64; 4] {
     match state {
         NativeMascotState::Approval | NativeMascotState::Question => [1.0, 0.48, 0.14, 1.0],
-        NativeMascotState::MessageBubble => [1.0, 0.48, 0.14, 1.0],
+        NativeMascotState::MessageBubble | NativeMascotState::Complete => [1.0, 0.48, 0.14, 1.0],
         NativeMascotState::Bouncing => [1.0, 0.48, 0.14, 1.0],
         NativeMascotState::Sleepy => [0.72, 0.30, 0.13, 1.0],
         NativeMascotState::WakeAngry => {
@@ -531,14 +599,23 @@ pub(super) unsafe fn sync_native_mascot(handles: NativePanelHandles) {
             Ok(guard) => guard,
             Err(_) => return,
         };
-        let has_status_completion = state
-            .status_queue
-            .iter()
-            .any(|item| matches!(item.payload, NativeStatusQueuePayload::Completion(_)));
-        let base_state =
-            infer_native_mascot_base_state(state.last_snapshot.as_ref(), has_status_completion);
+        let has_status_completion = state.expanded
+            && state.surface_mode == NativeExpandedSurface::Status
+            && state
+                .status_queue
+                .iter()
+                .any(|item| matches!(item.payload, NativeStatusQueuePayload::Completion(_)));
+        let has_completion_badge = !state.completion_badge_items.is_empty();
+        let base_state = infer_native_mascot_base_state(
+            state.last_snapshot.as_ref(),
+            has_status_completion,
+            has_completion_badge,
+        );
         let expanded = state.expanded;
-        state.mascot_runtime.next_frame(base_state, expanded, now)
+        let completion_count = state.completion_badge_items.len();
+        state
+            .mascot_runtime
+            .next_frame(base_state, expanded, completion_count, now)
     };
 
     apply_native_mascot_frame(handles, frame);

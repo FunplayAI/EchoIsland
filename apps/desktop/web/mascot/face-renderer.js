@@ -49,6 +49,10 @@ export function drawMascotFace(ctx, params) {
     eyeWidthFactor = 0.26;
     eyeHeightFactor = 0.055;
     eyeOffsetX = bodyWidth * 0.2;
+  } else if (faceKey === "complete") {
+    eyeWidthFactor = 0.22;
+    eyeHeightFactor = 0.18;
+    eyeOffsetX = bodyWidth * 0.19;
   } else if (faceKey === "sleepy") {
     eyeWidthFactor = 0.22;
     eyeHeightFactor = 0.085;
@@ -169,6 +173,22 @@ export function drawMascotFace(ctx, params) {
       0,
       style.mouthFill,
       "rgba(255,255,255,0.2)",
+      alpha
+    );
+    return;
+  }
+
+  if (faceKey === "complete") {
+    drawArcMouth(
+      ctx,
+      cx,
+      mouthY + bodyHeight * 0.015,
+      bodyWidth * 0.38,
+      bodyHeight * 0.12,
+      bodyHeight * 0.13,
+      0,
+      style.mouthFill,
+      "rgba(255,255,255,0.22)",
       alpha
     );
     return;

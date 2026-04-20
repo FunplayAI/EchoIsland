@@ -13,8 +13,11 @@ const {
   island,
   islandBar,
   islandPanel,
+  settingsBtn,
+  quitBtn,
   mascotCanvas,
   mascotShell,
+  mascotCompletionBadge,
   headline,
   primaryStatus,
   primarySource,
@@ -155,6 +158,8 @@ async function main() {
     bindUiEventsArgs: {
       islandBar,
       islandPanel,
+      settingsBtn,
+      quitBtn,
       pendingActions,
       sessionList,
       KEEP_OPEN_SELECTOR,
@@ -169,10 +174,13 @@ async function main() {
       loadSample: (fileName) => loadSample(fileName, refreshSnapshot),
       refreshSnapshot,
       hideMainWindow: () => desktopApi.hideMainWindow(),
+      openSettingsLocation: () => desktopApi.openSettingsLocation(),
+      quitApplication: () => desktopApi.quitApplication(),
     },
     startMascotLoop,
     mascotCanvas,
     mascotShell,
+    mascotCompletionBadge,
   });
 }
 

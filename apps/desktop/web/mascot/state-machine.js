@@ -1,4 +1,9 @@
-import { getCompletionSessionIds, getSurfaceMode, isExpanded } from "../state-helpers.js";
+import {
+  getCompletionBadgeCount,
+  getCompletionSessionIds,
+  getSurfaceMode,
+  isExpanded,
+} from "../state-helpers.js";
 import { clamp, lerp, lerpMotion, pseudoRandom, smoothstep } from "./math.js";
 import {
   DEFAULT_MOTION,
@@ -21,9 +26,13 @@ export function inferMascotState(snapshot, uiState) {
     return "question";
   }
 
-  const isCompletionSurface = getSurfaceMode(uiState) === "status" && getCompletionSessionIds(uiState).length > 0;
+  const isCompletionSurface =
+    isExpanded(uiState) && getSurfaceMode(uiState) === "status" && getCompletionSessionIds(uiState).length > 0;
   if (isCompletionSurface) {
     return "messageBubble";
+  }
+  if (getCompletionBadgeCount(uiState) > 0) {
+    return "complete";
   }
 
   const hasActiveSession = Number(snapshot.active_session_count ?? 0) > 0;
@@ -45,6 +54,7 @@ export function getBlinkScale(t, state) {
   if (state === "approval") return Math.max(0.34, scale * 0.92);
   if (state === "question") return Math.max(0.48, scale);
   if (state === "bouncing") return Math.max(0.72, scale);
+  if (state === "complete") return Math.max(0.72, scale);
   if (state === "wakeAngry") return 1;
   if (state === "sleepy") {
     const sleepyPhase = ((t + 1.1) % 7.4 + 7.4) % 7.4;
@@ -80,6 +90,16 @@ export function getMotion(state, t) {
         eyeLift: -0.04,
         wobbleX: 0,
       };
+    case "complete": {
+      const bob = (Math.sin(t * 2.4) + 1) / 2;
+      return {
+        floatY: -bob * 1.0,
+        bodyStretchX: 1 + bob * 0.01,
+        bodyStretchY: 1 - bob * 0.006,
+        eyeLift: -0.03,
+        wobbleX: 0,
+      };
+    }
     case "approval":
       return {
         floatY: 0,
@@ -139,6 +159,7 @@ export function getRunningExpression(t, airbornePct) {
 export function getBounceCeiling(state) {
   if (state === "bouncing") return 8;
   if (state === "messageBubble") return 3.0;
+  if (state === "complete") return 1.0;
   return 0;
 }
 

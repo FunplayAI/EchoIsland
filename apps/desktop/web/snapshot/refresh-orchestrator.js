@@ -12,7 +12,7 @@ import {
   setTimer,
 } from "../state-helpers.js";
 import { formatSource, formatStatus } from "../utils.js";
-import { detectCompletedSessions } from "./completion-tracker.js";
+import { detectCompletedSessions, syncCompletionBadges } from "./completion-tracker.js";
 import { applyModeHint } from "./fallback-hints.js";
 import { applyPendingCardsToSnapshot, syncPendingCardVisibility } from "./pending-card-visibility.js";
 import { hasQueueInteraction, resolveSurfaceMode, shouldAutoPopupStatusQueue } from "./queue-mode.js";
@@ -102,6 +102,7 @@ export async function refreshSnapshot(api, deps) {
   syncPendingCardVisibility(rawSnapshot, uiState, timings);
   const snapshot = applyPendingCardsToSnapshot(rawSnapshot, uiState);
   const statusQueueSync = syncStatusQueue(snapshot, previousRawSnapshot, completedSessionIds, uiState, timings);
+  syncCompletionBadges(rawSnapshot, completedSessionIds, uiState);
   scheduleStatusQueueRefresh(uiState, requestRefresh, statusQueueSync.nextRefreshDelayMs);
   setLastRawSnapshot(uiState, rawSnapshot);
   setLastSnapshot(uiState, snapshot);
@@ -127,7 +128,7 @@ export async function refreshSnapshot(api, deps) {
 
   const shouldAutoPopup = shouldAutoPopupStatusQueue(uiState);
 
-  if (shouldAutoPopup && statusQueueSync.addedCount > 0 && !isExpanded(uiState) && !isTransitioning(uiState)) {
+  if (shouldAutoPopup && statusQueueSync.addedApprovalCount > 0 && !isExpanded(uiState) && !isTransitioning(uiState)) {
     await setIslandMode?.(true, true);
     return;
   }

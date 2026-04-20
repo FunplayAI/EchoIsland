@@ -10,6 +10,7 @@ pub(super) fn initialize_native_panel_state() {
         last_raw_snapshot: None,
         last_snapshot: None,
         status_queue: Vec::new(),
+        completion_badge_items: Vec::new(),
         pending_permission_card: None,
         pending_question_card: None,
         status_auto_expanded: false,

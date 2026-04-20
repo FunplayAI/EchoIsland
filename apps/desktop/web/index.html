@@ -9,20 +9,38 @@
   <body>
     <div class="shell">
       <section id="island" class="island" data-mode="compact">
-        <header id="islandBar" class="island-bar" data-tauri-drag-region>
-          <div class="compact-left" data-tauri-drag-region>
-            <div id="mascotShell" class="mascot-shell" data-has-mascot="false">
+        <header id="islandBar" class="island-bar">
+          <div class="compact-left">
+            <div id="mascotShell" class="mascot-shell" data-has-mascot="false" data-tauri-drag-region>
               <canvas id="mascotCanvas" class="mascot-canvas" width="30" height="30"></canvas>
+              <div id="mascotCompletionBadge" class="mascot-completion-badge" hidden>1</div>
               <div id="brandDot" class="brand-dot"></div>
             </div>
-
-            <div class="compact-copy">
+            <button
+              id="settingsBtn"
+              class="expanded-edge-action expanded-edge-action-left"
+              type="button"
+              title="Settings"
+              aria-label="Settings"
+            >
+              ⚙
+            </button>
+            <div class="compact-copy" data-tauri-drag-region>
               <strong id="headline">Idle and watching</strong>
             </div>
           </div>
 
-          <div class="compact-right" data-tauri-drag-region>
-            <div class="task-inline">
+          <div class="compact-right">
+            <button
+              id="quitBtn"
+              class="expanded-edge-action expanded-edge-action-right"
+              type="button"
+              title="Quit EchoIsland"
+              aria-label="Quit EchoIsland"
+            >
+              ⏻
+            </button>
+            <div class="task-inline" data-tauri-drag-region>
               <strong id="activeCount">0</strong>
               <span class="task-slash">/</span>
               <strong id="totalCountCompact">0</strong>

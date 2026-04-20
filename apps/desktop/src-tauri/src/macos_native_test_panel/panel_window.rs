@@ -25,7 +25,7 @@ pub(super) unsafe fn configure_native_panel_window(
         panel.setReleasedWhenClosed(false);
     }
     panel.setFloatingPanel(true);
-    panel.setBecomesKeyOnlyIfNeeded(false);
+    panel.setBecomesKeyOnlyIfNeeded(true);
     panel.setWorksWhenModal(true);
     panel.setLevel(26);
     panel.setBackgroundColor(Some(&NSColor::clearColor()));
@@ -44,6 +44,6 @@ pub(super) unsafe fn configure_native_panel_window(
     );
     panel.setContentView(Some(content_view));
     panel.setFrame_display(frame, true);
-    panel.orderFrontRegardless();
+    panel.orderFront(None);
     panel.displayIfNeeded();
 }

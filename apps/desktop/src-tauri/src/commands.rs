@@ -167,6 +167,44 @@ pub fn hide_main_window(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn open_settings_location() -> Result<(), String> {
+    let paths = current_platform_paths();
+    let settings_dir = std::path::PathBuf::from(paths.echoisland_app_dir);
+    std::fs::create_dir_all(&settings_dir).map_err(|error| error.to_string())?;
+    open_path_with_system(&settings_dir)
+}
+
+#[tauri::command]
+pub fn quit_application(app: AppHandle) {
+    app.exit(0);
+}
+
+fn open_path_with_system(path: &std::path::Path) -> Result<(), String> {
+    let status = if cfg!(target_os = "windows") {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .status()
+            .map_err(|error| error.to_string())?
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+            .arg(path)
+            .status()
+            .map_err(|error| error.to_string())?
+    } else {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .status()
+            .map_err(|error| error.to_string())?
+    };
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("failed to open settings location: {status}"))
+    }
+}
+
+#[tauri::command]
 pub fn set_macos_shared_expanded_height(height: f64, app: AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     if crate::macos_native_test_panel::native_ui_enabled() {

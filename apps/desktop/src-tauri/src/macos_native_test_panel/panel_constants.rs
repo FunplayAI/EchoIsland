@@ -1,6 +1,9 @@
 pub(super) const DEFAULT_PANEL_CANVAS_WIDTH: f64 = 420.0;
 pub(super) const COLLAPSED_PANEL_HEIGHT: f64 = 80.0;
 pub(super) const DEFAULT_COMPACT_PILL_WIDTH: f64 = 253.0;
+pub(super) const EXPANDED_PILL_WIDTH_DELTA: f64 = 30.0;
+pub(super) const DEFAULT_EXPANDED_PILL_WIDTH: f64 =
+    DEFAULT_COMPACT_PILL_WIDTH + EXPANDED_PILL_WIDTH_DELTA;
 pub(super) const DEFAULT_COMPACT_PILL_HEIGHT: f64 = 37.0;
 pub(super) const COMPACT_SHOULDER_SIZE: f64 = 6.0;
 pub(super) const COMPACT_PILL_RADIUS: f64 = 12.5;

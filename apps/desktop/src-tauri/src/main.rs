@@ -40,10 +40,11 @@ use codex_scan::spawn_codex_scan_loop;
 use commands::{
     answer_question, approve_permission, bind_session_terminal, claude_status, codex_status,
     deny_permission, focus_session_terminal, get_snapshot, hide_main_window, http_receiver_status,
-    ingest_sample, ipc_addr, openclaw_status, platform_capabilities, platform_paths,
-    set_island_bar_stage, set_island_bar_stage_passive, set_island_expanded,
-    set_island_expanded_passive, set_island_panel_stage, set_island_panel_stage_passive,
-    set_macos_shared_expanded_height, show_main_window_interactive, skip_question,
+    ingest_sample, ipc_addr, open_settings_location, openclaw_status, platform_capabilities,
+    platform_paths, quit_application, set_island_bar_stage, set_island_bar_stage_passive,
+    set_island_expanded, set_island_expanded_passive, set_island_panel_stage,
+    set_island_panel_stage_passive, set_macos_shared_expanded_height, show_main_window_interactive,
+    skip_question,
 };
 use http_receiver::spawn_http_receiver;
 use startup_service::AppStartupService;
@@ -124,6 +125,8 @@ fn main() {
             show_main_window_interactive,
             set_macos_shared_expanded_height,
             hide_main_window,
+            open_settings_location,
+            quit_application,
             focus_session_terminal,
             bind_session_terminal
         ])

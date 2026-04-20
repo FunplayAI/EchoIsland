@@ -13,6 +13,8 @@ pub(super) struct PanelBaseViews {
     pub(super) cards_container: Retained<NSView>,
     pub(super) top_highlight: Retained<NSView>,
     pub(super) body_separator: Retained<NSView>,
+    pub(super) settings_button: Retained<NSView>,
+    pub(super) quit_button: Retained<NSView>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -46,6 +48,8 @@ pub(super) fn create_panel_base_views(
     );
     let top_highlight = create_top_highlight(mtm, pill_size, pill_highlight);
     let body_separator = create_body_separator(mtm, expanded_width, separator_color);
+    let settings_button = create_edge_action_button(mtm, "⚙", text_primary_color(), 20.0, 5.0);
+    let quit_button = create_edge_action_button(mtm, "⏻", close_action_color(), 16.0, 2.0);
 
     PanelBaseViews {
         content_view,
@@ -56,6 +60,8 @@ pub(super) fn create_panel_base_views(
         cards_container,
         top_highlight,
         body_separator,
+        settings_button,
+        quit_button,
     }
 }
 
@@ -188,4 +194,51 @@ fn create_body_separator(
     body_separator_layer.setOpacity(0.0);
     body_separator.setLayer(Some(&body_separator_layer));
     body_separator
+}
+
+fn text_primary_color() -> objc2::rc::Retained<NSColor> {
+    NSColor::colorWithSRGBRed_green_blue_alpha(0.96, 0.97, 0.99, 0.88)
+}
+
+fn close_action_color() -> objc2::rc::Retained<NSColor> {
+    NSColor::colorWithSRGBRed_green_blue_alpha(1.0, 0.32, 0.32, 0.95)
+}
+
+fn create_edge_action_button(
+    mtm: MainThreadMarker,
+    label: &str,
+    text_color: objc2::rc::Retained<NSColor>,
+    font_size: f64,
+    label_y: f64,
+) -> Retained<NSView> {
+    let button = NSView::initWithFrame(
+        NSView::alloc(mtm),
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(26.0, 26.0)),
+    );
+    button.setWantsLayer(true);
+    if let Some(layer) = button.layer() {
+        layer.setCornerRadius(0.0);
+        layer.setMasksToBounds(true);
+        layer.setBackgroundColor(Some(&NSColor::clearColor().CGColor()));
+        layer.setBorderWidth(0.0);
+    }
+    button.setHidden(true);
+    button.setAlphaValue(0.0);
+
+    let label = NSTextField::labelWithString(&NSString::from_str(label), mtm);
+    label.setFrame(NSRect::new(
+        NSPoint::new(0.0, label_y),
+        NSSize::new(26.0, 20.0),
+    ));
+    label.setAlignment(NSTextAlignment::Center);
+    label.setTextColor(Some(&text_color));
+    label.setFont(Some(&NSFont::boldSystemFontOfSize(font_size)));
+    label.setDrawsBackground(false);
+    label.setBezeled(false);
+    label.setBordered(false);
+    label.setEditable(false);
+    label.setSelectable(false);
+    button.addSubview(&label);
+
+    button
 }

@@ -3,6 +3,8 @@ import { getInteraction, setInteraction } from "./state-helpers.js";
 export function bindUiEvents({
   islandBar,
   islandPanel,
+  settingsBtn,
+  quitBtn,
   pendingActions,
   sessionList,
   KEEP_OPEN_SELECTOR,
@@ -17,6 +19,8 @@ export function bindUiEvents({
   loadSample,
   refreshSnapshot,
   hideMainWindow,
+  openSettingsLocation,
+  quitApplication,
 }) {
   document.querySelector("#refreshBtn")?.addEventListener("click", async () => refreshSnapshot());
   islandBar?.addEventListener("pointerenter", () => {
@@ -65,6 +69,14 @@ export function bindUiEvents({
     }, 0);
   });
   document.querySelector("#hideBtn")?.addEventListener("click", async () => hideMainWindow());
+  settingsBtn?.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    await openSettingsLocation();
+  });
+  quitBtn?.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    await quitApplication();
+  });
   document
     .querySelector("#loadCodexBtn")
     ?.addEventListener("click", async () => loadSample("codex_session_start.json"));

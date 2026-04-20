@@ -182,17 +182,34 @@ pub(super) unsafe fn compact_headline_should_hide(refs: &NativePanelRefs) -> boo
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
-pub(super) unsafe fn relayout_compact_content(refs: &NativePanelRefs, bar_size: NSSize) {
+pub(super) unsafe fn relayout_compact_content(
+    refs: &NativePanelRefs,
+    bar_size: NSSize,
+    actions_active: bool,
+) {
     let top_highlight = refs.top_highlight;
+    let settings_button = refs.settings_button;
+    let quit_button = refs.quit_button;
     let mascot_shell = refs.mascot_shell;
     let headline = refs.headline;
     let active_count_clip = refs.active_count_clip;
     let slash = refs.slash;
     let total_count = refs.total_count;
-
     let mascot_size = (bar_size.height - 9.0).clamp(24.0, 28.0);
+    let action_size = 26.0;
+    let settings_gap = 14.0;
+    let quit_gap = 6.0;
     let left_inset = ((bar_size.height - mascot_size) / 2.0).clamp(8.0, 12.0);
-    let title_x = left_inset + mascot_size + 8.0;
+    let settings_x = if actions_active {
+        left_inset + mascot_size + settings_gap
+    } else {
+        left_inset + mascot_size + 8.0
+    };
+    let title_x = if actions_active {
+        settings_x + action_size + 8.0
+    } else {
+        left_inset + mascot_size + 8.0
+    };
     let right_padding = 4.0;
     let active_width = ACTIVE_COUNT_SLOT_WIDTH;
     let slash_width = 10.0;
@@ -202,13 +219,27 @@ pub(super) unsafe fn relayout_compact_content(refs: &NativePanelRefs, bar_size: 
     let total_x = group_right - total_width;
     let slash_x = total_x - metrics_gap - slash_width;
     let right_start = (slash_x - metrics_gap - active_width + ACTIVE_COUNT_SLOT_NUDGE_X).max(168.0);
+    let quit_x = if actions_active {
+        (right_start - quit_gap - action_size).max(0.0)
+    } else {
+        (bar_size.width - 10.0 - action_size).max(0.0)
+    };
     let headline_width = (right_start - title_x - 8.0).max(96.0);
-    let digit_y = ((bar_size.height - ACTIVE_COUNT_LABEL_HEIGHT) / 2.0).round() - 0.5;
+    let digit_y = ((bar_size.height - ACTIVE_COUNT_LABEL_HEIGHT) / 2.0).round() - 1.5;
     let slash_y = digit_y;
 
     top_highlight.setFrame(NSRect::new(
         NSPoint::new(12.0, bar_size.height - 1.0),
         NSSize::new((bar_size.width - 24.0).max(0.0), 1.0),
+    ));
+    let action_y = ((bar_size.height - action_size) / 2.0).round();
+    settings_button.setFrame(NSRect::new(
+        NSPoint::new(settings_x, action_y),
+        NSSize::new(action_size, action_size),
+    ));
+    quit_button.setFrame(NSRect::new(
+        NSPoint::new(quit_x, action_y),
+        NSSize::new(action_size, action_size),
     ));
     mascot_shell.setFrame(NSRect::new(
         NSPoint::new(

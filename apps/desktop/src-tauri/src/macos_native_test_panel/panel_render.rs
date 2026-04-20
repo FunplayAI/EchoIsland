@@ -93,7 +93,7 @@ unsafe fn apply_panel_view_frames(
         progress.shoulder,
         false,
     );
-    relayout_compact_content(refs, layout.pill_frame.size);
+    relayout_compact_content(refs, layout.pill_frame.size, progress.bar >= 0.48);
     expanded_container.setFrame(layout.expanded_frame);
     cards_container.setFrame(layout.cards_frame);
     body_separator.setFrame(layout.separator_frame);

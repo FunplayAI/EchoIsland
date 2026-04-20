@@ -23,6 +23,8 @@ export const desktopApi = {
   setIslandExpanded: (expanded) => invoke("set_island_expanded", { expanded }),
   setMacosSharedExpandedHeight: (height) => invoke("set_macos_shared_expanded_height", { height }),
   hideMainWindow: () => invoke("hide_main_window"),
+  openSettingsLocation: () => invoke("open_settings_location"),
+  quitApplication: () => invoke("quit_application"),
   focusSessionTerminal: (sessionId) => invoke("focus_session_terminal", { sessionId }),
   bindSessionTerminal: (sessionId) => invoke("bind_session_terminal", { sessionId }),
 };

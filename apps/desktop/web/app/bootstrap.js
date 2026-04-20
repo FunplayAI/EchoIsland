@@ -20,6 +20,7 @@ export async function bootApp({
   startMascotLoop,
   mascotCanvas,
   mascotShell,
+  mascotCompletionBadge,
 }) {
   const ipcAddr = await desktopApi.ipcAddr();
   const capabilities = await desktopApi.platformCapabilities();
@@ -51,6 +52,6 @@ export async function bootApp({
     setLog(eventLog, "Tray requested refresh.", true);
   });
 
-  startMascotLoop({ mascotCanvas, mascotShell, uiState });
+  startMascotLoop({ mascotCanvas, mascotShell, mascotCompletionBadge, uiState });
   setInterval(refreshSnapshot, 1500);
 }

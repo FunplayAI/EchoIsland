@@ -139,7 +139,7 @@ pub(super) fn apply_native_pending_cards_to_snapshot(
 pub(super) fn sync_native_status_queue(
     state: &mut NativePanelState,
     snapshot: &RuntimeSnapshot,
-) -> bool {
+) -> NativeStatusQueueSyncResult {
     let now = Instant::now();
     let utc_now = Utc::now();
     let previous_snapshot = state.last_raw_snapshot.as_ref();
@@ -182,7 +182,8 @@ pub(super) fn sync_native_status_queue(
         .map(|item| (item.key.clone(), item))
         .collect::<HashMap<_, _>>();
     let mut next_items = Vec::new();
-    let mut added = false;
+    let mut added_approvals = 0;
+    let mut added_completions = 0;
 
     for pending in displayed_pending_permissions(snapshot) {
         let key = format!("approval:{}", pending.request_id);
@@ -211,7 +212,7 @@ pub(super) fn sync_native_status_queue(
             continue;
         }
         if existing.is_none() && is_new_live_permission {
-            added = true;
+            added_approvals += 1;
         }
         next_items.push(NativeStatusQueueItem {
             key,
@@ -240,7 +241,7 @@ pub(super) fn sync_native_status_queue(
         let key = format!("completion:{}", session.session_id);
         let existing = existing_items.remove(&key);
         if existing.is_none() {
-            added = true;
+            added_completions += 1;
         }
         next_items.push(NativeStatusQueueItem {
             key,
@@ -323,7 +324,8 @@ pub(super) fn sync_native_status_queue(
         .count();
     let displayed_permission_count = displayed_pending_permissions(snapshot).len();
     let displayed_question_count = displayed_pending_questions(snapshot).len();
-    if added
+    if added_approvals > 0
+        || added_completions > 0
         || previous_queue_keys != next_queue_keys
         || previous_approval_count != next_approval_count
         || previous_completion_count != next_completion_count
@@ -342,12 +344,75 @@ pub(super) fn sync_native_status_queue(
             expanded = state.expanded,
             status_auto_expanded = state.status_auto_expanded,
             status_surface_active = state.surface_mode == NativeExpandedSurface::Status,
-            added,
+            added_approvals,
+            added_completions,
             "native status queue sync"
         );
     }
     state.status_queue = next_items;
-    added
+    NativeStatusQueueSyncResult {
+        added_approvals,
+        added_completions,
+    }
+}
+
+pub(super) fn sync_native_completion_badge(
+    state: &mut NativePanelState,
+    snapshot: &RuntimeSnapshot,
+    completed_session_ids: &[String],
+) {
+    if state.expanded {
+        state.completion_badge_items.clear();
+        return;
+    }
+
+    let sessions_by_id = snapshot
+        .sessions
+        .iter()
+        .map(|session| (&session.session_id, session))
+        .collect::<HashMap<_, _>>();
+
+    state.completion_badge_items.retain(|item| {
+        let Some(session) = sessions_by_id.get(&item.session_id) else {
+            return false;
+        };
+        !session_has_new_dialogue_after_completion(session, item)
+    });
+
+    for session_id in completed_session_ids {
+        let Some(session) = sessions_by_id.get(session_id) else {
+            continue;
+        };
+        if let Some(item) = state
+            .completion_badge_items
+            .iter_mut()
+            .find(|item| item.session_id == *session_id)
+        {
+            item.completed_at = session.last_activity;
+            item.last_user_prompt = session.last_user_prompt.clone();
+            item.last_assistant_message = session.last_assistant_message.clone();
+            continue;
+        }
+
+        state
+            .completion_badge_items
+            .push(NativeCompletionBadgeItem {
+                session_id: session.session_id.clone(),
+                completed_at: session.last_activity,
+                last_user_prompt: session.last_user_prompt.clone(),
+                last_assistant_message: session.last_assistant_message.clone(),
+            });
+    }
+}
+
+fn session_has_new_dialogue_after_completion(
+    session: &SessionSnapshotView,
+    completion: &NativeCompletionBadgeItem,
+) -> bool {
+    session.last_activity > completion.completed_at
+        && (normalize_status(&session.status) != "idle"
+            || session.last_user_prompt != completion.last_user_prompt
+            || session.last_assistant_message != completion.last_assistant_message)
 }
 
 pub(super) fn detect_completed_sessions(

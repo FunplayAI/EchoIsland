@@ -1,4 +1,4 @@
-import { getMascotState } from "../state-helpers.js";
+import { getCompletionBadgeCount, getMascotState } from "../state-helpers.js";
 import { smoothstep } from "./math.js";
 import { drawMascotFace } from "./face-renderer.js";
 import { buildRoundedRectPath, getStateStyle, syncCanvasResolution } from "./primitives.js";
@@ -33,6 +33,7 @@ export function drawNiloMascot(now, { mascotCanvas, mascotShell, uiState }) {
   mascotShell.dataset.mascotBaseState = baseState;
   mascotShell.dataset.mascotVisualState = state;
   mascotShell.dataset.mascotExpressionState = expressionState;
+  syncCompletionBadge(mascotShell, uiState);
 
   const displayWidth = width / dpr;
   const displayHeight = height / dpr;
@@ -100,4 +101,16 @@ export function drawNiloMascot(now, { mascotCanvas, mascotShell, uiState }) {
     t,
     alpha: faceTransition.fromKey === faceTransition.targetKey ? 1 : faceTransition.pct,
   });
+}
+
+function syncCompletionBadge(mascotShell, uiState) {
+  const badge = mascotShell.querySelector(".mascot-completion-badge");
+  if (!badge) return;
+  const count = getCompletionBadgeCount(uiState);
+  if (count <= 0) {
+    badge.hidden = true;
+    return;
+  }
+  badge.hidden = false;
+  badge.textContent = String(Math.min(count, 99));
 }

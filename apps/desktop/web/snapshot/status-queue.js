@@ -71,6 +71,8 @@ export function syncStatusQueue(snapshot, previousRawSnapshot, completedSessionI
   const previousLivePermissionIds = getPendingPermissionIds(previousRawSnapshot);
   const nextItems = [];
   let addedCount = 0;
+  let addedApprovalCount = 0;
+  let addedCompletionCount = 0;
 
   for (const permission of getLivePendingPermissions(snapshot)) {
     const key = `approval:${permission.request_id}`;
@@ -81,6 +83,7 @@ export function syncStatusQueue(snapshot, previousRawSnapshot, completedSessionI
     }
     if (!previousItem && isNewLivePermission) {
       addedCount += 1;
+      addedApprovalCount += 1;
     }
     nextItems.push(buildApprovalItem(permission, nowMs, timings, previousItem));
     previousByKey.delete(key);
@@ -93,6 +96,7 @@ export function syncStatusQueue(snapshot, previousRawSnapshot, completedSessionI
     const previousItem = previousByKey.get(key) ?? null;
     if (!previousItem) {
       addedCount += 1;
+      addedCompletionCount += 1;
     }
     nextItems.push(buildCompletionItem(session, nowMs, timings, previousItem));
     previousByKey.delete(key);
@@ -153,6 +157,8 @@ export function syncStatusQueue(snapshot, previousRawSnapshot, completedSessionI
 
   return {
     addedCount,
+    addedApprovalCount,
+    addedCompletionCount,
     hasItems: prunedItems.length > 0,
     nextRefreshDelayMs: nextRefreshAt
       ? Math.max(timings.statusQueue.refreshMinDelayMs, nextRefreshAt - nowMs + timings.statusQueue.refreshLeadMs)

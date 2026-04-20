@@ -13,6 +13,8 @@ pub(super) unsafe fn apply_native_mascot_frame(
     let mascot_mouth = refs.mascot_mouth;
     let mascot_bubble = refs.mascot_bubble;
     let mascot_sleep_label = refs.mascot_sleep_label;
+    let mascot_completion_badge = refs.mascot_completion_badge;
+    let mascot_completion_badge_label = refs.mascot_completion_badge_label;
     let motion = frame.motion;
 
     mascot_shell.setAlphaValue(motion.shell_alpha.clamp(0.0, 1.0));
@@ -123,6 +125,27 @@ pub(super) unsafe fn apply_native_mascot_frame(
         NSSize::new(10.0, 10.0),
     ));
 
+    let completion_count = frame.completion_count.min(99);
+    let completion_visible = completion_count > 0 && frame.state == NativeMascotState::Complete;
+    mascot_completion_badge.setHidden(!completion_visible);
+    mascot_completion_badge.setAlphaValue(if completion_visible { 1.0 } else { 0.0 });
+    if completion_visible {
+        mascot_completion_badge_label
+            .setStringValue(&NSString::from_str(&completion_count.to_string()));
+    }
+    let badge_size = if completion_count >= 10 { 16.0 } else { 13.0 };
+    mascot_completion_badge.setFrame(NSRect::new(
+        NSPoint::new(20.0, 16.0),
+        NSSize::new(badge_size, 13.0),
+    ));
+    mascot_completion_badge_label.setFrame(NSRect::new(
+        NSPoint::new(0.0, 1.0),
+        NSSize::new(badge_size, 11.0),
+    ));
+    if let Some(layer) = mascot_completion_badge.layer() {
+        layer.setCornerRadius(6.5);
+    }
+
     for face_part in [mascot_left_eye, mascot_right_eye, mascot_mouth] {
         face_part.setHidden(false);
         if let Some(layer) = face_part.layer() {
@@ -138,6 +161,8 @@ pub(super) unsafe fn apply_native_mascot_frame(
     mascot_mouth.displayIfNeeded();
     mascot_bubble.displayIfNeeded();
     mascot_sleep_label.displayIfNeeded();
+    mascot_completion_badge.displayIfNeeded();
+    mascot_completion_badge_label.displayIfNeeded();
 }
 
 fn native_mascot_blink_scale(t: f64, state: NativeMascotState) -> f64 {
@@ -172,6 +197,7 @@ fn native_mascot_blink_scale(t: f64, state: NativeMascotState) -> f64 {
         NativeMascotState::Approval => (scale * 0.92).max(0.34),
         NativeMascotState::Question => scale.max(0.48),
         NativeMascotState::Bouncing => scale.max(0.72),
+        NativeMascotState::Complete => scale.max(0.72),
         _ => scale,
     }
 }
@@ -186,6 +212,7 @@ fn native_mascot_eye_metrics(state: NativeMascotState, open_pct: f64) -> (f64, f
         NativeMascotState::Sleepy => (0.22, 0.085, 0.20),
         NativeMascotState::WakeAngry => (0.20, 0.12, 0.18),
         NativeMascotState::MessageBubble => (0.14, 0.16, 0.20),
+        NativeMascotState::Complete => (0.22, 0.18, 0.19),
         NativeMascotState::Idle => (0.24, 0.24, 0.21),
     }
 }
@@ -202,6 +229,7 @@ fn native_mascot_mouth_metrics(
         NativeMascotState::Sleepy => (body_width * 0.16, body_height * 0.095, 0.92),
         NativeMascotState::WakeAngry => (body_width * 0.34, body_height * 0.105, 1.0),
         NativeMascotState::MessageBubble => (body_width * 0.16, body_height * 0.085, 1.0),
+        NativeMascotState::Complete => (body_width * 0.38, body_height * 0.085, 1.0),
         NativeMascotState::Bouncing => (
             lerp(body_width * 0.21, body_width * 0.28, open_pct),
             lerp(body_height * 0.08, body_height * 0.30, open_pct),
