@@ -361,7 +361,7 @@ pub(super) fn sync_native_completion_badge(
     snapshot: &RuntimeSnapshot,
     completed_session_ids: &[String],
 ) {
-    if state.expanded {
+    if state.expanded && !state.status_auto_expanded {
         state.completion_badge_items.clear();
         return;
     }

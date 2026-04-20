@@ -11,6 +11,7 @@ import {
   isTransitioning,
   setExpanded,
   setInteraction,
+  setStatusAutoExpanded,
   setSurfaceMode,
   setTimer,
   setTransitioning,
@@ -189,7 +190,7 @@ export function createPanelController({
     }
   }
 
-  async function setIslandMode(expanded, syncWindow = true) {
+  async function setIslandMode(expanded, syncWindow = true, options = {}) {
     if (!island || isTransitioning(uiState)) {
       return;
     }
@@ -204,7 +205,10 @@ export function createPanelController({
     try {
       if (expanded) {
         setExpanded(uiState, true);
-        clearCompletionBadgeItems(uiState);
+        setStatusAutoExpanded(uiState, Boolean(options.autoStatus));
+        if (!options.autoStatus) {
+          clearCompletionBadgeItems(uiState);
+        }
         if (syncWindowSurface) {
           await desktopApi.setIslandBarStagePassive();
         }
@@ -236,6 +240,7 @@ export function createPanelController({
       island.dataset.panelState = "collapsing";
       await wait(timings.shoulderTransitionMs);
       setExpanded(uiState, false);
+      setStatusAutoExpanded(uiState, false);
       island.dataset.mode = "compact";
       island.dataset.panelState = "compact";
       if (syncWindowSurface) {

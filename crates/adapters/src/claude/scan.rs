@@ -159,7 +159,11 @@ fn parse_session_file(path: &Path) -> Result<Option<ParsedSessionFile>> {
             continue;
         };
 
-        if let Some(prompt) = extract_last_prompt(&value).or_else(|| extract_user_prompt(&value)) {
+        if let Some(prompt) = extract_last_prompt(&value) {
+            last_user_prompt = Some(prompt);
+        }
+
+        if let Some(prompt) = extract_user_prompt(&value) {
             last_user_prompt = Some(prompt);
             last_event_kind = ClaudeEventKind::UserPrompt;
         }

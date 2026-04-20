@@ -4,6 +4,7 @@ import {
   clearCompletionBadgeItems,
   getCompletionBadgeItems,
   isExpanded,
+  isStatusAutoExpanded,
   setCompletionBadgeItems,
 } from "../state-helpers.js";
 
@@ -60,7 +61,7 @@ function hasNewDialogueAfterCompletion(session, item) {
 }
 
 export function syncCompletionBadges(snapshot, completedSessionIds, uiState) {
-  if (isExpanded(uiState)) {
+  if (isExpanded(uiState) && !isStatusAutoExpanded(uiState)) {
     clearCompletionBadgeItems(uiState);
     return;
   }

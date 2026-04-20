@@ -106,7 +106,7 @@ async function main() {
     eventLog,
     refreshSnapshot: () => refreshSnapshot(),
     syncExpandedPanelHeight,
-    setIslandMode: (expanded, syncWindow) => setIslandMode(expanded, syncWindow),
+    setIslandMode: (expanded, syncWindow, options) => setIslandMode(expanded, syncWindow, options),
   };
 
   async function runRefreshSnapshot() {

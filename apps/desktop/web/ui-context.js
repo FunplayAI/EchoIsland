@@ -51,6 +51,7 @@ export const uiState = {
   },
   surface: {
     mode: "default",
+    statusAutoExpanded: false,
     completionSessionIds: [],
     completionBadgeItems: [],
     pendingPermissionCard: null,

@@ -50,44 +50,14 @@ pub(crate) fn update_native_island_snapshot<R: tauri::Runtime>(
             .map_or_else(Vec::new, |previous| {
                 detect_completed_sessions(previous, &raw_snapshot, Utc::now())
             });
-        let was_status_surface =
-            state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
         sync_native_completion_badge(&mut state, &raw_snapshot, &completed_session_ids);
         let status_queue_sync = sync_native_status_queue(&mut state, &raw_snapshot);
-        let _completion_queue_added = status_queue_sync.added_completions;
-        if status_queue_sync.added_approvals > 0 && !state.expanded && !state.transitioning {
-            state.expanded = true;
-            state.completion_badge_items.clear();
-            state.status_auto_expanded = true;
-            state.surface_mode = NativeExpandedSurface::Status;
-            transition_snapshot = Some((snapshot.clone(), true));
-        } else if status_queue_sync.added_approvals > 0
-            && state.expanded
-            && !state.transitioning
-            && state.pointer_inside_since.is_none()
-        {
-            state.status_auto_expanded = true;
-            state.surface_mode = NativeExpandedSurface::Status;
-        } else if state.status_auto_expanded
-            && state.status_queue.is_empty()
-            && state.expanded
-            && !state.transitioning
-            && state.pointer_inside_since.is_none()
-        {
-            state.expanded = false;
-            state.status_auto_expanded = false;
-            state.surface_mode = NativeExpandedSurface::Default;
-            state.skip_next_close_card_exit = true;
-            transition_snapshot = Some((snapshot.clone(), false));
-        } else if state.status_queue.is_empty()
-            && state.surface_mode == NativeExpandedSurface::Status
-        {
-            state.surface_mode = NativeExpandedSurface::Default;
-            state.status_auto_expanded = false;
+        let status_surface_transition =
+            sync_native_status_surface_policy(&mut state, status_queue_sync);
+        if let Some(expanded) = status_surface_transition.panel_transition {
+            transition_snapshot = Some((snapshot.clone(), expanded));
         }
-        let is_status_surface =
-            state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
-        if was_status_surface != is_status_surface && state.expanded && !state.transitioning {
+        if status_surface_transition.surface_transition {
             surface_transition_snapshot = Some(snapshot.clone());
         }
         state.last_raw_snapshot = Some(raw_snapshot.clone());
@@ -201,6 +171,60 @@ pub(crate) fn set_shared_expanded_body_height<R: tauri::Runtime>(
     }
 
     Ok(())
+}
+
+pub(super) struct NativeStatusSurfaceTransition {
+    pub(super) panel_transition: Option<bool>,
+    pub(super) surface_transition: bool,
+}
+
+pub(super) fn sync_native_status_surface_policy(
+    state: &mut NativePanelState,
+    status_queue_sync: NativeStatusQueueSyncResult,
+) -> NativeStatusSurfaceTransition {
+    let was_status_surface =
+        state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
+    let added_status_items =
+        status_queue_sync.added_approvals + status_queue_sync.added_completions;
+    let mut panel_transition = None;
+
+    if added_status_items > 0 && !state.expanded && !state.transitioning {
+        state.expanded = true;
+        state.status_auto_expanded = true;
+        state.surface_mode = NativeExpandedSurface::Status;
+        panel_transition = Some(true);
+    } else if added_status_items > 0
+        && state.expanded
+        && !state.transitioning
+        && state.pointer_inside_since.is_none()
+    {
+        state.status_auto_expanded = true;
+        state.surface_mode = NativeExpandedSurface::Status;
+    } else if state.status_auto_expanded
+        && state.status_queue.is_empty()
+        && state.expanded
+        && !state.transitioning
+        && state.pointer_inside_since.is_none()
+    {
+        state.expanded = false;
+        state.status_auto_expanded = false;
+        state.surface_mode = NativeExpandedSurface::Default;
+        state.skip_next_close_card_exit = true;
+        panel_transition = Some(false);
+    } else if state.status_queue.is_empty() && state.surface_mode == NativeExpandedSurface::Status {
+        state.surface_mode = NativeExpandedSurface::Default;
+        state.status_auto_expanded = false;
+    }
+
+    let is_status_surface =
+        state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
+    NativeStatusSurfaceTransition {
+        panel_transition,
+        surface_transition: was_status_surface != is_status_surface
+            && panel_transition.is_none()
+            && state.expanded
+            && !state.transitioning,
+    }
 }
 
 pub(super) async fn sync_native_snapshot_once<R: tauri::Runtime>(

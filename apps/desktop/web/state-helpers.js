@@ -62,6 +62,14 @@ export function setSurfaceMode(uiState, mode) {
   uiState.surface.mode = mode;
 }
 
+export function isStatusAutoExpanded(uiState) {
+  return Boolean(uiState.surface.statusAutoExpanded);
+}
+
+export function setStatusAutoExpanded(uiState, value) {
+  uiState.surface.statusAutoExpanded = Boolean(value);
+}
+
 export function getCompletionSessionIds(uiState) {
   return uiState.surface.completionSessionIds;
 }

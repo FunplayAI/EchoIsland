@@ -211,6 +211,64 @@ fn completion_badge_clears_when_island_expands() {
 }
 
 #[test]
+fn completion_badge_stays_during_auto_status_expansion() {
+    let mut state = panel_state();
+    let mut current = snapshot(0, 1);
+    current.sessions = vec![session("Idle")];
+    sync_native_completion_badge(
+        &mut state,
+        &current,
+        &[current.sessions[0].session_id.clone()],
+    );
+    assert_eq!(state.completion_badge_items.len(), 1);
+
+    state.expanded = true;
+    state.status_auto_expanded = true;
+    state.surface_mode = NativeExpandedSurface::Status;
+    sync_native_completion_badge(&mut state, &current, &[]);
+
+    assert_eq!(state.completion_badge_items.len(), 1);
+}
+
+#[test]
+fn completion_status_queue_auto_expands_status_surface() {
+    let mut state = panel_state();
+    state
+        .completion_badge_items
+        .push(NativeCompletionBadgeItem {
+            session_id: "session-1".to_string(),
+            completed_at: Utc::now(),
+            last_user_prompt: Some("ship it".to_string()),
+            last_assistant_message: Some("Done".to_string()),
+        });
+    state.status_queue.push(NativeStatusQueueItem {
+        key: "completion:session-1".to_string(),
+        session_id: "session-1".to_string(),
+        sort_time: Utc::now(),
+        expires_at: Instant::now() + Duration::from_secs(STATUS_COMPLETION_VISIBLE_SECONDS),
+        is_live: true,
+        is_removing: false,
+        remove_after: None,
+        payload: NativeStatusQueuePayload::Completion(session("Idle")),
+    });
+
+    let transition = sync_native_status_surface_policy(
+        &mut state,
+        NativeStatusQueueSyncResult {
+            added_approvals: 0,
+            added_completions: 1,
+        },
+    );
+
+    assert_eq!(transition.panel_transition, Some(true));
+    assert!(!transition.surface_transition);
+    assert!(state.expanded);
+    assert!(state.status_auto_expanded);
+    assert_eq!(state.surface_mode, NativeExpandedSurface::Status);
+    assert_eq!(state.completion_badge_items.len(), 1);
+}
+
+#[test]
 fn surface_switch_card_progress_starts_above_zero_for_continuity() {
     assert_eq!(
         surface_switch_card_progress(0, 220),

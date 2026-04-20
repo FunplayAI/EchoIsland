@@ -8,6 +8,7 @@ import {
   setInteraction,
   setLastRawSnapshot,
   setLastSnapshot,
+  setStatusAutoExpanded,
   setSurfaceMode,
   setTimer,
 } from "../state-helpers.js";
@@ -114,6 +115,7 @@ export async function refreshSnapshot(api, deps) {
 
   if (!hasStatusItems && currentSurfaceMode === "status" && isExpanded(uiState) && !isTransitioning(uiState)) {
     setInteraction(uiState, "suppressHoverExpandUntil", Date.now() + timings.statusQueue.autoCloseHoverSuppressMs);
+    setStatusAutoExpanded(uiState, false);
     await setIslandMode?.(false, true);
     return;
   }
@@ -128,9 +130,13 @@ export async function refreshSnapshot(api, deps) {
 
   const shouldAutoPopup = shouldAutoPopupStatusQueue(uiState);
 
-  if (shouldAutoPopup && statusQueueSync.addedApprovalCount > 0 && !isExpanded(uiState) && !isTransitioning(uiState)) {
-    await setIslandMode?.(true, true);
+  if (shouldAutoPopup && statusQueueSync.addedCount > 0 && !isExpanded(uiState) && !isTransitioning(uiState)) {
+    await setIslandMode?.(true, true, { autoStatus: true });
     return;
+  }
+
+  if (shouldAutoPopup && statusQueueSync.addedCount > 0 && isExpanded(uiState) && !isTransitioning(uiState)) {
+    setStatusAutoExpanded(uiState, true);
   }
 
   if (shouldAutoPopup && isExpanded(uiState) && island?.dataset.panelState === "expanded") {
@@ -139,6 +145,7 @@ export async function refreshSnapshot(api, deps) {
   }
 
   if (!hasStatusItems && !queueInteractionActive && isExpanded(uiState) && !isTransitioning(uiState)) {
+    setStatusAutoExpanded(uiState, false);
     await setIslandMode?.(false, true);
     return;
   }

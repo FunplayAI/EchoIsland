@@ -257,6 +257,38 @@ mod tests {
     }
 
     #[test]
+    fn scans_completed_claude_transcript_with_last_prompt_metadata_as_idle() {
+        let root = temp_root();
+        let projects_dir = root.join(".claude").join("projects").join("C--Users-Adim");
+        fs::create_dir_all(&projects_dir).unwrap();
+        let session_path = projects_dir.join("session-last-prompt.jsonl");
+        let recent_time = (Utc::now() - Duration::seconds(15)).to_rfc3339();
+        fs::write(
+            &session_path,
+            format!(
+                "{{\"timestamp\":\"{recent_time}\",\"cwd\":\"C:/Users/Adim/project\",\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"Summarize changes\"}},\"sessionId\":\"session-last-prompt\"}}\n{{\"timestamp\":\"{recent_time}\",\"type\":\"assistant\",\"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"thinking\",\"thinking\":\"...\"}}]}}}}\n{{\"timestamp\":\"{recent_time}\",\"type\":\"assistant\",\"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"text\",\"text\":\"Done.\"}}]}}}}\n{{\"type\":\"last-prompt\",\"lastPrompt\":\"Summarize changes\"}}\n"
+            ),
+        )
+        .unwrap();
+
+        let paths = ClaudePaths::from_home(&root);
+        let sessions = scan_claude_sessions(&paths).unwrap();
+
+        assert_eq!(sessions.len(), 1);
+        let session = &sessions[0];
+        assert_eq!(session.status, AgentStatus::Idle);
+        assert_eq!(
+            session.last_user_prompt.as_deref(),
+            Some("Summarize changes")
+        );
+        assert_eq!(session.last_assistant_message.as_deref(), Some("Done."));
+        assert_eq!(session.current_tool, None);
+        assert_eq!(session.tool_description, None);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn scans_running_claude_tool_use() {
         let root = temp_root();
         let projects_dir = root.join(".claude").join("projects").join("C--Users-Adim");
