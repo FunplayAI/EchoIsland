@@ -11,17 +11,23 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
+    #[serde(default = "default_completion_sound_enabled")]
     pub completion_sound_enabled: bool,
+    #[serde(default = "default_mascot_enabled")]
     pub mascot_enabled: bool,
+    #[serde(default)]
     pub preferred_display_index: usize,
+    #[serde(default)]
+    pub preferred_display_key: Option<String>,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            completion_sound_enabled: true,
-            mascot_enabled: true,
+            completion_sound_enabled: default_completion_sound_enabled(),
+            mascot_enabled: default_mascot_enabled(),
             preferred_display_index: 0,
+            preferred_display_key: None,
         }
     }
 }
@@ -64,13 +70,14 @@ pub fn update_mascot_enabled(enabled: bool) -> Result<AppSettings> {
     Ok(guard.clone())
 }
 
-pub fn update_preferred_display_index(index: usize) -> Result<AppSettings> {
+pub fn update_preferred_display_selection(index: usize, key: Option<String>) -> Result<AppSettings> {
     let cache = APP_SETTINGS_CACHE.get_or_init(|| Mutex::new(load_app_settings_from_disk().unwrap_or_default()));
     let mut guard = cache.lock().map_err(|_| anyhow::anyhow!("app settings lock poisoned"))?;
-    if guard.preferred_display_index == index {
+    if guard.preferred_display_index == index && guard.preferred_display_key == key {
         return Ok(guard.clone());
     }
     guard.preferred_display_index = index;
+    guard.preferred_display_key = key;
     save_app_settings(&app_settings_path(), &guard)?;
     Ok(guard.clone())
 }
@@ -97,4 +104,12 @@ fn save_app_settings(path: &Path, settings: &AppSettings) -> Result<()> {
     let encoded = serde_json::to_vec_pretty(settings).context("failed to encode app settings")?;
     fs::write(path, encoded).with_context(|| format!("failed to write {}", path.display()))?;
     Ok(())
+}
+
+fn default_completion_sound_enabled() -> bool {
+    true
+}
+
+fn default_mascot_enabled() -> bool {
+    true
 }

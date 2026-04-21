@@ -69,9 +69,25 @@ pub(super) fn resolve_preferred_native_screen(mtm: MainThreadMarker) -> Option<R
     if screens.is_empty() {
         return None;
     }
-    let preferred_index = crate::app_settings::current_app_settings().preferred_display_index;
-    if preferred_index < screens.len() {
-        return Some(screens.objectAtIndex(preferred_index));
+    let settings = crate::app_settings::current_app_settings();
+    if let Some(preferred_key) = settings.preferred_display_key.as_deref() {
+        for index in 0..screens.len() {
+            let screen = screens.objectAtIndex(index);
+            let frame = screen.frame();
+            let key = format!(
+                "Display|{}|{}|{}|{}",
+                frame.origin.x as i64,
+                frame.origin.y as i64,
+                frame.size.width as i64,
+                frame.size.height as i64
+            );
+            if key == preferred_key {
+                return Some(screen);
+            }
+        }
+    }
+    if settings.preferred_display_index < screens.len() {
+        return Some(screens.objectAtIndex(settings.preferred_display_index));
     }
     NSScreen::mainScreen(mtm).or_else(|| Some(screens.objectAtIndex(0)))
 }

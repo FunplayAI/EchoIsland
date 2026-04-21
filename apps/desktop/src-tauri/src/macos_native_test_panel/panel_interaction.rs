@@ -358,13 +358,21 @@ fn spawn_native_toggle_mascot<R: tauri::Runtime + 'static>(app: AppHandle<R>) {
 
 fn spawn_native_cycle_display<R: tauri::Runtime + 'static>(app: AppHandle<R>) {
     tauri::async_runtime::spawn(async move {
-        let Some(mtm) = MainThreadMarker::new() else {
+        let Ok(displays) = crate::display_settings::list_available_displays(&app) else {
             return;
         };
-        let total = NSScreen::screens(mtm).len().max(1);
-        let current = crate::app_settings::current_app_settings().preferred_display_index;
+        let total = displays.len().max(1);
+        let settings = crate::app_settings::current_app_settings();
+        let current = crate::display_settings::resolve_preferred_display_index(
+            &displays,
+            settings.preferred_display_key.as_deref(),
+        );
         let next = (current + 1) % total;
-        if let Err(error) = crate::app_settings::update_preferred_display_index(next) {
+        let selected = &displays[next];
+        if let Err(error) = crate::app_settings::update_preferred_display_selection(
+            next,
+            Some(selected.key.clone()),
+        ) {
             warn!(error = %error, "failed to update preferred display");
             return;
         }

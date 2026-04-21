@@ -7,9 +7,19 @@ use crate::constants::MAIN_WINDOW_LABEL;
 #[serde(rename_all = "camelCase")]
 pub struct DisplayOption {
     pub index: usize,
+    pub key: String,
     pub name: String,
     pub width: u32,
     pub height: u32,
+}
+
+pub fn display_key_for_monitor(monitor: &tauri::Monitor) -> String {
+    let position = monitor.position();
+    let size = monitor.size();
+    format!(
+        "Display|{}|{}|{}|{}",
+        position.x, position.y, size.width, size.height
+    )
 }
 
 pub fn list_available_displays<R: tauri::Runtime>(
@@ -24,6 +34,7 @@ pub fn list_available_displays<R: tauri::Runtime>(
         .enumerate()
         .map(|(index, monitor)| DisplayOption {
             index,
+            key: display_key_for_monitor(&monitor),
             name: monitor
                 .name()
                 .cloned()
@@ -32,4 +43,10 @@ pub fn list_available_displays<R: tauri::Runtime>(
             height: monitor.size().height,
         })
         .collect())
+}
+
+pub fn resolve_preferred_display_index(displays: &[DisplayOption], preferred_key: Option<&str>) -> usize {
+    preferred_key
+        .and_then(|key| displays.iter().position(|display| display.key == key))
+        .unwrap_or(0)
 }

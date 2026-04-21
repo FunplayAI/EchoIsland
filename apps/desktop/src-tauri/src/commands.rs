@@ -11,10 +11,10 @@ use tauri::{AppHandle, State};
 use crate::{
     app_settings::{
         AppSettings, current_app_settings, update_completion_sound_enabled,
-        update_mascot_enabled, update_preferred_display_index,
+        update_mascot_enabled, update_preferred_display_selection,
     },
     app_runtime::AppRuntime,
-    display_settings::{DisplayOption, list_available_displays},
+    display_settings::{DisplayOption, list_available_displays, resolve_preferred_display_index},
     command_services::{SampleIngestService, SnapshotCommandService},
     http_receiver::{HttpReceiverStatus, default_http_receiver_status},
     native_ui_refresh::maybe_refresh_native_ui_for_event,
@@ -35,8 +35,13 @@ pub async fn get_snapshot(runtime: State<'_, AppRuntime>) -> Result<RuntimeSnaps
 }
 
 #[tauri::command]
-pub fn get_app_settings() -> AppSettings {
-    current_app_settings()
+pub fn get_app_settings(app: AppHandle) -> AppSettings {
+    let mut settings = current_app_settings();
+    if let Ok(displays) = list_available_displays(&app) {
+        settings.preferred_display_index =
+            resolve_preferred_display_index(&displays, settings.preferred_display_key.as_deref());
+    }
+    settings
 }
 
 #[tauri::command]
@@ -208,7 +213,9 @@ pub fn set_preferred_display_index(index: usize, app: AppHandle) -> Result<AppSe
     if index >= displays.len() {
         return Err(format!("display index out of range: {index}"));
     }
-    let settings = update_preferred_display_index(index).map_err(|error| error.to_string())?;
+    let selected = &displays[index];
+    let settings = update_preferred_display_selection(index, Some(selected.key.clone()))
+        .map_err(|error| error.to_string())?;
     refresh_desktop_after_settings_change(&app);
     reposition_desktop_to_selected_display(&app)?;
     Ok(settings)
