@@ -49,8 +49,11 @@ pub fn current_app_settings() -> AppSettings {
 }
 
 pub fn update_completion_sound_enabled(enabled: bool) -> Result<AppSettings> {
-    let cache = APP_SETTINGS_CACHE.get_or_init(|| Mutex::new(load_app_settings_from_disk().unwrap_or_default()));
-    let mut guard = cache.lock().map_err(|_| anyhow::anyhow!("app settings lock poisoned"))?;
+    let cache = APP_SETTINGS_CACHE
+        .get_or_init(|| Mutex::new(load_app_settings_from_disk().unwrap_or_default()));
+    let mut guard = cache
+        .lock()
+        .map_err(|_| anyhow::anyhow!("app settings lock poisoned"))?;
     if guard.completion_sound_enabled == enabled {
         return Ok(guard.clone());
     }
@@ -60,8 +63,11 @@ pub fn update_completion_sound_enabled(enabled: bool) -> Result<AppSettings> {
 }
 
 pub fn update_mascot_enabled(enabled: bool) -> Result<AppSettings> {
-    let cache = APP_SETTINGS_CACHE.get_or_init(|| Mutex::new(load_app_settings_from_disk().unwrap_or_default()));
-    let mut guard = cache.lock().map_err(|_| anyhow::anyhow!("app settings lock poisoned"))?;
+    let cache = APP_SETTINGS_CACHE
+        .get_or_init(|| Mutex::new(load_app_settings_from_disk().unwrap_or_default()));
+    let mut guard = cache
+        .lock()
+        .map_err(|_| anyhow::anyhow!("app settings lock poisoned"))?;
     if guard.mascot_enabled == enabled {
         return Ok(guard.clone());
     }
@@ -70,9 +76,15 @@ pub fn update_mascot_enabled(enabled: bool) -> Result<AppSettings> {
     Ok(guard.clone())
 }
 
-pub fn update_preferred_display_selection(index: usize, key: Option<String>) -> Result<AppSettings> {
-    let cache = APP_SETTINGS_CACHE.get_or_init(|| Mutex::new(load_app_settings_from_disk().unwrap_or_default()));
-    let mut guard = cache.lock().map_err(|_| anyhow::anyhow!("app settings lock poisoned"))?;
+pub fn update_preferred_display_selection(
+    index: usize,
+    key: Option<String>,
+) -> Result<AppSettings> {
+    let cache = APP_SETTINGS_CACHE
+        .get_or_init(|| Mutex::new(load_app_settings_from_disk().unwrap_or_default()));
+    let mut guard = cache
+        .lock()
+        .map_err(|_| anyhow::anyhow!("app settings lock poisoned"))?;
     if guard.preferred_display_index == index && guard.preferred_display_key == key {
         return Ok(guard.clone());
     }

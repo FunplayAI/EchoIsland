@@ -1,4 +1,8 @@
 use super::*;
+use crate::native_panel_core::{
+    LastFocusClick, PanelClickInput, PanelHitTarget, PanelInteractionCommand,
+    resolve_panel_click_action,
+};
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static>(
@@ -35,7 +39,7 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
     let now = Instant::now();
     let mut transition_snapshot: Option<(RuntimeSnapshot, bool)> = None;
     let mut surface_transition_snapshot: Option<RuntimeSnapshot> = None;
-    let mut clicked_action: Option<NativeCardHitTarget> = None;
+    let click_command;
     let mut settings_clicked = false;
     let mut quit_clicked = false;
 
@@ -71,32 +75,53 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
             && !quit_clicked
             && !cards_container.isHidden()
         {
-            clicked_action = find_clicked_card_target(
+            let clicked_action = find_clicked_card_target(
                 &state.card_hit_targets,
                 panel_frame,
                 expanded_container.frame(),
                 cards_container.frame(),
                 mouse,
             );
-            if let Some(target) = clicked_action.as_ref().filter(|target| {
-                target.action == NativePanelHitAction::FocusSession
-            }) {
-                let session_id = &target.value;
-                let suppressed =
-                    state
-                        .last_focus_click
-                        .as_ref()
-                        .is_some_and(|(last_session_id, last_at)| {
-                            last_session_id == session_id
-                                && now.duration_since(*last_at).as_millis()
-                                    < CARD_FOCUS_CLICK_DEBOUNCE_MS
-                        });
-                if suppressed {
-                    clicked_action = None;
-                } else {
-                    state.last_focus_click = Some((session_id.clone(), now));
-                }
+            let click_resolution = resolve_panel_click_action(PanelClickInput {
+                primary_click_started,
+                expanded: state.expanded,
+                transitioning: state.transitioning,
+                settings_button_hit: settings_clicked,
+                quit_button_hit: quit_clicked,
+                cards_visible: !cards_container.isHidden(),
+                card_target: clicked_action.map(native_card_hit_target_action),
+                last_focus_click: state.last_focus_click.as_ref().map(
+                    |(session_id, clicked_at)| LastFocusClick {
+                        session_id,
+                        clicked_at: *clicked_at,
+                    },
+                ),
+                now,
+                focus_debounce_ms: CARD_FOCUS_CLICK_DEBOUNCE_MS,
+            });
+            if let Some(session_id) = click_resolution.focus_click_to_record {
+                state.last_focus_click = Some((session_id, now));
             }
+            click_command = click_resolution.command;
+        } else {
+            click_command = resolve_panel_click_action(PanelClickInput {
+                primary_click_started,
+                expanded: state.expanded,
+                transitioning: state.transitioning,
+                settings_button_hit: settings_clicked,
+                quit_button_hit: quit_clicked,
+                cards_visible: !cards_container.isHidden(),
+                card_target: None,
+                last_focus_click: state.last_focus_click.as_ref().map(
+                    |(session_id, clicked_at)| LastFocusClick {
+                        session_id,
+                        clicked_at: *clicked_at,
+                    },
+                ),
+                now,
+                focus_debounce_ms: CARD_FOCUS_CLICK_DEBOUNCE_MS,
+            })
+            .command;
         }
         state.primary_mouse_down = primary_mouse_down;
         let was_status_surface =
@@ -110,18 +135,10 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
             }
         }
 
-        if primary_click_started
-            && state.expanded
-            && !state.transitioning
-            && settings_clicked
-        {
-            state.status_auto_expanded = false;
-            state.surface_mode = if state.surface_mode == NativeExpandedSurface::Settings {
-                NativeExpandedSurface::Default
-            } else {
-                NativeExpandedSurface::Settings
-            };
-            surface_transition_snapshot = state.last_snapshot.clone();
+        if primary_click_started && state.expanded && !state.transitioning && settings_clicked {
+            if toggle_native_settings_surface(&mut state) {
+                surface_transition_snapshot = state.last_snapshot.clone();
+            }
         }
 
         let is_status_surface =
@@ -149,8 +166,8 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
         begin_native_panel_surface_transition(app.clone(), handles, snapshot);
     }
 
-    if let Some(target) = clicked_action {
-        match target.action {
+    match click_command {
+        PanelInteractionCommand::HitTarget(target) => match target.action {
             NativePanelHitAction::FocusSession => {
                 spawn_native_focus_session(app, target.value);
             }
@@ -166,11 +183,18 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
             NativePanelHitAction::OpenReleasePage => {
                 spawn_native_open_release_page();
             }
-        }
-    } else if settings_clicked {
-    } else if quit_clicked {
-        app.exit(0);
+        },
+        PanelInteractionCommand::ToggleSettingsSurface => {}
+        PanelInteractionCommand::QuitApplication => app.exit(0),
+        PanelInteractionCommand::None => {}
     }
+}
+
+pub(super) fn toggle_native_settings_surface(state: &mut NativePanelState) -> bool {
+    let mut core = state.to_core_panel_state();
+    let changed = crate::native_panel_core::toggle_settings_surface(&mut core);
+    state.apply_core_panel_state(core);
+    changed
 }
 
 pub(super) fn sync_native_hover_expansion_state(
@@ -178,42 +202,15 @@ pub(super) fn sync_native_hover_expansion_state(
     inside: bool,
     now: Instant,
 ) -> Option<NativeHoverTransition> {
-    if inside {
-        state.pointer_outside_since = None;
-        state.pointer_inside_since.get_or_insert(now);
-        if !state.expanded
-            && !state.transitioning
-            && state.pointer_inside_since.is_some_and(|entered_at| {
-                now.duration_since(entered_at).as_millis() >= HOVER_DELAY_MS as u128
-            })
-        {
-            state.expanded = true;
-            state.completion_badge_items.clear();
-            state.status_auto_expanded = false;
-            state.surface_mode = NativeExpandedSurface::Default;
-            return Some(NativeHoverTransition::Expand);
-        }
-    } else {
-        state.pointer_inside_since = None;
-        state.pointer_outside_since.get_or_insert(now);
-        let keep_open_for_status = state.status_auto_expanded
-            && state.surface_mode == NativeExpandedSurface::Status
-            && !state.status_queue.is_empty();
-        if state.expanded
-            && !state.transitioning
-            && !keep_open_for_status
-            && state.pointer_outside_since.is_some_and(|left_at| {
-                now.duration_since(left_at).as_millis() >= HOVER_DELAY_MS as u128
-            })
-        {
-            state.expanded = false;
-            state.status_auto_expanded = false;
-            state.surface_mode = NativeExpandedSurface::Default;
-            return Some(NativeHoverTransition::Collapse);
-        }
-    }
-
-    None
+    let mut core = state.to_core_panel_state();
+    let transition = crate::native_panel_core::sync_hover_expansion_state(
+        &mut core,
+        inside,
+        now,
+        HOVER_DELAY_MS,
+    );
+    state.apply_core_panel_state(core);
+    transition
 }
 
 pub(super) fn native_status_surface_active() -> bool {
@@ -269,6 +266,13 @@ fn find_clicked_card_target(
         .cloned()
 }
 
+fn native_card_hit_target_action(target: NativeCardHitTarget) -> PanelHitTarget {
+    PanelHitTarget {
+        action: target.action,
+        value: target.value,
+    }
+}
+
 fn native_edge_action_button_rect(
     panel_frame: NSRect,
     pill_frame: NSRect,
@@ -277,7 +281,7 @@ fn native_edge_action_button_rect(
     absolute_rect(panel_frame, compose_local_rect(pill_frame, button_frame))
 }
 
-fn native_hover_pill_rect(panel_frame: NSRect, pill_frame: NSRect) -> NSRect {
+pub(super) fn native_hover_pill_rect(panel_frame: NSRect, pill_frame: NSRect) -> NSRect {
     let top_gap =
         (panel_frame.size.height - (pill_frame.origin.y + pill_frame.size.height)).max(0.0);
     absolute_rect(
@@ -313,33 +317,15 @@ fn spawn_native_toggle_completion_sound<R: tauri::Runtime + 'static>(app: AppHan
             return;
         };
         let rerender = native_panel_state().and_then(|state| {
-            state.lock().ok().and_then(|guard| {
-                guard.last_snapshot.clone().map(|snapshot| {
-                    (
-                        snapshot,
-                        guard.expanded,
-                        guard.shared_body_height,
-                        guard.transitioning,
-                        guard.transition_cards_progress,
-                        guard.transition_cards_entering,
-                    )
-                })
-            })
+            state
+                .lock()
+                .ok()
+                .and_then(|guard| native_panel_render_payload(&guard))
         });
 
-        if let Some((snapshot, expanded, shared_body_height, transitioning, cards_progress, cards_entering)) =
-            rerender
-        {
+        if let Some(payload) = rerender {
             let _ = app.run_on_main_thread(move || unsafe {
-                apply_snapshot_to_panel(
-                    handles,
-                    &snapshot,
-                    expanded,
-                    shared_body_height,
-                    transitioning,
-                    cards_progress,
-                    cards_entering,
-                );
+                apply_native_panel_render_payload(handles, payload);
             });
         }
     });

@@ -70,26 +70,36 @@ pub(super) fn resolve_preferred_native_screen(mtm: MainThreadMarker) -> Option<R
         return None;
     }
     let settings = crate::app_settings::current_app_settings();
-    if let Some(preferred_key) = settings.preferred_display_key.as_deref() {
-        for index in 0..screens.len() {
-            let screen = screens.objectAtIndex(index);
-            let frame = screen.frame();
-            let key = format!(
-                "Display|{}|{}|{}|{}",
-                frame.origin.x as i64,
-                frame.origin.y as i64,
-                frame.size.width as i64,
-                frame.size.height as i64
-            );
-            if key == preferred_key {
-                return Some(screen);
-            }
-        }
-    }
-    if settings.preferred_display_index < screens.len() {
-        return Some(screens.objectAtIndex(settings.preferred_display_index));
-    }
-    NSScreen::mainScreen(mtm).or_else(|| Some(screens.objectAtIndex(0)))
+    let display_keys = native_screen_display_keys(&screens);
+    let fallback_index = NSScreen::mainScreen(mtm).and_then(|main_screen| {
+        let main_key = native_screen_display_key(&main_screen);
+        display_keys.iter().position(|key| key == &main_key)
+    });
+    let index = crate::native_panel_core::resolve_preferred_panel_display_index(
+        &display_keys,
+        settings.preferred_display_key.as_deref(),
+        settings.preferred_display_index,
+        fallback_index,
+    )?;
+    Some(screens.objectAtIndex(index))
+}
+
+fn native_screen_display_keys(
+    screens: &objc2::rc::Retained<objc2_foundation::NSArray<NSScreen>>,
+) -> Vec<String> {
+    (0..screens.len())
+        .map(|index| native_screen_display_key(&screens.objectAtIndex(index)))
+        .collect()
+}
+
+fn native_screen_display_key(screen: &NSScreen) -> String {
+    let frame = screen.frame();
+    crate::native_panel_core::panel_display_key(crate::native_panel_core::PanelDisplayGeometry {
+        x: frame.origin.x as i64,
+        y: frame.origin.y as i64,
+        width: frame.size.width as i64,
+        height: frame.size.height as i64,
+    })
 }
 
 pub(super) fn native_panel_colors() -> NativePanelColors {

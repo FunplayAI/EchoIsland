@@ -20,114 +20,24 @@ pub(super) fn native_panel_content_visibility() -> f64 {
 }
 
 pub(super) fn card_chat_body_width(card_width: f64) -> f64 {
-    (card_width - (CARD_INSET_X * 2.0) - CARD_CHAT_PREFIX_WIDTH).max(1.0)
+    crate::native_panel_core::resolve_card_chat_body_width(card_width, native_card_metrics())
 }
 
 pub(super) fn estimated_chat_body_height(body: &str, width: f64, max_lines: isize) -> f64 {
-    estimated_chat_line_count(body, width, max_lines) as f64 * CARD_CHAT_LINE_HEIGHT
-}
-
-pub(super) fn estimated_chat_line_count(body: &str, width: f64, max_lines: isize) -> isize {
-    let max_lines = max_lines.max(1);
-    let line_count = body
-        .lines()
-        .map(|line| {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                1
-            } else {
-                (estimated_text_width(trimmed, 10.0) / width.max(1.0)).ceil() as isize
-            }
-        })
-        .sum::<isize>()
-        .max(1);
-    line_count.min(max_lines)
-}
-
-pub(super) fn estimated_text_width(text: &str, font_size: f64) -> f64 {
-    text.chars()
-        .map(|ch| {
-            let factor = if ch.is_ascii_whitespace() {
-                0.34
-            } else if ch.is_ascii_uppercase() {
-                0.66
-            } else if ch.is_ascii_punctuation() {
-                0.42
-            } else if ch.is_ascii() {
-                0.60
-            } else {
-                1.0
-            };
-            factor * font_size
-        })
-        .sum::<f64>()
-        .max(font_size)
+    crate::native_panel_core::resolve_estimated_chat_body_height(
+        body,
+        width,
+        max_lines,
+        native_card_metrics(),
+    )
 }
 
 pub(super) fn estimated_default_chat_body_width() -> f64 {
     card_chat_body_width(expanded_cards_width(DEFAULT_PANEL_CANVAS_WIDTH))
 }
 
-pub(super) fn summarize_headline(snapshot: &RuntimeSnapshot) -> String {
-    let status_queue = native_status_queue_surface_items();
-    if !status_queue.is_empty() {
-        let approval_count = status_queue
-            .iter()
-            .filter(|item| matches!(&item.payload, NativeStatusQueuePayload::Approval(_)))
-            .count();
-        if approval_count > 0 {
-            return if approval_count > 1 {
-                "Approvals waiting".to_string()
-            } else {
-                "Approval waiting".to_string()
-            };
-        }
-
-        let completion_count = status_queue
-            .iter()
-            .filter(|item| matches!(&item.payload, NativeStatusQueuePayload::Completion(_)))
-            .count();
-        if completion_count > 1 {
-            return format!("{completion_count} tasks complete");
-        }
-        if let Some(NativeStatusQueueItem {
-            payload: NativeStatusQueuePayload::Completion(session),
-            ..
-        }) = status_queue.first()
-        {
-            return display_snippet(
-                session
-                    .last_assistant_message
-                    .as_deref()
-                    .or(session.tool_description.as_deref()),
-                30,
-            )
-            .unwrap_or_else(|| "Task complete".to_string());
-        }
-    }
-
-    let active_count = compact_active_count_value(snapshot);
-    if active_count > 0 {
-        format!(
-            "{} active task{}",
-            active_count,
-            if active_count > 1 { "s" } else { "" }
-        )
-    } else {
-        "No active tasks".to_string()
-    }
-}
-
 pub(super) fn lerp(start: f64, end: f64, progress: f64) -> f64 {
     start + ((end - start) * progress.clamp(0.0, 1.0))
-}
-
-pub(super) fn animation_phase(elapsed_ms: u64, delay_ms: u64, duration_ms: u64) -> f64 {
-    if duration_ms == 0 {
-        return 1.0;
-    }
-
-    elapsed_ms.saturating_sub(delay_ms) as f64 / duration_ms as f64
 }
 
 pub(super) fn ease_in_cubic(progress: f64) -> f64 {

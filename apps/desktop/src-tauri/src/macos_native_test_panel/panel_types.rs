@@ -37,16 +37,7 @@ pub(super) struct CardAnimationLayout {
     pub(super) collapsed_height: f64,
 }
 
-#[derive(Clone, Copy)]
-pub(super) struct NativePanelTransitionFrame {
-    pub(super) canvas_height: f64,
-    pub(super) visible_height: f64,
-    pub(super) bar_progress: f64,
-    pub(super) height_progress: f64,
-    pub(super) shoulder_progress: f64,
-    pub(super) drop_progress: f64,
-    pub(super) cards_progress: f64,
-}
+pub(super) type NativePanelTransitionFrame = crate::native_panel_core::PanelTransitionFrame;
 
 #[derive(Clone, Copy)]
 pub(super) struct NativePanelGeometryMetrics {
@@ -71,90 +62,23 @@ pub(super) struct NativePanelLayout {
     pub(super) separator_visibility: f64,
 }
 
-impl NativePanelTransitionFrame {
-    pub(super) fn expanded(height: f64) -> Self {
-        Self {
-            canvas_height: height,
-            visible_height: height,
-            bar_progress: 1.0,
-            height_progress: 1.0,
-            shoulder_progress: 1.0,
-            drop_progress: 1.0,
-            cards_progress: 1.0,
-        }
-    }
-
-    pub(super) fn collapsed(height: f64) -> Self {
-        Self {
-            canvas_height: height,
-            visible_height: height,
-            bar_progress: 0.0,
-            height_progress: 0.0,
-            shoulder_progress: 0.0,
-            drop_progress: 0.0,
-            cards_progress: 0.0,
-        }
-    }
-}
-
 #[derive(Clone)]
-pub(super) enum NativeStatusQueuePayload {
-    Approval(PendingPermissionView),
-    Completion(SessionSnapshotView),
+pub(super) struct NativePanelRenderPayload {
+    pub(super) snapshot: RuntimeSnapshot,
+    pub(super) expanded: bool,
+    pub(super) shared_body_height: Option<f64>,
+    pub(super) transitioning: bool,
+    pub(super) transition_cards_progress: f64,
+    pub(super) transition_cards_entering: bool,
 }
 
-#[derive(Clone)]
-pub(super) struct NativeStatusQueueItem {
-    pub(super) key: String,
-    pub(super) session_id: String,
-    pub(super) sort_time: chrono::DateTime<Utc>,
-    pub(super) expires_at: Instant,
-    pub(super) is_live: bool,
-    pub(super) is_removing: bool,
-    pub(super) remove_after: Option<Instant>,
-    pub(super) payload: NativeStatusQueuePayload,
-}
-
-#[derive(Clone)]
-pub(super) struct NativePendingPermissionCard {
-    pub(super) request_id: String,
-    pub(super) payload: PendingPermissionView,
-    pub(super) started_at: Instant,
-    pub(super) last_seen_at: Instant,
-    pub(super) visible_until: Instant,
-}
-
-#[derive(Clone)]
-pub(super) struct NativePendingQuestionCard {
-    pub(super) request_id: String,
-    pub(super) payload: PendingQuestionView,
-    pub(super) started_at: Instant,
-    pub(super) last_seen_at: Instant,
-    pub(super) visible_until: Instant,
-}
-
-#[derive(Clone)]
-pub(super) struct NativeCompletionBadgeItem {
-    pub(super) session_id: String,
-    pub(super) completed_at: chrono::DateTime<Utc>,
-    pub(super) last_user_prompt: Option<String>,
-    pub(super) last_assistant_message: Option<String>,
-}
-
-#[derive(Clone, Copy, Default)]
-pub(super) struct NativeStatusQueueSyncResult {
-    pub(super) added_approvals: usize,
-    pub(super) added_completions: usize,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum NativePanelHitAction {
-    FocusSession,
-    CycleDisplay,
-    ToggleCompletionSound,
-    ToggleMascot,
-    OpenReleasePage,
-}
+pub(super) type NativeStatusQueuePayload = crate::native_panel_core::StatusQueuePayload;
+pub(super) type NativeStatusQueueItem = crate::native_panel_core::StatusQueueItem;
+pub(super) type NativePendingPermissionCard = crate::native_panel_core::PendingPermissionCardState;
+pub(super) type NativePendingQuestionCard = crate::native_panel_core::PendingQuestionCardState;
+pub(super) type NativeCompletionBadgeItem = crate::native_panel_core::CompletionBadgeItem;
+pub(super) type NativeStatusQueueSyncResult = crate::native_panel_core::StatusQueueSyncResult;
+pub(super) type NativePanelHitAction = crate::native_panel_core::PanelHitAction;
 
 #[derive(Clone)]
 pub(super) struct NativeCardHitTarget {
@@ -163,18 +87,8 @@ pub(super) struct NativeCardHitTarget {
     pub(super) frame: NSRect,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum NativeExpandedSurface {
-    Default,
-    Status,
-    Settings,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum NativeHoverTransition {
-    Expand,
-    Collapse,
-}
+pub(super) type NativeExpandedSurface = crate::native_panel_core::ExpandedSurface;
+pub(super) type NativeHoverTransition = crate::native_panel_core::HoverTransition;
 
 pub(super) struct NativePanelState {
     pub(super) expanded: bool,
@@ -197,4 +111,38 @@ pub(super) struct NativePanelState {
     pub(super) last_focus_click: Option<(String, Instant)>,
     pub(super) card_hit_targets: Vec<NativeCardHitTarget>,
     pub(super) mascot_runtime: NativeMascotRuntime,
+}
+
+impl NativePanelState {
+    pub(super) fn to_core_panel_state(&self) -> crate::native_panel_core::PanelState {
+        crate::native_panel_core::PanelState {
+            expanded: self.expanded,
+            transitioning: self.transitioning,
+            skip_next_close_card_exit: self.skip_next_close_card_exit,
+            last_raw_snapshot: self.last_raw_snapshot.clone(),
+            status_queue: self.status_queue.clone(),
+            completion_badge_items: self.completion_badge_items.clone(),
+            pending_permission_card: self.pending_permission_card.clone(),
+            pending_question_card: self.pending_question_card.clone(),
+            status_auto_expanded: self.status_auto_expanded,
+            surface_mode: self.surface_mode,
+            pointer_inside_since: self.pointer_inside_since,
+            pointer_outside_since: self.pointer_outside_since,
+        }
+    }
+
+    pub(super) fn apply_core_panel_state(&mut self, core: crate::native_panel_core::PanelState) {
+        self.expanded = core.expanded;
+        self.transitioning = core.transitioning;
+        self.skip_next_close_card_exit = core.skip_next_close_card_exit;
+        self.last_raw_snapshot = core.last_raw_snapshot;
+        self.status_queue = core.status_queue;
+        self.completion_badge_items = core.completion_badge_items;
+        self.pending_permission_card = core.pending_permission_card;
+        self.pending_question_card = core.pending_question_card;
+        self.status_auto_expanded = core.status_auto_expanded;
+        self.surface_mode = core.surface_mode;
+        self.pointer_inside_since = core.pointer_inside_since;
+        self.pointer_outside_since = core.pointer_outside_since;
+    }
 }

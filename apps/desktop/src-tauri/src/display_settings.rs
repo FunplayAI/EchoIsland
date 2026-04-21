@@ -28,7 +28,9 @@ pub fn list_available_displays<R: tauri::Runtime>(
     let window = app
         .get_webview_window(MAIN_WINDOW_LABEL)
         .ok_or_else(|| "main window not found".to_string())?;
-    let monitors = window.available_monitors().map_err(|error| error.to_string())?;
+    let monitors = window
+        .available_monitors()
+        .map_err(|error| error.to_string())?;
     Ok(monitors
         .into_iter()
         .enumerate()
@@ -45,7 +47,10 @@ pub fn list_available_displays<R: tauri::Runtime>(
         .collect())
 }
 
-pub fn resolve_preferred_display_index(displays: &[DisplayOption], preferred_key: Option<&str>) -> usize {
+pub fn resolve_preferred_display_index(
+    displays: &[DisplayOption],
+    preferred_key: Option<&str>,
+) -> usize {
     preferred_key
         .and_then(|key| displays.iter().position(|display| display.key == key))
         .unwrap_or(0)

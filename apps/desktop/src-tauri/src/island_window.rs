@@ -1,5 +1,7 @@
 use crate::app_settings::current_app_settings;
-use crate::display_settings::{DisplayOption, display_key_for_monitor, resolve_preferred_display_index};
+use crate::display_settings::{
+    DisplayOption, display_key_for_monitor, resolve_preferred_display_index,
+};
 use tauri::window::Color;
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewWindow};
 

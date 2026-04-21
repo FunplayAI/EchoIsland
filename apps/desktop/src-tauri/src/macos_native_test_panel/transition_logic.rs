@@ -42,14 +42,7 @@ pub(super) fn update_timeline_transition_state(
 }
 
 pub(super) fn surface_switch_card_progress(elapsed_ms: u64, card_total_ms: u64) -> f64 {
-    if card_total_ms == 0 {
-        return 1.0;
-    }
-    lerp(
-        PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
-        1.0,
-        animation_phase(elapsed_ms, 0, card_total_ms),
-    )
+    crate::native_panel_core::surface_switch_card_progress(elapsed_ms, card_total_ms)
 }
 
 pub(super) fn resolve_open_transition_frame(
@@ -58,23 +51,12 @@ pub(super) fn resolve_open_transition_frame(
     target_height: f64,
     card_total_ms: u64,
 ) -> NativePanelTransitionFrame {
-    let morph_phase = animation_phase(elapsed_ms, PANEL_MORPH_DELAY_MS, PANEL_MORPH_MS);
-    let height_phase = animation_phase(
+    crate::native_panel_core::resolve_open_transition_frame(
         elapsed_ms,
-        PANEL_MORPH_DELAY_MS + PANEL_MORPH_MS,
-        PANEL_HEIGHT_MS,
-    );
-    let morph_progress = morph_phase.clamp(0.0, 1.0);
-    let height_progress = height_phase.clamp(0.0, 1.0);
-    NativePanelTransitionFrame {
         canvas_height,
-        visible_height: lerp(COLLAPSED_PANEL_HEIGHT, target_height, height_progress),
-        bar_progress: morph_progress,
-        height_progress,
-        shoulder_progress: ease_in_cubic(animation_phase(elapsed_ms, 0, PANEL_SHOULDER_HIDE_MS)),
-        drop_progress: ease_out_cubic(height_phase),
-        cards_progress: animation_phase(elapsed_ms, PANEL_OPEN_TOTAL_MS, card_total_ms),
-    }
+        target_height,
+        card_total_ms,
+    )
 }
 
 pub(super) fn resolve_surface_switch_transition_frame(
@@ -84,20 +66,13 @@ pub(super) fn resolve_surface_switch_transition_frame(
     target_height: f64,
     card_total_ms: u64,
 ) -> NativePanelTransitionFrame {
-    let height_progress = ease_out_cubic(animation_phase(
+    crate::native_panel_core::resolve_surface_switch_transition_frame(
         elapsed_ms,
-        0,
-        PANEL_SURFACE_SWITCH_HEIGHT_MS,
-    ));
-    NativePanelTransitionFrame {
         canvas_height,
-        visible_height: lerp(start_height, target_height, height_progress),
-        bar_progress: 1.0,
-        height_progress: 1.0,
-        shoulder_progress: 1.0,
-        drop_progress: 1.0,
-        cards_progress: surface_switch_card_progress(elapsed_ms, card_total_ms),
-    }
+        start_height,
+        target_height,
+        card_total_ms,
+    )
 }
 
 pub(super) fn resolve_close_transition_frame(
@@ -107,25 +82,11 @@ pub(super) fn resolve_close_transition_frame(
     close_delay_ms: u64,
     card_total_ms: u64,
 ) -> NativePanelTransitionFrame {
-    let height_phase = animation_phase(elapsed_ms, close_delay_ms, PANEL_HEIGHT_MS);
-    let morph_phase = animation_phase(
+    crate::native_panel_core::resolve_close_transition_frame(
         elapsed_ms,
-        close_delay_ms + PANEL_CLOSE_MORPH_DELAY_MS,
-        PANEL_MORPH_MS,
-    );
-    let shoulder_phase = animation_phase(
-        elapsed_ms,
-        close_delay_ms + PANEL_CLOSE_SHOULDER_DELAY_MS,
-        PANEL_CLOSE_SHOULDER_MS,
-    );
-    let height_progress = 1.0 - height_phase.clamp(0.0, 1.0);
-    NativePanelTransitionFrame {
         canvas_height,
-        visible_height: lerp(COLLAPSED_PANEL_HEIGHT, start_height, height_progress),
-        bar_progress: 1.0 - ease_in_cubic(morph_phase),
-        height_progress,
-        shoulder_progress: 1.0 - ease_out_cubic(shoulder_phase),
-        drop_progress: 1.0 - ease_out_cubic(morph_phase),
-        cards_progress: animation_phase(elapsed_ms, 0, card_total_ms),
-    }
+        start_height,
+        close_delay_ms,
+        card_total_ms,
+    )
 }

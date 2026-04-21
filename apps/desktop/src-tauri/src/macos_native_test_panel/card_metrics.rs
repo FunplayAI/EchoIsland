@@ -1,4 +1,45 @@
 use super::*;
+use crate::native_panel_scene::{PanelScene, SceneCard};
+
+pub(super) fn estimated_expanded_body_height(snapshot: &RuntimeSnapshot) -> f64 {
+    estimated_expanded_content_height(snapshot).min(EXPANDED_MAX_BODY_HEIGHT)
+}
+
+pub(super) fn estimated_expanded_content_height(snapshot: &RuntimeSnapshot) -> f64 {
+    let scene = build_native_panel_scene(snapshot);
+    estimated_scene_content_height(&scene)
+}
+
+pub(super) fn estimated_scene_content_height(scene: &PanelScene) -> f64 {
+    crate::native_panel_scene::resolve_scene_cards_total_height(
+        scene,
+        estimated_scene_card_height,
+        EXPANDED_CARD_GAP,
+        84.0,
+    )
+}
+
+pub(super) fn estimated_scene_card_height(card: &SceneCard) -> f64 {
+    match crate::native_panel_scene::resolve_scene_card_height_input(card) {
+        crate::native_panel_scene::SceneCardHeightInput::Settings => settings_surface_card_height(),
+        crate::native_panel_scene::SceneCardHeightInput::PendingPermission(pending) => {
+            pending_permission_card_height(pending)
+        }
+        crate::native_panel_scene::SceneCardHeightInput::PendingQuestion(pending) => {
+            pending_question_card_height(pending)
+        }
+        crate::native_panel_scene::SceneCardHeightInput::PromptAssist(session) => {
+            prompt_assist_card_height(session)
+        }
+        crate::native_panel_scene::SceneCardHeightInput::Session(session) => {
+            estimated_card_height(session)
+        }
+        crate::native_panel_scene::SceneCardHeightInput::StatusItem(item) => {
+            native_status_queue_card_height(item)
+        }
+        crate::native_panel_scene::SceneCardHeightInput::Empty => 84.0,
+    }
+}
 
 pub(super) fn native_status_queue_card_height(item: &NativeStatusQueueItem) -> f64 {
     match &item.payload {
@@ -38,27 +79,25 @@ pub(super) fn prompt_assist_card_height(_session: &SessionSnapshotView) -> f64 {
 
 pub(super) fn completion_card_height(session: &SessionSnapshotView) -> f64 {
     let preview = completion_preview_text(session);
-    let body_height = estimated_chat_body_height(&preview, estimated_default_chat_body_width(), 2);
-    (CARD_HEADER_HEIGHT + CARD_CONTENT_BOTTOM_INSET + body_height).max(76.0)
+    crate::native_panel_core::resolve_completion_card_height(
+        &preview,
+        estimated_default_chat_body_width(),
+        native_card_metrics(),
+    )
 }
 
 pub(super) fn pending_like_card_height(body: &str, min_height: f64, max_height: f64) -> f64 {
-    let body_height = estimated_chat_body_height(body, estimated_default_chat_body_width(), 2);
-    (58.0
-        + CARD_PENDING_ACTION_Y
-        + CARD_PENDING_ACTION_HEIGHT
-        + CARD_PENDING_ACTION_GAP
-        + body_height)
-        .clamp(min_height, max_height)
+    crate::native_panel_core::resolve_pending_like_card_height(
+        body,
+        min_height,
+        max_height,
+        estimated_default_chat_body_width(),
+        native_card_metrics(),
+    )
 }
 
 pub(super) fn session_card_collapsed_height(target_height: f64, is_compact: bool) -> f64 {
-    let limit = if is_compact { 52.0 } else { 64.0 };
-    let factor = if is_compact { 0.76 } else { 0.58 };
-    target_height
-        .mul_add(factor, 0.0)
-        .round()
-        .clamp(34.0, limit)
+    crate::native_panel_core::resolve_session_card_collapsed_height(target_height, is_compact)
 }
 
 pub(super) fn estimated_card_height(session: &SessionSnapshotView) -> f64 {
@@ -66,12 +105,19 @@ pub(super) fn estimated_card_height(session: &SessionSnapshotView) -> f64 {
         return 58.0;
     }
 
+    let prompt = session_prompt_preview(session);
+    let reply = session_reply_preview(session);
     let content_height = estimated_session_card_content_height(
-        session_prompt_preview(session).as_deref(),
-        session_reply_preview(session).as_deref(),
+        prompt.as_deref(),
+        reply.as_deref(),
         session_tool_preview(session).is_some(),
     );
-    (CARD_HEADER_HEIGHT + content_height).max(58.0)
+    crate::native_panel_core::resolve_session_card_height(
+        false,
+        true,
+        content_height,
+        native_card_metrics(),
+    )
 }
 
 pub(super) fn estimated_session_card_content_height(
@@ -79,27 +125,15 @@ pub(super) fn estimated_session_card_content_height(
     reply: Option<&str>,
     has_tool: bool,
 ) -> f64 {
-    let mut content_height = CARD_CONTENT_BOTTOM_INSET;
-    let has_prompt = prompt.is_some_and(|value| !value.is_empty());
-    let has_reply = reply.is_some_and(|value| !value.is_empty());
-
-    if has_tool {
-        content_height += 22.0;
-        if has_reply || has_prompt {
-            content_height += CARD_TOOL_GAP;
-        }
-    }
-    if let Some(body) = reply.filter(|value| !value.is_empty()) {
-        content_height += estimated_chat_body_height(body, estimated_default_chat_body_width(), 2);
-        if has_prompt {
-            content_height += CARD_CHAT_GAP;
-        }
-    }
-    if let Some(body) = prompt.filter(|value| !value.is_empty()) {
-        content_height += estimated_chat_body_height(body, estimated_default_chat_body_width(), 1);
-    }
-
-    content_height
+    crate::native_panel_core::resolve_session_card_content_height(
+        crate::native_panel_core::SessionCardContentInput {
+            prompt,
+            reply,
+            has_tool,
+            default_body_width: estimated_default_chat_body_width(),
+            metrics: native_card_metrics(),
+        },
+    )
 }
 
 pub(super) fn session_prompt_preview(session: &SessionSnapshotView) -> Option<String> {
@@ -143,4 +177,19 @@ pub(super) fn completion_preview_text(session: &SessionSnapshotView) -> String {
 pub(super) fn is_long_idle_session(session: &SessionSnapshotView) -> bool {
     normalize_status(&session.status) == "idle"
         && (Utc::now() - session.last_activity).num_minutes() > 15
+}
+
+pub(super) fn native_card_metrics() -> crate::native_panel_core::PanelCardMetricConstants {
+    crate::native_panel_core::PanelCardMetricConstants {
+        card_inset_x: CARD_INSET_X,
+        chat_prefix_width: CARD_CHAT_PREFIX_WIDTH,
+        chat_line_height: CARD_CHAT_LINE_HEIGHT,
+        header_height: CARD_HEADER_HEIGHT,
+        content_bottom_inset: CARD_CONTENT_BOTTOM_INSET,
+        chat_gap: CARD_CHAT_GAP,
+        tool_gap: CARD_TOOL_GAP,
+        pending_action_y: CARD_PENDING_ACTION_Y,
+        pending_action_height: CARD_PENDING_ACTION_HEIGHT,
+        pending_action_gap: CARD_PENDING_ACTION_GAP,
+    }
 }

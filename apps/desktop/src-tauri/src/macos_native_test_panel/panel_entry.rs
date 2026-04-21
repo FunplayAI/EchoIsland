@@ -312,29 +312,13 @@ pub(crate) fn reposition_native_panel_to_selected_display<R: tauri::Runtime>(
         let frame = centered_top_frame(screen.frame(), panel.frame().size);
         panel.setFrame_display(frame, true);
 
-        if let Some(state) = native_panel_state().and_then(|state| {
-            state.lock().ok().and_then(|guard| {
-                guard.last_snapshot.clone().map(|snapshot| {
-                    (
-                        snapshot,
-                        guard.expanded,
-                        guard.shared_body_height,
-                        guard.transitioning,
-                        guard.transition_cards_progress,
-                        guard.transition_cards_entering,
-                    )
-                })
-            })
+        if let Some(payload) = native_panel_state().and_then(|state| {
+            state
+                .lock()
+                .ok()
+                .and_then(|guard| native_panel_render_payload(&guard))
         }) {
-            apply_snapshot_to_panel(
-                handles,
-                &state.0,
-                state.1,
-                state.2,
-                state.3,
-                state.4,
-                state.5,
-            );
+            apply_native_panel_render_payload(handles, payload);
         } else {
             panel.displayIfNeeded();
         }
@@ -353,29 +337,13 @@ pub(crate) fn refresh_native_panel_from_last_snapshot<R: tauri::Runtime>(
         let Some(handles) = native_panel_handles() else {
             return;
         };
-        if let Some(state) = native_panel_state().and_then(|state| {
-            state.lock().ok().and_then(|guard| {
-                guard.last_snapshot.clone().map(|snapshot| {
-                    (
-                        snapshot,
-                        guard.expanded,
-                        guard.shared_body_height,
-                        guard.transitioning,
-                        guard.transition_cards_progress,
-                        guard.transition_cards_entering,
-                    )
-                })
-            })
+        if let Some(payload) = native_panel_state().and_then(|state| {
+            state
+                .lock()
+                .ok()
+                .and_then(|guard| native_panel_render_payload(&guard))
         }) {
-            apply_snapshot_to_panel(
-                handles,
-                &state.0,
-                state.1,
-                state.2,
-                state.3,
-                state.4,
-                state.5,
-            );
+            apply_native_panel_render_payload(handles, payload);
         }
     })
     .map_err(|error| error.to_string())

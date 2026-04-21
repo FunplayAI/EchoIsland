@@ -1,21 +1,10 @@
 use super::panel_shoulder::apply_shoulder_path_scale_x;
-use super::panel_style::{PanelLayerStyleState, apply_panel_layer_styles};
+use super::panel_style::apply_panel_layer_styles;
 use super::*;
-
-#[derive(Clone, Copy)]
-struct PanelRenderProgress {
-    bar: f64,
-    height: f64,
-    shoulder: f64,
-    drop: f64,
-}
-
-#[derive(Clone, Copy)]
-struct SharedExpandedRenderState {
-    enabled: bool,
-    visible: bool,
-    interactive: bool,
-}
+use crate::native_panel_core::{
+    PanelRenderProgress, PanelRenderState, PanelRenderStateInput, resolve_panel_render_progress,
+    resolve_panel_render_state,
+};
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_panel_geometry(
@@ -25,7 +14,8 @@ pub(super) unsafe fn apply_panel_geometry(
     let refs = resolve_native_panel_refs(handles);
     let panel = refs.panel;
     let screen_frame = resolve_screen_frame_for_panel(panel).unwrap_or(panel.frame());
-    let progress = panel_render_progress(frame);
+    let progress = resolve_panel_render_progress(frame);
+    let runtime_state = resolve_current_native_panel_runtime_render_state();
     let content_visibility = native_panel_content_visibility();
     let layout = resolve_native_panel_layout(
         screen_frame,
@@ -39,28 +29,16 @@ pub(super) unsafe fn apply_panel_geometry(
     );
 
     apply_panel_view_frames(&refs, &layout, progress);
-    let shared_state = shared_expanded_render_state(&layout, progress, content_visibility);
-    apply_panel_layer_styles(
-        &refs,
-        PanelLayerStyleState {
-            shell_visible: layout.shell_visible,
-            separator_visibility: layout.separator_visibility,
-            shared_visible: shared_state.visible,
-            bar_progress: progress.bar,
-            height_progress: progress.height,
-        },
+    let render_state = native_panel_render_state(
+        &layout,
+        progress,
+        content_visibility,
+        runtime_state.transitioning,
+        runtime_state.shell_scene,
     );
-    sync_shared_expanded_render_frame(&layout, shared_state);
+    apply_panel_layer_styles(&refs, render_state.layer_style);
+    sync_shared_expanded_render_frame(&layout, render_state.shared);
     invalidate_panel_render_views(&refs);
-}
-
-fn panel_render_progress(frame: NativePanelTransitionFrame) -> PanelRenderProgress {
-    PanelRenderProgress {
-        bar: frame.bar_progress.clamp(0.0, 1.0),
-        height: frame.height_progress.clamp(0.0, 1.0),
-        shoulder: frame.shoulder_progress.clamp(0.0, 1.0),
-        drop: frame.drop_progress.clamp(0.0, 1.0),
-    }
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -99,37 +77,34 @@ unsafe fn apply_panel_view_frames(
     body_separator.setFrame(layout.separator_frame);
 }
 
-fn shared_expanded_render_state(
+fn native_panel_render_state(
     layout: &NativePanelLayout,
     progress: PanelRenderProgress,
     content_visibility: f64,
-) -> SharedExpandedRenderState {
-    let transitioning = native_panel_state()
-        .and_then(|state| state.lock().ok().map(|guard| guard.transitioning))
-        .unwrap_or(false);
+    transitioning: bool,
+    shell_scene: crate::native_panel_scene::PanelShellSceneState,
+) -> PanelRenderState {
     let shared_expanded_enabled = macos_shared_expanded_window::shared_expanded_enabled();
     let status_surface_active = native_status_surface_active();
-    let (shared_content_visible, shared_content_interactive) = shared_expanded_content_state(
+    resolve_panel_render_state(PanelRenderStateInput {
         shared_expanded_enabled,
-        layout.shell_visible,
-        progress.height,
-        progress.bar,
-        layout.cards_frame.size.height,
+        shell_visible: layout.shell_visible,
+        separator_visibility: layout.separator_visibility,
+        bar_progress: progress.bar,
+        height_progress: progress.height,
+        cards_height: layout.cards_frame.size.height,
         status_surface_active,
         content_visibility,
-    );
-
-    SharedExpandedRenderState {
-        enabled: shared_expanded_enabled,
-        visible: shared_content_visible && !transitioning,
-        interactive: shared_content_interactive && !transitioning,
-    }
+        transitioning,
+        headline_emphasized: shell_scene.headline_emphasized,
+        edge_actions_visible: shell_scene.edge_actions_visible,
+    })
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn sync_shared_expanded_render_frame(
     layout: &NativePanelLayout,
-    shared_state: SharedExpandedRenderState,
+    shared_state: crate::native_panel_core::SharedExpandedRenderState,
 ) {
     if shared_state.enabled {
         let _ = macos_shared_expanded_window::sync_shared_expanded_frame(

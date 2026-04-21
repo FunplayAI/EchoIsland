@@ -98,23 +98,11 @@ fn panel_state() -> NativePanelState {
     }
 }
 
-#[test]
-fn summarizes_empty_snapshot() {
-    assert_eq!(summarize_headline(&snapshot(0, 0)), "No active tasks");
-}
-
-#[test]
-fn summarizes_active_snapshot() {
-    let mut snapshot = snapshot(2, 5);
-    snapshot.sessions = vec![session("Running"), session("Processing")];
-    assert_eq!(summarize_headline(&snapshot), "2 active tasks");
-}
-
-#[test]
-fn formats_empty_active_count_as_single_zero() {
-    let mut snapshot = snapshot(0, 1);
-    snapshot.sessions = vec![session("Idle")];
-    assert_eq!(compact_active_count_text(&snapshot), "0");
+fn assert_rect_eq(actual: NSRect, expected: NSRect) {
+    assert_eq!(actual.origin.x, expected.origin.x);
+    assert_eq!(actual.origin.y, expected.origin.y);
+    assert_eq!(actual.size.width, expected.size.width);
+    assert_eq!(actual.size.height, expected.size.height);
 }
 
 #[test]
@@ -159,6 +147,20 @@ fn pending_card_grace_snapshot_does_not_readd_status_approval() {
         0
     );
     assert!(state.status_queue.is_empty());
+}
+
+#[test]
+fn pending_permission_card_clears_after_grace_window_expires() {
+    let now = Instant::now();
+    let previous = NativePendingPermissionCard {
+        request_id: "request-1".to_string(),
+        payload: pending_permission("request-1", "session-1"),
+        started_at: now - Duration::from_millis(PENDING_CARD_MIN_VISIBLE_MS),
+        last_seen_at: now - Duration::from_millis(PENDING_CARD_RELEASE_GRACE_MS + 10),
+        visible_until: now - Duration::from_millis(1),
+    };
+
+    assert!(resolve_native_pending_permission_card(None, Some(&previous), now).is_none());
 }
 
 #[test]
@@ -266,6 +268,179 @@ fn completion_status_queue_auto_expands_status_surface() {
     assert!(state.status_auto_expanded);
     assert_eq!(state.surface_mode, NativeExpandedSurface::Status);
     assert_eq!(state.completion_badge_items.len(), 1);
+}
+
+#[test]
+fn status_surface_transition_switches_expanded_panel_into_status_mode() {
+    let mut state = panel_state();
+    state.expanded = true;
+    state.status_queue.push(NativeStatusQueueItem {
+        key: "approval:request-1".to_string(),
+        session_id: "session-1".to_string(),
+        sort_time: Utc::now(),
+        expires_at: Instant::now() + Duration::from_secs(STATUS_APPROVAL_VISIBLE_SECONDS),
+        is_live: true,
+        is_removing: false,
+        remove_after: None,
+        payload: NativeStatusQueuePayload::Approval(pending_permission("request-1", "session-1")),
+    });
+
+    let transition = sync_native_status_surface_policy(
+        &mut state,
+        NativeStatusQueueSyncResult {
+            added_approvals: 1,
+            added_completions: 0,
+        },
+    );
+
+    assert_eq!(transition.panel_transition, None);
+    assert!(transition.surface_transition);
+    assert!(state.expanded);
+    assert!(state.status_auto_expanded);
+    assert_eq!(state.surface_mode, NativeExpandedSurface::Status);
+}
+
+#[test]
+fn status_surface_reverts_to_default_when_queue_drains() {
+    let mut state = panel_state();
+    state.expanded = true;
+    state.surface_mode = NativeExpandedSurface::Status;
+    state.status_auto_expanded = true;
+
+    let transition =
+        sync_native_status_surface_policy(&mut state, NativeStatusQueueSyncResult::default());
+
+    assert_eq!(transition.panel_transition, Some(false));
+    assert!(!transition.surface_transition);
+    assert!(!state.expanded);
+    assert!(!state.status_auto_expanded);
+    assert_eq!(state.surface_mode, NativeExpandedSurface::Default);
+    assert!(state.skip_next_close_card_exit);
+}
+
+#[test]
+fn settings_surface_toggle_cycles_between_default_and_settings() {
+    let mut state = panel_state();
+
+    assert!(toggle_native_settings_surface(&mut state));
+    assert_eq!(state.surface_mode, NativeExpandedSurface::Settings);
+    assert!(!state.status_auto_expanded);
+
+    assert!(toggle_native_settings_surface(&mut state));
+    assert_eq!(state.surface_mode, NativeExpandedSurface::Default);
+}
+
+#[test]
+fn settings_surface_toggle_overrides_status_surface() {
+    let mut state = panel_state();
+    state.surface_mode = NativeExpandedSurface::Status;
+    state.status_auto_expanded = true;
+
+    assert!(toggle_native_settings_surface(&mut state));
+    assert_eq!(state.surface_mode, NativeExpandedSurface::Settings);
+    assert!(!state.status_auto_expanded);
+}
+
+#[test]
+fn settings_surface_hit_targets_preserve_row_action_semantics() {
+    let frame = NSRect::new(NSPoint::new(-12.0, 0.0), NSSize::new(380.0, 206.0));
+    let targets = settings_surface_hit_targets(frame);
+
+    assert_eq!(targets.len(), 4);
+    assert_eq!(targets[0].action, NativePanelHitAction::CycleDisplay);
+    assert_eq!(
+        targets[1].action,
+        NativePanelHitAction::ToggleCompletionSound
+    );
+    assert_eq!(targets[2].action, NativePanelHitAction::ToggleMascot);
+    assert_eq!(targets[3].action, NativePanelHitAction::OpenReleasePage);
+    assert_rect_eq(targets[0].frame, settings_surface_row_frame(frame, 0));
+    assert_rect_eq(targets[1].frame, settings_surface_row_frame(frame, 1));
+    assert_rect_eq(targets[2].frame, settings_surface_row_frame(frame, 2));
+    assert_rect_eq(targets[3].frame, settings_surface_row_frame(frame, 3));
+}
+
+#[test]
+fn native_render_payload_captures_snapshot_and_runtime_flags() {
+    let mut state = panel_state();
+    state.last_snapshot = Some(snapshot(1, 2));
+    state.expanded = true;
+    state.shared_body_height = Some(132.0);
+    state.transitioning = true;
+    state.transition_cards_progress = 0.42;
+    state.transition_cards_entering = true;
+
+    let payload = native_panel_render_payload(&state).expect("expected render payload");
+
+    assert_eq!(payload.snapshot.active_session_count, 1);
+    assert_eq!(payload.snapshot.total_session_count, 2);
+    assert!(payload.expanded);
+    assert_eq!(payload.shared_body_height, Some(132.0));
+    assert!(payload.transitioning);
+    assert_eq!(payload.transition_cards_progress, 0.42);
+    assert!(payload.transition_cards_entering);
+}
+
+#[test]
+fn status_queue_sorting_keeps_approvals_first_and_completions_after() {
+    let now = Instant::now();
+    let earlier = Utc::now() - chrono::Duration::seconds(10);
+    let later = Utc::now();
+    let mut items = vec![
+        NativeStatusQueueItem {
+            key: "completion:session-2".to_string(),
+            session_id: "session-2".to_string(),
+            sort_time: later,
+            expires_at: now,
+            is_live: true,
+            is_removing: false,
+            remove_after: None,
+            payload: NativeStatusQueuePayload::Completion(session("Idle")),
+        },
+        NativeStatusQueueItem {
+            key: "approval:request-2".to_string(),
+            session_id: "session-2".to_string(),
+            sort_time: later,
+            expires_at: now,
+            is_live: true,
+            is_removing: false,
+            remove_after: None,
+            payload: NativeStatusQueuePayload::Approval(pending_permission(
+                "request-2",
+                "session-2",
+            )),
+        },
+        NativeStatusQueueItem {
+            key: "approval:request-1".to_string(),
+            session_id: "session-1".to_string(),
+            sort_time: earlier,
+            expires_at: now,
+            is_live: true,
+            is_removing: false,
+            remove_after: None,
+            payload: NativeStatusQueuePayload::Approval(pending_permission(
+                "request-1",
+                "session-1",
+            )),
+        },
+    ];
+
+    items.sort_by(compare_native_status_queue_items);
+
+    assert!(matches!(
+        items[0].payload,
+        NativeStatusQueuePayload::Approval(_)
+    ));
+    assert_eq!(items[0].key, "approval:request-1");
+    assert!(matches!(
+        items[1].payload,
+        NativeStatusQueuePayload::Approval(_)
+    ));
+    assert_eq!(items[1].key, "approval:request-2");
+    assert!(matches!(
+        items[2].payload,
+        NativeStatusQueuePayload::Completion(_)
+    ));
 }
 
 #[test]

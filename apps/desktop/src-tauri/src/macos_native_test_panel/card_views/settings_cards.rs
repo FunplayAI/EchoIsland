@@ -19,7 +19,10 @@ pub(crate) fn settings_surface_row_frame(card_frame: NSRect, index: usize) -> NS
         - ((SETTINGS_ROW_HEIGHT + SETTINGS_ROW_GAP) * index as f64);
     NSRect::new(
         NSPoint::new(CARD_INSET_X, y),
-        NSSize::new(card_frame.size.width - (CARD_INSET_X * 2.0), SETTINGS_ROW_HEIGHT),
+        NSSize::new(
+            card_frame.size.width - (CARD_INSET_X * 2.0),
+            SETTINGS_ROW_HEIGHT,
+        ),
     )
 }
 
@@ -34,8 +37,14 @@ pub(crate) unsafe fn create_settings_surface_card(frame: NSRect) -> objc2::rc::R
         mtm,
         "Settings",
         NSRect::new(
-            NSPoint::new(CARD_INSET_X, frame.size.height - SETTINGS_HEADER_TOP - SETTINGS_HEADER_HEIGHT),
-            NSSize::new(frame.size.width - (CARD_INSET_X * 2.0) - 80.0, SETTINGS_HEADER_HEIGHT),
+            NSPoint::new(
+                CARD_INSET_X,
+                frame.size.height - SETTINGS_HEADER_TOP - SETTINGS_HEADER_HEIGHT,
+            ),
+            NSSize::new(
+                frame.size.width - (CARD_INSET_X * 2.0) - 80.0,
+                SETTINGS_HEADER_HEIGHT,
+            ),
         ),
         12.0,
         [0.96, 0.97, 0.99, 1.0],
@@ -65,13 +74,25 @@ pub(crate) unsafe fn create_settings_surface_card(frame: NSRect) -> objc2::rc::R
 
     let settings = crate::app_settings::current_app_settings();
     let display_count = current_display_count();
-    let display_value = format!("Screen {}/{}", settings.preferred_display_index + 1, display_count.max(1));
-    let sound_value = if settings.completion_sound_enabled { "On" } else { "Off" };
+    let display_value = format!(
+        "Screen {}/{}",
+        settings.preferred_display_index + 1,
+        display_count.max(1)
+    );
+    let sound_value = if settings.completion_sound_enabled {
+        "On"
+    } else {
+        "Off"
+    };
     let mascot_value = if settings.mascot_enabled { "On" } else { "Off" };
 
     let rows = [
         ("Island display", display_value.as_str(), false),
-        ("Completion sound", sound_value, settings.completion_sound_enabled),
+        (
+            "Completion sound",
+            sound_value,
+            settings.completion_sound_enabled,
+        ),
         ("Mascot", mascot_value, settings.mascot_enabled),
         ("Update & upgrade", "Open", false),
     ];
@@ -126,7 +147,10 @@ unsafe fn make_settings_action_row(
         mtm,
         title,
         NSRect::new(
-            NSPoint::new(12.0, ((frame.size.height - SETTINGS_ROW_TITLE_HEIGHT) / 2.0).round()),
+            NSPoint::new(
+                12.0,
+                ((frame.size.height - SETTINGS_ROW_TITLE_HEIGHT) / 2.0).round(),
+            ),
             NSSize::new(frame.size.width - 110.0, SETTINGS_ROW_TITLE_HEIGHT),
         ),
         11.0,
@@ -167,7 +191,7 @@ unsafe fn make_settings_action_row(
     view
 }
 
-fn current_display_count() -> usize {
+pub(super) fn current_display_count() -> usize {
     let Some(mtm) = MainThreadMarker::new() else {
         return 1;
     };

@@ -27,7 +27,9 @@ mod macos_native_test_panel;
 mod macos_native_test_panel;
 mod macos_panel;
 mod macos_shared_expanded_window;
+mod native_panel_core;
 mod native_panel_runtime;
+mod native_panel_scene;
 mod native_ui_refresh;
 mod notification_sound;
 mod platform;
@@ -49,9 +51,8 @@ use commands::{
     open_release_page, open_settings_location, openclaw_status, platform_capabilities,
     platform_paths, quit_application, set_completion_sound_enabled, set_island_bar_stage,
     set_island_bar_stage_passive, set_island_expanded, set_island_expanded_passive,
-    set_island_panel_stage, set_island_panel_stage_passive, set_mascot_enabled,
-    set_macos_shared_expanded_height, set_preferred_display_index, show_main_window_interactive,
-    skip_question,
+    set_island_panel_stage, set_island_panel_stage_passive, set_macos_shared_expanded_height,
+    set_mascot_enabled, set_preferred_display_index, show_main_window_interactive, skip_question,
 };
 use http_receiver::spawn_http_receiver;
 use startup_service::AppStartupService;

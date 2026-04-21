@@ -243,6 +243,8 @@ pub(super) struct NativeMascotFrame {
     pub(super) motion: NativeMascotMotion,
     pub(super) color: [f64; 4],
     pub(super) completion_count: usize,
+    pub(super) mascot_hidden: bool,
+    pub(super) completion_glow_opacity: f64,
 }
 
 pub(super) struct NativeMascotRuntime {
@@ -323,6 +325,8 @@ impl NativeMascotRuntime {
             motion,
             color: native_mascot_color(visual_state, t, self.wake_started_at, now),
             completion_count,
+            mascot_hidden: false,
+            completion_glow_opacity: 0.0,
         }
     }
 
@@ -379,32 +383,19 @@ impl NativeMascotRuntime {
     }
 }
 
-fn infer_native_mascot_base_state(
-    snapshot: Option<&RuntimeSnapshot>,
-    has_status_completion: bool,
-    has_completion_badge: bool,
+fn native_mascot_state_from_core(
+    state: crate::native_panel_core::PanelMascotBaseState,
 ) -> NativeMascotState {
-    let Some(snapshot) = snapshot else {
-        return NativeMascotState::Idle;
-    };
-
-    if snapshot.pending_permission_count > 0 {
-        return NativeMascotState::Approval;
+    match state {
+        crate::native_panel_core::PanelMascotBaseState::Idle => NativeMascotState::Idle,
+        crate::native_panel_core::PanelMascotBaseState::Running => NativeMascotState::Bouncing,
+        crate::native_panel_core::PanelMascotBaseState::Approval => NativeMascotState::Approval,
+        crate::native_panel_core::PanelMascotBaseState::Question => NativeMascotState::Question,
+        crate::native_panel_core::PanelMascotBaseState::MessageBubble => {
+            NativeMascotState::MessageBubble
+        }
+        crate::native_panel_core::PanelMascotBaseState::Complete => NativeMascotState::Complete,
     }
-    if snapshot.pending_question_count > 0 {
-        return NativeMascotState::Question;
-    }
-    if has_status_completion {
-        return NativeMascotState::MessageBubble;
-    }
-    if has_completion_badge {
-        return NativeMascotState::Complete;
-    }
-    if compact_active_count_value(snapshot) > 0 || snapshot.active_session_count > 0 {
-        return NativeMascotState::Bouncing;
-    }
-
-    NativeMascotState::Idle
 }
 
 fn native_mascot_target_motion(
@@ -599,6 +590,11 @@ pub(super) unsafe fn sync_native_mascot(handles: NativePanelHandles) {
             Ok(guard) => guard,
             Err(_) => return,
         };
+        let snapshot = state.last_snapshot.clone();
+        let core_state = state.to_core_panel_state();
+        let scene = snapshot
+            .as_ref()
+            .map(|snapshot| build_native_panel_scene_for_core_state(snapshot, &core_state));
         let has_status_completion = state.expanded
             && state.surface_mode == NativeExpandedSurface::Status
             && state
@@ -606,16 +602,28 @@ pub(super) unsafe fn sync_native_mascot(handles: NativePanelHandles) {
                 .iter()
                 .any(|item| matches!(item.payload, NativeStatusQueuePayload::Completion(_)));
         let has_completion_badge = !state.completion_badge_items.is_empty();
-        let base_state = infer_native_mascot_base_state(
-            state.last_snapshot.as_ref(),
-            has_status_completion,
-            has_completion_badge,
-        );
+        let base_state =
+            native_mascot_state_from_core(crate::native_panel_core::resolve_mascot_base_state(
+                snapshot.as_ref(),
+                has_status_completion,
+                has_completion_badge,
+            ));
         let expanded = state.expanded;
-        let completion_count = state.completion_badge_items.len();
-        state
-            .mascot_runtime
-            .next_frame(base_state, expanded, completion_count, now)
+        let completion_count = scene
+            .as_ref()
+            .map(|scene| scene.compact_bar.completion_count)
+            .unwrap_or_else(|| state.completion_badge_items.len());
+        let mut frame =
+            state
+                .mascot_runtime
+                .next_frame(base_state, expanded, completion_count, now);
+        frame.mascot_hidden = scene.as_ref().is_some_and(|scene| {
+            scene.mascot_pose == crate::native_panel_scene::SceneMascotPose::Hidden
+        });
+        frame.completion_glow_opacity = scene
+            .and_then(|scene| scene.glow.map(|glow| glow.opacity))
+            .unwrap_or(0.0);
+        frame
     };
 
     apply_native_mascot_frame(handles, frame);

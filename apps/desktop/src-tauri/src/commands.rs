@@ -9,13 +9,13 @@ use echoisland_runtime::RuntimeSnapshot;
 use tauri::{AppHandle, State};
 
 use crate::{
-    app_settings::{
-        AppSettings, current_app_settings, update_completion_sound_enabled,
-        update_mascot_enabled, update_preferred_display_selection,
-    },
     app_runtime::AppRuntime,
-    display_settings::{DisplayOption, list_available_displays, resolve_preferred_display_index},
+    app_settings::{
+        AppSettings, current_app_settings, update_completion_sound_enabled, update_mascot_enabled,
+        update_preferred_display_selection,
+    },
     command_services::{SampleIngestService, SnapshotCommandService},
+    display_settings::{DisplayOption, list_available_displays, resolve_preferred_display_index},
     http_receiver::{HttpReceiverStatus, default_http_receiver_status},
     native_ui_refresh::maybe_refresh_native_ui_for_event,
     platform::{
@@ -288,7 +288,9 @@ fn refresh_desktop_after_settings_change<R: tauri::Runtime>(app: &AppHandle<R>) 
     }
 }
 
-fn reposition_desktop_to_selected_display<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+fn reposition_desktop_to_selected_display<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     if crate::macos_native_test_panel::native_ui_enabled() {
         return crate::macos_native_test_panel::reposition_native_panel_to_selected_display(app);

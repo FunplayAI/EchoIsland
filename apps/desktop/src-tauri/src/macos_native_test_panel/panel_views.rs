@@ -8,8 +8,8 @@ use std::{
     sync::OnceLock,
 };
 
-use objc2::{AnyThread, runtime::AnyObject};
 use objc2::rc::Retained;
+use objc2::{AnyThread, runtime::AnyObject};
 use objc2_app_kit::NSImage;
 use objc2_quartz_core::kCAGravityResize;
 
@@ -279,8 +279,7 @@ fn apply_completion_glow_image(root_layer: &CALayer, pill_size: NSSize) {
     let right_layer = create_completion_glow_slice_layer(
         AsRef::<AnyObject>::as_ref(&cg_image),
         COMPLETION_GLOW_RIGHT_LAYER_NAME,
-        (COMPLETION_GLOW_IMAGE_WIDTH - COMPLETION_GLOW_SLICE_RIGHT)
-            / COMPLETION_GLOW_IMAGE_WIDTH,
+        (COMPLETION_GLOW_IMAGE_WIDTH - COMPLETION_GLOW_SLICE_RIGHT) / COMPLETION_GLOW_IMAGE_WIDTH,
         COMPLETION_GLOW_SLICE_RIGHT / COMPLETION_GLOW_IMAGE_WIDTH,
     );
     layout_completion_glow_slice_layers(&left_layer, &center_layer, &right_layer, pill_size);

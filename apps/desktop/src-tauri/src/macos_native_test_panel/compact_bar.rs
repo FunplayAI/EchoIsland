@@ -1,4 +1,5 @@
 use super::*;
+use crate::native_panel_scene::PanelScene;
 use objc2::rc::Retained;
 
 pub(super) struct CompactBarViews {
@@ -17,21 +18,12 @@ pub(super) struct NativeCompactStyle {
     pub(super) total_count_color: [f64; 4],
 }
 
-pub(super) fn compact_active_count_value(snapshot: &RuntimeSnapshot) -> usize {
-    snapshot
-        .sessions
-        .iter()
-        .filter(|session| !should_hide_legacy_opencode_session(session))
-        .filter(|session| normalize_status(&session.status) != "idle")
-        .count()
-}
-
-pub(super) fn compact_active_count_text(snapshot: &RuntimeSnapshot) -> String {
-    compact_active_count_value(snapshot).to_string()
-}
-
-pub(super) fn compact_style(snapshot: &RuntimeSnapshot) -> NativeCompactStyle {
-    let active_count = compact_active_count_value(snapshot);
+pub(super) fn compact_style_for_scene(scene: &PanelScene) -> NativeCompactStyle {
+    let active_count = scene
+        .compact_bar
+        .active_count
+        .parse::<usize>()
+        .unwrap_or_default();
 
     NativeCompactStyle {
         headline_color: if active_count > 0 {

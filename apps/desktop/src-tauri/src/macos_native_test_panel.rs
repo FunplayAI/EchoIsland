@@ -18,9 +18,8 @@ use objc2::{MainThreadMarker, MainThreadOnly};
 
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
-    NSBackingStoreType, NSClipView, NSColor, NSEvent, NSFont, NSPanel, NSScreen,
-    NSTextAlignment, NSTextField, NSView, NSWindowAnimationBehavior,
-    NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSBackingStoreType, NSClipView, NSColor, NSEvent, NSFont, NSPanel, NSScreen, NSTextAlignment,
+    NSTextField, NSView, NSWindowAnimationBehavior, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 
 #[cfg(target_os = "macos")]
@@ -85,6 +84,10 @@ mod panel_interaction;
 mod panel_refs;
 #[cfg(target_os = "macos")]
 mod panel_render;
+#[cfg(target_os = "macos")]
+mod panel_scene_adapter;
+#[cfg(target_os = "macos")]
+mod panel_screen_geometry;
 #[cfg(target_os = "macos")]
 mod panel_setup;
 #[cfg(target_os = "macos")]
@@ -151,6 +154,10 @@ use panel_interaction::*;
 use panel_refs::*;
 #[cfg(target_os = "macos")]
 use panel_render::*;
+#[cfg(target_os = "macos")]
+use panel_scene_adapter::*;
+#[cfg(target_os = "macos")]
+use panel_screen_geometry::*;
 #[cfg(target_os = "macos")]
 use panel_setup::*;
 #[cfg(target_os = "macos")]

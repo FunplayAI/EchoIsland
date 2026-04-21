@@ -6,7 +6,7 @@ pub(super) unsafe fn apply_native_mascot_frame(
     frame: NativeMascotFrame,
 ) {
     let refs = resolve_native_panel_refs(handles);
-    if !crate::app_settings::current_app_settings().mascot_enabled {
+    if frame.mascot_hidden {
         refs.mascot_shell.setHidden(true);
         refs.mascot_completion_badge.setHidden(true);
         refs.completion_glow.setHidden(true);
@@ -176,9 +176,13 @@ pub(super) unsafe fn apply_native_mascot_frame(
 }
 
 fn sync_completion_glow(completion_glow: &NSView, frame: NativeMascotFrame) {
-    let visible = frame.state == NativeMascotState::Complete;
     let breath = ((frame.t * 3.2).sin() + 1.0) * 0.5;
-    let alpha = if visible { 0.32 + breath * 0.36 } else { 0.0 };
+    let base_opacity = frame.completion_glow_opacity.clamp(0.0, 1.0);
+    let alpha = if base_opacity > 0.0 {
+        base_opacity * (0.42 + breath * 0.46)
+    } else {
+        0.0
+    };
     with_disabled_layer_actions(|| {
         completion_glow.setHidden(alpha <= 0.02);
         completion_glow.setAlphaValue(alpha);
