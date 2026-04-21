@@ -9,9 +9,10 @@ use echoisland_runtime::RuntimeSnapshot;
 use tauri::{AppHandle, State};
 
 use crate::{
-    app_runtime::{AppRuntime, maybe_refresh_native_ui_for_event},
+    app_runtime::AppRuntime,
     command_services::{SampleIngestService, SnapshotCommandService},
     http_receiver::{HttpReceiverStatus, default_http_receiver_status},
+    native_ui_refresh::maybe_refresh_native_ui_for_event,
     platform::{
         PlatformCapabilities, PlatformPathsPayload, current_platform_capabilities,
         current_platform_paths,

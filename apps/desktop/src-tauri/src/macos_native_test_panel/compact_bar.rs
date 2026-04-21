@@ -188,6 +188,7 @@ pub(super) unsafe fn relayout_compact_content(
     actions_active: bool,
 ) {
     let top_highlight = refs.top_highlight;
+    let completion_glow = refs.completion_glow;
     let settings_button = refs.settings_button;
     let quit_button = refs.quit_button;
     let mascot_shell = refs.mascot_shell;
@@ -232,6 +233,11 @@ pub(super) unsafe fn relayout_compact_content(
         NSPoint::new(12.0, bar_size.height - 1.0),
         NSSize::new((bar_size.width - 24.0).max(0.0), 1.0),
     ));
+    completion_glow.setFrame(NSRect::new(
+        NSPoint::new(0.0, 0.0),
+        NSSize::new(bar_size.width.max(0.0), bar_size.height.max(0.0)),
+    ));
+    update_completion_glow_layout(completion_glow, bar_size);
     let action_y = ((bar_size.height - action_size) / 2.0).round();
     settings_button.setFrame(NSRect::new(
         NSPoint::new(settings_x, action_y),

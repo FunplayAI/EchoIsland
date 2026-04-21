@@ -25,6 +25,8 @@ mod macos_native_test_panel;
 mod macos_native_test_panel;
 mod macos_panel;
 mod macos_shared_expanded_window;
+mod native_panel_runtime;
+mod native_ui_refresh;
 mod notification_sound;
 mod platform;
 mod platform_stub;
@@ -82,7 +84,7 @@ fn main() {
                 }
                 macos_native_test_panel::hide_main_webview_window(&app_handle)
                     .map_err(std::io::Error::other)?;
-                macos_native_test_panel::spawn_native_snapshot_loop(
+                native_panel_runtime::spawn_native_snapshot_loop(
                     app_handle.clone(),
                     app_runtime.clone(),
                 );

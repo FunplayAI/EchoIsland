@@ -3,8 +3,6 @@
 use echoisland_runtime::RuntimeSnapshot;
 use tauri::AppHandle;
 
-use crate::app_runtime::AppRuntime;
-
 pub fn native_ui_enabled() -> bool {
     false
 }
@@ -30,8 +28,6 @@ pub fn set_shared_expanded_body_height<R: tauri::Runtime>(
 ) -> Result<(), String> {
     Ok(())
 }
-
-pub fn spawn_native_snapshot_loop<R: tauri::Runtime + 'static>(_: AppHandle<R>, _: AppRuntime) {}
 
 pub fn spawn_native_hover_loop<R: tauri::Runtime + 'static>(_: AppHandle<R>) {}
 

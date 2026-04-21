@@ -12,7 +12,7 @@ use tokio::{
 };
 use tracing::warn;
 
-use crate::app_runtime::maybe_refresh_native_ui_for_event;
+use crate::native_ui_refresh::maybe_refresh_native_ui_for_event;
 
 pub const DEFAULT_HTTP_RECEIVER_ADDR: &str = "127.0.0.1:37892";
 const MAX_HTTP_REQUEST_BYTES: usize = 1_048_576;

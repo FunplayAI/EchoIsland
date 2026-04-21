@@ -6,6 +6,7 @@ pub(super) struct NativePanelAssemblyViews<'a> {
     pub(super) right_shoulder: &'a NSView,
     pub(super) pill_view: &'a NSView,
     pub(super) expanded_container: &'a NSView,
+    pub(super) completion_glow: &'a NSView,
     pub(super) top_highlight: &'a NSView,
     pub(super) body_separator: &'a NSView,
     pub(super) settings_button: &'a NSView,
@@ -18,6 +19,7 @@ pub(super) struct NativePanelAssemblyViews<'a> {
 }
 
 pub(super) fn assemble_native_panel_views(views: NativePanelAssemblyViews<'_>) {
+    views.pill_view.addSubview(views.completion_glow);
     views.pill_view.addSubview(views.top_highlight);
     views.pill_view.addSubview(views.mascot_shell);
     views.pill_view.addSubview(views.headline);

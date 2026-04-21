@@ -9,6 +9,7 @@ pub(super) struct NativePanelHandles {
     pub(super) pill_view: usize,
     pub(super) expanded_container: usize,
     pub(super) cards_container: usize,
+    pub(super) completion_glow: usize,
     pub(super) top_highlight: usize,
     pub(super) body_separator: usize,
     pub(super) settings_button: usize,

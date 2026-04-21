@@ -237,30 +237,7 @@ fn native_hover_pill_rect(panel_frame: NSRect, pill_frame: NSRect) -> NSRect {
 }
 
 fn spawn_native_focus_session<R: tauri::Runtime + 'static>(app: AppHandle<R>, session_id: String) {
-    let runtime = app.state::<AppRuntime>().inner().clone();
-    tauri::async_runtime::spawn(async move {
-        match TerminalFocusService::new(&runtime)
-            .focus_session(&session_id)
-            .await
-        {
-            Ok(true) => {
-                info!(session_id = %session_id, "native card click focused terminal session");
-            }
-            Ok(false) => {
-                warn!(
-                    session_id = %session_id,
-                    "native card click did not find a focusable terminal target"
-                );
-            }
-            Err(error) => {
-                warn!(
-                    session_id = %session_id,
-                    error = %error,
-                    "native card click failed to focus terminal session"
-                );
-            }
-        }
-    });
+    crate::native_panel_runtime::spawn_native_focus_session(app, session_id);
 }
 
 fn spawn_native_open_settings_location() {

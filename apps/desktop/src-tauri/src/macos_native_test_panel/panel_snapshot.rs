@@ -231,33 +231,6 @@ pub(super) fn sync_native_status_surface_policy(
     }
 }
 
-pub(super) async fn sync_native_snapshot_once<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    runtime: &AppRuntime,
-) {
-    let raw_snapshot = runtime.runtime.snapshot().await;
-    if raw_snapshot.pending_permission_count > 0 || raw_snapshot.pending_question_count > 0 {
-        warn!(
-            active_session_count = raw_snapshot.active_session_count,
-            pending_permission_count = raw_snapshot.pending_permission_count,
-            pending_question_count = raw_snapshot.pending_question_count,
-            "native snapshot loop observed pending items"
-        );
-    }
-    if raw_snapshot.active_session_count > 0 {
-        if let Err(error) = TerminalFocusService::new(runtime)
-            .sync_snapshot_focus_bindings(&raw_snapshot)
-            .await
-        {
-            warn!(error = %error, "failed to sync focus bindings during native snapshot refresh");
-        }
-    }
-
-    if let Err(error) = update_native_island_snapshot(app, &raw_snapshot) {
-        warn!(error = %error, "failed to update native macOS island panel");
-    }
-}
-
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_snapshot_to_panel(
     handles: NativePanelHandles,

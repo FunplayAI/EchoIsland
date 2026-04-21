@@ -321,6 +321,39 @@ body[data-content-host="shared-expanded"] .shared-expanded-host .panel-main {
     background-size 270ms linear;
 }
 
+.completion-breath-light {
+  --completion-glow-radius: 12.5px;
+  --completion-glow-image-radius: 64;
+  --completion-glow-image-slice-x: 160;
+  --completion-glow-slice-x: calc(var(--completion-glow-image-slice-x) * var(--completion-glow-radius) / var(--completion-glow-image-radius));
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-style: solid;
+  border-width: 0 var(--completion-glow-slice-x);
+  border-image-source: url("./assets/island-completion-inner-glow-9slice.png");
+  border-image-slice: 0 160 0 160 fill;
+  border-image-repeat: stretch;
+  border-radius: var(--completion-glow-radius);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.island[data-completion-attention="true"] .completion-breath-light {
+  animation: completion-breath-light 1.8s ease-in-out infinite;
+}
+
+@keyframes completion-breath-light {
+  0%,
+  100% {
+    opacity: 0.36;
+  }
+
+  50% {
+    opacity: 0.78;
+  }
+}
+
 .island-bar::before,
 .island-bar::after {
   content: "";
@@ -364,6 +397,8 @@ body[data-content-host="shared-expanded"] .shared-expanded-host .panel-main {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  position: relative;
+  z-index: 2;
 }
 
 .compact-left {

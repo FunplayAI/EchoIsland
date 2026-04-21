@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager};
 use tokio::time::{Duration, MissedTickBehavior};
 use tracing::{info, warn};
 
-use crate::{app_runtime::AppRuntime, constants::MAIN_WINDOW_LABEL, macos_shared_expanded_window};
+use crate::{constants::MAIN_WINDOW_LABEL, macos_shared_expanded_window};
 
 pub(crate) fn native_ui_enabled() -> bool {
     !matches!(
@@ -58,6 +58,7 @@ pub(crate) fn create_native_island_panel() -> Result<(), String> {
         pill_view,
         expanded_container,
         cards_container,
+        completion_glow,
         top_highlight,
         body_separator,
         settings_button,
@@ -116,6 +117,7 @@ pub(crate) fn create_native_island_panel() -> Result<(), String> {
         right_shoulder: &right_shoulder,
         pill_view: &pill_view,
         expanded_container: &expanded_container,
+        completion_glow: &completion_glow,
         top_highlight: &top_highlight,
         body_separator: &body_separator,
         settings_button: &settings_button,
@@ -139,6 +141,7 @@ pub(crate) fn create_native_island_panel() -> Result<(), String> {
         pill_view: &pill_view,
         expanded_container: &expanded_container,
         cards_container: &cards_container,
+        completion_glow: &completion_glow,
         top_highlight: &top_highlight,
         body_separator: &body_separator,
         settings_button: &settings_button,
@@ -193,23 +196,6 @@ pub(crate) fn hide_native_island_panel<R: tauri::Runtime>(
         }
     })
     .map_err(|error| error.to_string())
-}
-
-pub(crate) fn spawn_native_snapshot_loop<R: tauri::Runtime + 'static>(
-    app: AppHandle<R>,
-    runtime: AppRuntime,
-) {
-    tauri::async_runtime::spawn(async move {
-        sync_native_snapshot_once(&app, &runtime).await;
-
-        let mut interval = tokio::time::interval(Duration::from_millis(1500));
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-        loop {
-            interval.tick().await;
-            sync_native_snapshot_once(&app, &runtime).await;
-        }
-    });
 }
 
 pub(crate) fn spawn_native_hover_loop<R: tauri::Runtime + 'static>(app: AppHandle<R>) {

@@ -1,6 +1,7 @@
 import { applyMascot } from "../mascot.js";
 import { estimateExpandedPanelHeight, renderPending, renderSessions, updateHeadline } from "../renderers.js";
 import {
+  getMascotState,
   getInteraction,
   getPanelHeight,
   isExpanded,
@@ -32,6 +33,13 @@ export function applyStatusTone(snapshot, { island, statusChip }) {
   island.dataset.empty = snapshot.active_session_count > 0 ? "false" : "true";
 }
 
+export function applyCompletionAttention(snapshot, { island, mascotShell, uiState }) {
+  applyMascot(snapshot, { mascotShell, uiState });
+  if (island) {
+    island.dataset.completionAttention = getMascotState(uiState) === "complete" ? "true" : "false";
+  }
+}
+
 export async function presentSnapshot(snapshot, deps) {
   const {
     uiState,
@@ -55,5 +63,5 @@ export async function presentSnapshot(snapshot, deps) {
     renderPending(snapshot, { pendingActions, pendingSummary });
   }
   applyStatusTone(snapshot, { island, statusChip });
-  applyMascot(snapshot, { mascotShell, uiState });
+  applyCompletionAttention(snapshot, { island, mascotShell, uiState });
 }

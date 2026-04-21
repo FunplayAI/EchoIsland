@@ -18,7 +18,7 @@ import { applyModeHint } from "./fallback-hints.js";
 import { playNotificationSound } from "../notification-sound.js";
 import { applyPendingCardsToSnapshot, syncPendingCardVisibility } from "./pending-card-visibility.js";
 import { hasQueueInteraction, resolveSurfaceMode, shouldAutoPopupStatusQueue } from "./queue-mode.js";
-import { applyStatusTone, presentSnapshot } from "./snapshot-presenter.js";
+import { applyCompletionAttention, applyStatusTone, presentSnapshot } from "./snapshot-presenter.js";
 import { syncStatusQueue } from "./status-queue.js";
 
 function updateSummaryFields(snapshot, deps) {
@@ -122,6 +122,7 @@ export async function refreshSnapshot(api, deps) {
     setInteraction(uiState, "suppressHoverExpandUntil", Date.now() + timings.statusQueue.autoCloseHoverSuppressMs);
     setStatusAutoExpanded(uiState, false);
     await setIslandMode?.(false, true);
+    applyCompletionAttention(snapshot, deps);
     return;
   }
 
@@ -152,6 +153,7 @@ export async function refreshSnapshot(api, deps) {
   if (!hasStatusItems && !queueInteractionActive && isExpanded(uiState) && !isTransitioning(uiState)) {
     setStatusAutoExpanded(uiState, false);
     await setIslandMode?.(false, true);
+    applyCompletionAttention(snapshot, deps);
     return;
   }
 

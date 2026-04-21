@@ -18,8 +18,9 @@ use objc2::{MainThreadMarker, MainThreadOnly};
 
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
-    NSBackingStoreType, NSClipView, NSColor, NSEvent, NSFont, NSPanel, NSScreen, NSTextAlignment,
-    NSTextField, NSView, NSWindowAnimationBehavior, NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSBackingStoreType, NSClipView, NSColor, NSEvent, NSFont, NSPanel, NSScreen,
+    NSTextAlignment, NSTextField, NSView, NSWindowAnimationBehavior,
+    NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 
 #[cfg(target_os = "macos")]
@@ -34,13 +35,13 @@ use objc2_core_graphics::{
 use objc2_quartz_core::{CACornerMask, CALayer, CAShapeLayer, CATransaction};
 
 #[cfg(target_os = "macos")]
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 #[cfg(target_os = "macos")]
 use tokio::time::Duration;
 
 #[cfg(target_os = "macos")]
-use tracing::{info, warn};
+use tracing::warn;
 
 #[cfg(target_os = "macos")]
 use echoisland_runtime::{
@@ -48,10 +49,7 @@ use echoisland_runtime::{
 };
 
 #[cfg(target_os = "macos")]
-use crate::{
-    app_runtime::AppRuntime, macos_shared_expanded_window,
-    terminal_focus_service::TerminalFocusService,
-};
+use crate::macos_shared_expanded_window;
 
 #[cfg(target_os = "macos")]
 mod card_animation;
@@ -138,7 +136,7 @@ use panel_constants::*;
 pub(crate) use panel_entry::{
     create_native_island_panel, hide_main_webview_window, hide_native_island_panel,
     native_ui_enabled, spawn_native_count_marquee_loop, spawn_native_hover_loop,
-    spawn_native_snapshot_loop, spawn_native_status_queue_loop,
+    spawn_native_status_queue_loop,
 };
 #[cfg(target_os = "macos")]
 use panel_geometry::*;

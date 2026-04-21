@@ -15,6 +15,7 @@ pub(super) unsafe fn apply_native_mascot_frame(
     let mascot_sleep_label = refs.mascot_sleep_label;
     let mascot_completion_badge = refs.mascot_completion_badge;
     let mascot_completion_badge_label = refs.mascot_completion_badge_label;
+    let completion_glow = refs.completion_glow;
     let motion = frame.motion;
 
     mascot_shell.setAlphaValue(motion.shell_alpha.clamp(0.0, 1.0));
@@ -145,6 +146,7 @@ pub(super) unsafe fn apply_native_mascot_frame(
     if let Some(layer) = mascot_completion_badge.layer() {
         layer.setCornerRadius(6.5);
     }
+    sync_completion_glow(completion_glow, frame);
 
     for face_part in [mascot_left_eye, mascot_right_eye, mascot_mouth] {
         face_part.setHidden(false);
@@ -163,6 +165,20 @@ pub(super) unsafe fn apply_native_mascot_frame(
     mascot_sleep_label.displayIfNeeded();
     mascot_completion_badge.displayIfNeeded();
     mascot_completion_badge_label.displayIfNeeded();
+    completion_glow.displayIfNeeded();
+}
+
+fn sync_completion_glow(completion_glow: &NSView, frame: NativeMascotFrame) {
+    let visible = frame.state == NativeMascotState::Complete;
+    let breath = ((frame.t * 3.2).sin() + 1.0) * 0.5;
+    let alpha = if visible { 0.32 + breath * 0.36 } else { 0.0 };
+    with_disabled_layer_actions(|| {
+        completion_glow.setHidden(alpha <= 0.02);
+        completion_glow.setAlphaValue(alpha);
+        if let Some(layer) = completion_glow.layer() {
+            layer.setAffineTransform(CGAffineTransformMakeScale(1.0, 1.0));
+        }
+    });
 }
 
 fn native_mascot_blink_scale(t: f64, state: NativeMascotState) -> f64 {
