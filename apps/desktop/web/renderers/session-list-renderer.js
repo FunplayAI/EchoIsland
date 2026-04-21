@@ -12,7 +12,7 @@ import {
   toolTone,
 } from "../utils.js";
 import { getPlatformCapabilities, getStatusQueueItems, getSurfaceMode } from "../state-helpers.js";
-import { estimateCardHeight } from "./panel-measure.js";
+import { estimateCardHeight, estimateMessageCardTargetHeight } from "./panel-measure.js";
 import { getPromptAssistSessions } from "./prompt-assist-policy.js";
 import { getDisplayedSessions } from "./surface-state.js";
 
@@ -44,6 +44,7 @@ function buildPendingEntries(snapshot) {
 
   pendingPermissions.forEach((pending) => {
     const actionDisabled = pending.display_held ? "disabled" : "";
+    const bodyText = stripMarkdownDisplay(pending.tool_description ?? "This action needs your permission.");
     entries.push({
       key: `approval:${pending.request_id}`,
       kind: "approval",
@@ -66,9 +67,7 @@ function buildPendingEntries(snapshot) {
           </div>
           <span class="status-pill">Approval</span>
         </div>
-        <div class="chat-line assistant-line"><span class="chat-prefix">!</span><p>${escapeHtml(
-          stripMarkdownDisplay(pending.tool_description ?? "This action needs your permission.")
-        )}</p></div>
+        <div class="chat-line assistant-line"><span class="chat-prefix">!</span><p>${escapeHtml(bodyText)}</p></div>
         <div class="pending-buttons">
           <button type="button" data-action="allow" data-request-id="${escapeHtml(
             pending.request_id
@@ -84,13 +83,14 @@ function buildPendingEntries(snapshot) {
         focusable: "false",
         compact: "false",
         collapsedHeight: "52px",
-        targetHeight: "120px",
+        targetHeight: `${estimateMessageCardTargetHeight("approval", { body: bodyText })}px`,
       },
     });
   });
 
   pendingQuestions.forEach((pending) => {
     const actionDisabled = pending.display_held ? "disabled" : "";
+    const bodyText = stripMarkdownDisplay(pending.text ?? "Need your input.");
     const options = pending.options?.length
       ? `<div class="question-options">${pending.options
           .map(
@@ -134,9 +134,7 @@ function buildPendingEntries(snapshot) {
           </div>
           <span class="status-pill">Question</span>
         </div>
-        <div class="chat-line assistant-line"><span class="chat-prefix">?</span><p>${escapeHtml(
-          stripMarkdownDisplay(pending.text ?? "Need your input.")
-        )}</p></div>
+        <div class="chat-line assistant-line"><span class="chat-prefix">?</span><p>${escapeHtml(bodyText)}</p></div>
         ${options}
       `,
       row: {
@@ -145,7 +143,10 @@ function buildPendingEntries(snapshot) {
         focusable: "false",
         compact: "false",
         collapsedHeight: "52px",
-        targetHeight: "144px",
+        targetHeight: `${estimateMessageCardTargetHeight("question", {
+          body: bodyText,
+          options: Array.isArray(pending.options) ? pending.options : [],
+        })}px`,
       },
     });
   });
@@ -156,6 +157,7 @@ function buildPendingEntries(snapshot) {
 function buildPromptAssistEntries(snapshot, uiState, canFocusTerminal) {
   return getPromptAssistSessions(snapshot, uiState).map((session) => {
     const title = sessionTitle(session);
+    const bodyText = "Approval may be required in the Codex terminal.";
     return {
       key: `attention:${session.session_id}`,
       kind: "attention",
@@ -179,7 +181,7 @@ function buildPromptAssistEntries(snapshot, uiState, canFocusTerminal) {
         </div>
         <div class="chat-line assistant-line">
           <span class="chat-prefix">!</span>
-          <p>Approval may be required in the Codex terminal.</p>
+          <p>${bodyText}</p>
         </div>
       `,
       row: {
@@ -188,7 +190,7 @@ function buildPromptAssistEntries(snapshot, uiState, canFocusTerminal) {
         focusable: canFocusTerminal ? "true" : "false",
         compact: "false",
         collapsedHeight: "52px",
-        targetHeight: "92px",
+        targetHeight: `${estimateMessageCardTargetHeight("attention", { body: bodyText })}px`,
       },
     };
   });
@@ -199,6 +201,7 @@ function buildStatusQueueEntries(uiState, canFocusTerminal) {
     if (item.kind === "approval") {
       const pending = item.payload;
       const actionDisabled = !item.isLive ? "disabled" : "";
+      const bodyText = stripMarkdownDisplay(pending.tool_description ?? "This action needs your permission.");
       return {
         key: item.key ?? `approval:${pending.request_id}`,
         kind: "approval",
@@ -221,9 +224,7 @@ function buildStatusQueueEntries(uiState, canFocusTerminal) {
             </div>
             <span class="status-pill">Approval</span>
           </div>
-          <div class="chat-line assistant-line"><span class="chat-prefix">!</span><p>${escapeHtml(
-            stripMarkdownDisplay(pending.tool_description ?? "This action needs your permission.")
-          )}</p></div>
+          <div class="chat-line assistant-line"><span class="chat-prefix">!</span><p>${escapeHtml(bodyText)}</p></div>
           <div class="pending-buttons">
             <button type="button" data-action="allow" data-request-id="${escapeHtml(
               pending.request_id
@@ -240,7 +241,7 @@ function buildStatusQueueEntries(uiState, canFocusTerminal) {
           compact: "false",
           exiting: item.isRemoving ? "true" : "false",
           collapsedHeight: "52px",
-          targetHeight: "120px",
+          targetHeight: `${estimateMessageCardTargetHeight("approval", { body: bodyText })}px`,
         },
       };
     }
@@ -280,7 +281,7 @@ function buildStatusQueueEntries(uiState, canFocusTerminal) {
         compact: "false",
         exiting: item.isRemoving ? "true" : "false",
         collapsedHeight: "52px",
-        targetHeight: "92px",
+        targetHeight: `${estimateMessageCardTargetHeight("completion", { body: assistantText })}px`,
         completion: "true",
       },
     };

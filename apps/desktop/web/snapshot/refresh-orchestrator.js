@@ -15,6 +15,7 @@ import {
 import { formatSource, formatStatus } from "../utils.js";
 import { detectCompletedSessions, syncCompletionBadges } from "./completion-tracker.js";
 import { applyModeHint } from "./fallback-hints.js";
+import { playNotificationSound } from "../notification-sound.js";
 import { applyPendingCardsToSnapshot, syncPendingCardVisibility } from "./pending-card-visibility.js";
 import { hasQueueInteraction, resolveSurfaceMode, shouldAutoPopupStatusQueue } from "./queue-mode.js";
 import { applyStatusTone, presentSnapshot } from "./snapshot-presenter.js";
@@ -112,6 +113,10 @@ export async function refreshSnapshot(api, deps) {
   const currentSurfaceMode = getSurfaceMode(uiState);
   const hasStatusItems = hasStatusQueueItems(uiState);
   const queueInteractionActive = hasQueueInteraction(uiState);
+
+  if (statusQueueSync.addedCount > 0) {
+    void playNotificationSound();
+  }
 
   if (!hasStatusItems && currentSurfaceMode === "status" && isExpanded(uiState) && !isTransitioning(uiState)) {
     setInteraction(uiState, "suppressHoverExpandUntil", Date.now() + timings.statusQueue.autoCloseHoverSuppressMs);

@@ -25,6 +25,7 @@ mod macos_native_test_panel;
 mod macos_native_test_panel;
 mod macos_panel;
 mod macos_shared_expanded_window;
+mod notification_sound;
 mod platform;
 mod platform_stub;
 mod session_scan_runner;

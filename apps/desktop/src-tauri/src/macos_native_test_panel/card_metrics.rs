@@ -39,7 +39,7 @@ pub(super) fn prompt_assist_card_height(_session: &SessionSnapshotView) -> f64 {
 pub(super) fn completion_card_height(session: &SessionSnapshotView) -> f64 {
     let preview = completion_preview_text(session);
     let body_height = estimated_chat_body_height(&preview, estimated_default_chat_body_width(), 2);
-    (CARD_HEADER_HEIGHT + CARD_CONTENT_BOTTOM_INSET + body_height).max(92.0)
+    (CARD_HEADER_HEIGHT + CARD_CONTENT_BOTTOM_INSET + body_height).max(76.0)
 }
 
 pub(super) fn pending_like_card_height(body: &str, min_height: f64, max_height: f64) -> f64 {

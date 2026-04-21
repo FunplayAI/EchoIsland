@@ -30,28 +30,19 @@ pub(super) unsafe fn apply_card_stack_transition(
                     card_content_visibility_phase(phase, true),
                 )
             } else {
-                let squeeze_phase = (phase / 0.28).clamp(0.0, 1.0);
-                let exit_phase = ((phase - 0.28) / 0.72).clamp(0.0, 1.0);
-                let visible_ratio = if phase <= 0.28 { 1.0 } else { 1.0 - exit_phase };
+                let reverse_phase = 1.0 - phase.clamp(0.0, 1.0);
+                let shell_progress = ease_out_cubic(reverse_phase);
                 (
-                    if phase <= 0.28 {
-                        1.0
-                    } else {
-                        1.0 - ease_in_cubic(exit_phase)
-                    },
-                    (base_layout.frame.size.height * visible_ratio).max(1.0),
-                    if phase <= 0.28 {
-                        lerp(1.0, 1.003, squeeze_phase)
-                    } else {
-                        lerp(1.003, 0.985, exit_phase)
-                    },
-                    if phase <= 0.28 {
-                        lerp(1.0, 0.94, squeeze_phase)
-                    } else {
-                        lerp(0.94, 0.76, exit_phase)
-                    },
-                    0.0,
-                    card_content_visibility_phase(phase, false),
+                    shell_progress,
+                    lerp(
+                        base_layout.collapsed_height,
+                        base_layout.frame.size.height,
+                        shell_progress,
+                    ),
+                    lerp(0.96, 1.0, shell_progress),
+                    lerp(0.82, 1.0, shell_progress),
+                    lerp(PANEL_CARD_REVEAL_Y, 0.0, shell_progress),
+                    card_content_visibility_phase(reverse_phase, true),
                 )
             };
 
@@ -89,26 +80,18 @@ pub(super) unsafe fn apply_card_exit_phase(card: &NSView, phase: f64) {
         collapsed_height: (card.frame().size.height * 0.58).round().max(34.0),
     });
 
-    let squeeze_phase = (phase / 0.28).clamp(0.0, 1.0);
-    let exit_phase = ((phase - 0.28) / 0.72).clamp(0.0, 1.0);
-    let visible_ratio = if phase <= 0.28 { 1.0 } else { 1.0 - exit_phase };
-    let shell_opacity = if phase <= 0.28 {
-        1.0
-    } else {
-        1.0 - ease_in_cubic(exit_phase)
-    };
-    let content_progress = card_content_visibility_phase(phase, false);
-    let current_height = (base_layout.frame.size.height * visible_ratio).max(1.0);
-    let scale_x = if phase <= 0.28 {
-        lerp(1.0, 1.003, squeeze_phase)
-    } else {
-        lerp(1.003, 0.985, exit_phase)
-    };
-    let scale_y = if phase <= 0.28 {
-        lerp(1.0, 0.94, squeeze_phase)
-    } else {
-        lerp(0.94, 0.76, exit_phase)
-    };
+    let reverse_phase = 1.0 - phase;
+    let shell_progress = ease_out_cubic(reverse_phase);
+    let shell_opacity = shell_progress;
+    let content_progress = card_content_visibility_phase(reverse_phase, true);
+    let current_height = lerp(
+        base_layout.collapsed_height,
+        base_layout.frame.size.height,
+        shell_progress,
+    );
+    let scale_x = lerp(0.96, 1.0, shell_progress);
+    let scale_y = lerp(0.82, 1.0, shell_progress);
+    let translate_y = lerp(PANEL_CARD_REVEAL_Y, 0.0, shell_progress);
 
     let frame = NSRect::new(
         NSPoint::new(
@@ -122,8 +105,11 @@ pub(super) unsafe fn apply_card_exit_phase(card: &NSView, phase: f64) {
     card.setAlphaValue(shell_opacity);
 
     if let Some(layer) = card.layer() {
-        let transform =
-            CGAffineTransformTranslate(CGAffineTransformMakeScale(scale_x, scale_y), 0.0, 0.0);
+        let transform = CGAffineTransformTranslate(
+            CGAffineTransformMakeScale(scale_x, scale_y),
+            0.0,
+            translate_y,
+        );
         layer.setAffineTransform(transform);
         layer.setShadowOpacity((shell_opacity * 0.08).clamp(0.0, 0.08) as f32);
         layer.setShadowRadius(lerp(0.0, 8.0, shell_opacity));

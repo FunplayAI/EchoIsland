@@ -18,16 +18,17 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
     let mouse = NSEvent::mouseLocation();
     let primary_mouse_down = (NSEvent::pressedMouseButtons() & 1) != 0;
     let panel_frame = panel.frame();
-    let pill_frame = absolute_rect(panel_frame, refs.pill_view.frame());
+    let pill_frame = refs.pill_view.frame();
+    let hover_pill_frame = native_hover_pill_rect(panel_frame, pill_frame);
     let expanded_container = view_from_ptr(handles.expanded_container);
     let cards_container = view_from_ptr(handles.cards_container);
     let inside = if panel_frame.size.height > COLLAPSED_PANEL_HEIGHT + 0.5 {
         point_in_rect(
             mouse,
             absolute_rect(panel_frame, expanded_container.frame()),
-        ) || point_in_rect(mouse, pill_frame)
+        ) || point_in_rect(mouse, hover_pill_frame)
     } else {
-        point_in_rect(mouse, pill_frame)
+        point_in_rect(mouse, hover_pill_frame)
     };
     panel.setIgnoresMouseEvents(!inside);
 
@@ -221,6 +222,18 @@ fn native_edge_action_button_rect(
     button_frame: NSRect,
 ) -> NSRect {
     absolute_rect(panel_frame, compose_local_rect(pill_frame, button_frame))
+}
+
+fn native_hover_pill_rect(panel_frame: NSRect, pill_frame: NSRect) -> NSRect {
+    let top_gap =
+        (panel_frame.size.height - (pill_frame.origin.y + pill_frame.size.height)).max(0.0);
+    absolute_rect(
+        panel_frame,
+        NSRect::new(
+            pill_frame.origin,
+            NSSize::new(pill_frame.size.width, pill_frame.size.height + top_gap),
+        ),
+    )
 }
 
 fn spawn_native_focus_session<R: tauri::Runtime + 'static>(app: AppHandle<R>, session_id: String) {

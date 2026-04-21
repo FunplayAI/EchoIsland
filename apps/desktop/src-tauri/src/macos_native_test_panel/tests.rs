@@ -596,6 +596,18 @@ fn hover_collapse_reuses_existing_timer_after_transition_finishes() {
 }
 
 #[test]
+fn native_hover_pill_rect_keeps_top_edge_stable_during_drop() {
+    let panel_frame = NSRect::new(NSPoint::new(100.0, 200.0), NSSize::new(420.0, 80.0));
+    let pill_frame = NSRect::new(NSPoint::new(80.0, 35.5), NSSize::new(253.0, 40.0));
+
+    let hover_rect = native_hover_pill_rect(panel_frame, pill_frame);
+
+    assert_eq!(hover_rect.origin.y, 235.5);
+    assert_eq!(hover_rect.size.height, 44.5);
+    assert_eq!(hover_rect.origin.y + hover_rect.size.height, 280.0);
+}
+
+#[test]
 fn status_auto_hover_keeps_live_status_surface_open_outside() {
     let now = Instant::now();
     let mut state = panel_state();

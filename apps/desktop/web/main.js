@@ -69,14 +69,12 @@ async function main() {
   let clearHoverExpandTimer;
   let clearHoverCollapseTimer;
   let reconcileHoverState;
-  let scheduleHoverExpand;
   let setIslandMode;
 
   ({
     clearHoverExpandTimer,
     clearHoverCollapseTimer,
     reconcileHoverState,
-    scheduleHoverExpand,
     syncExpandedPanelHeight,
     setIslandMode,
   } = panelController);
@@ -156,6 +154,7 @@ async function main() {
     refreshSnapshot,
     bindUiEvents,
     bindUiEventsArgs: {
+      island,
       islandBar,
       islandPanel,
       settingsBtn,
@@ -164,7 +163,6 @@ async function main() {
       sessionList,
       KEEP_OPEN_SELECTOR,
       uiState,
-      scheduleHoverExpand,
       clearHoverExpandTimer,
       reconcileHoverState,
       clearHoverCollapseTimer,

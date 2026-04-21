@@ -12,7 +12,7 @@ import {
   toolTone,
 } from "../utils.js";
 import { getCompletionSessionIds, getPlatformCapabilities } from "../state-helpers.js";
-import { estimateCardHeight } from "./panel-measure.js";
+import { estimateCardHeight, estimateMessageCardTargetHeight } from "./panel-measure.js";
 import { getPromptAssistSessions } from "./prompt-assist-policy.js";
 import { getDisplayedSessions } from "./surface-state.js";
 
@@ -28,8 +28,10 @@ function buildPendingCards(snapshot) {
 
   if (snapshot.pending_permission) {
     const pending = snapshot.pending_permission;
+    const bodyText = stripMarkdownDisplay(pending.tool_description ?? "This action needs your permission.");
     cards.push({
       type: "approval",
+      targetHeight: `${estimateMessageCardTargetHeight("approval", { body: bodyText })}px`,
       html: `
         <div class="session-card-top">
           <div class="session-title-block">
@@ -46,9 +48,7 @@ function buildPendingCards(snapshot) {
           </div>
           <span class="status-pill">Approval</span>
         </div>
-        <div class="chat-line assistant-line"><span class="chat-prefix">!</span><p>${escapeHtml(
-          stripMarkdownDisplay(pending.tool_description ?? "This action needs your permission.")
-        )}</p></div>
+        <div class="chat-line assistant-line"><span class="chat-prefix">!</span><p>${escapeHtml(bodyText)}</p></div>
         <div class="pending-buttons">
           <button type="button" data-action="allow" data-request-id="${escapeHtml(pending.request_id)}">Allow</button>
           <button type="button" data-action="deny" data-request-id="${escapeHtml(
@@ -61,6 +61,7 @@ function buildPendingCards(snapshot) {
 
   if (snapshot.pending_question) {
     const pending = snapshot.pending_question;
+    const bodyText = stripMarkdownDisplay(pending.text ?? "Need your input.");
     const options = pending.options?.length
       ? `<div class="question-options">${pending.options
           .map(
@@ -84,6 +85,10 @@ function buildPendingCards(snapshot) {
 
     cards.push({
       type: "question",
+      targetHeight: `${estimateMessageCardTargetHeight("question", {
+        body: bodyText,
+        options: Array.isArray(pending.options) ? pending.options : [],
+      })}px`,
       html: `
         <div class="session-card-top">
           <div class="session-title-block">
@@ -100,9 +105,7 @@ function buildPendingCards(snapshot) {
           </div>
           <span class="status-pill">Question</span>
         </div>
-        <div class="chat-line assistant-line"><span class="chat-prefix">?</span><p>${escapeHtml(
-          stripMarkdownDisplay(pending.text ?? "Need your input.")
-        )}</p></div>
+        <div class="chat-line assistant-line"><span class="chat-prefix">?</span><p>${escapeHtml(bodyText)}</p></div>
         ${options}
       `,
     });
@@ -114,8 +117,10 @@ function buildPendingCards(snapshot) {
 function buildPromptAssistCards(snapshot, uiState) {
   return getPromptAssistSessions(snapshot, uiState).map((session) => {
     const title = sessionTitle(session);
+    const bodyText = "Approval may be required in the Codex terminal.";
     return {
       session,
+      targetHeight: `${estimateMessageCardTargetHeight("attention", { body: bodyText })}px`,
       html: `
         <div class="session-card-top">
           <div class="session-title-block">
@@ -133,7 +138,7 @@ function buildPromptAssistCards(snapshot, uiState) {
         </div>
         <div class="chat-line assistant-line">
           <span class="chat-prefix">!</span>
-          <p>Approval may be required in the Codex terminal.</p>
+          <p>${bodyText}</p>
         </div>
       `,
     };
@@ -158,12 +163,11 @@ function visibleSessions(snapshot, uiState) {
 }
 
 function renderPendingCard(card, index, totalCards) {
-  const targetHeight = card.type === "approval" ? "120px" : "144px";
   const style = styleVars([
     ["--card-stagger-index", String(index)],
     ["--card-exit-index", String(totalCards - index - 1)],
     ["--card-collapsed-height", "52px"],
-    ["--card-target-height", targetHeight],
+    ["--card-target-height", card.targetHeight],
   ]);
   const status = card.type === "approval" ? "waitingapproval" : "waitingquestion";
 
@@ -175,7 +179,7 @@ function renderPromptAssistCard(card, renderIndex, exitIndex, canFocusTerminal) 
     ["--card-stagger-index", String(renderIndex)],
     ["--card-exit-index", String(exitIndex)],
     ["--card-collapsed-height", "52px"],
-    ["--card-target-height", "92px"],
+    ["--card-target-height", card.targetHeight],
   ]);
 
   return `<article class="session-card prompt-assist-card" data-session-id="${escapeHtml(

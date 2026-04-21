@@ -1,4 +1,5 @@
 use super::*;
+use crate::notification_sound::play_message_card_sound;
 
 pub(crate) fn update_native_island_snapshot<R: tauri::Runtime>(
     app: &AppHandle<R>,
@@ -52,6 +53,9 @@ pub(crate) fn update_native_island_snapshot<R: tauri::Runtime>(
             });
         sync_native_completion_badge(&mut state, &raw_snapshot, &completed_session_ids);
         let status_queue_sync = sync_native_status_queue(&mut state, &raw_snapshot);
+        if status_queue_sync.added_approvals + status_queue_sync.added_completions > 0 {
+            play_message_card_sound();
+        }
         let status_surface_transition =
             sync_native_status_surface_policy(&mut state, status_queue_sync);
         if let Some(expanded) = status_surface_transition.panel_transition {

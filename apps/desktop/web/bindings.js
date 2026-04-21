@@ -1,6 +1,8 @@
 import { getInteraction, setInteraction } from "./state-helpers.js";
+import { primeNotificationSound } from "./notification-sound.js";
 
 export function bindUiEvents({
+  island,
   islandBar,
   islandPanel,
   settingsBtn,
@@ -9,7 +11,6 @@ export function bindUiEvents({
   sessionList,
   KEEP_OPEN_SELECTOR,
   uiState,
-  scheduleHoverExpand,
   clearHoverExpandTimer,
   reconcileHoverState,
   clearHoverCollapseTimer,
@@ -22,17 +23,112 @@ export function bindUiEvents({
   openSettingsLocation,
   quitApplication,
 }) {
+  window.addEventListener(
+    "pointerdown",
+    () => {
+      primeNotificationSound();
+    },
+    { once: true }
+  );
+  window.addEventListener(
+    "keydown",
+    () => {
+      primeNotificationSound();
+    },
+    { once: true }
+  );
+  let lastPointerPoint = null;
+  let hoverGeometryFrame = null;
+
+  function hoverDropCompensationPx() {
+    const state = island?.dataset.panelState ?? "compact";
+    if (!["morphing", "expanding", "tallening", "expanded", "flattening"].includes(state)) {
+      return 0;
+    }
+    return Number.parseFloat(window.getComputedStyle(island).getPropertyValue("--morph-drop-distance")) || 0;
+  }
+
+  function barHoverRect() {
+    if (!islandBar) return null;
+    const rect = islandBar.getBoundingClientRect();
+    const drop = hoverDropCompensationPx();
+    return {
+      left: rect.left,
+      right: rect.right,
+      top: rect.top - drop,
+      bottom: rect.bottom,
+    };
+  }
+
+  function setPointerInsideBar(nextInside) {
+    if (getInteraction(uiState, "pointerInsideBar") === nextInside) return;
+    setInteraction(uiState, "pointerInsideBar", nextInside);
+    if (nextInside) {
+      clearHoverCollapseTimer();
+    } else {
+      clearHoverExpandTimer();
+    }
+    reconcileHoverState();
+  }
+
+  function syncPointerInsideBar() {
+    const rect = barHoverRect();
+    if (!rect || !lastPointerPoint) {
+      setPointerInsideBar(false);
+      return;
+    }
+    const inside =
+      lastPointerPoint.x >= rect.left &&
+      lastPointerPoint.x <= rect.right &&
+      lastPointerPoint.y >= rect.top &&
+      lastPointerPoint.y <= rect.bottom;
+    setPointerInsideBar(inside);
+  }
+
+  function stopHoverGeometryTracking() {
+    if (!hoverGeometryFrame) return;
+    window.cancelAnimationFrame(hoverGeometryFrame);
+    hoverGeometryFrame = null;
+  }
+
+  function startHoverGeometryTracking() {
+    if (hoverGeometryFrame) return;
+    const tick = () => {
+      hoverGeometryFrame = null;
+      syncPointerInsideBar();
+      if (island?.dataset.transitioning === "true") {
+        hoverGeometryFrame = window.requestAnimationFrame(tick);
+      }
+    };
+    hoverGeometryFrame = window.requestAnimationFrame(tick);
+  }
+
+  window.addEventListener("pointermove", (event) => {
+    lastPointerPoint = { x: event.clientX, y: event.clientY };
+    syncPointerInsideBar();
+    if (island?.dataset.transitioning === "true") {
+      startHoverGeometryTracking();
+    }
+  });
+  window.addEventListener("pointerleave", () => {
+    lastPointerPoint = null;
+    stopHoverGeometryTracking();
+    setPointerInsideBar(false);
+  });
+  if (island) {
+    new MutationObserver(() => {
+      syncPointerInsideBar();
+      if (island.dataset.transitioning === "true") {
+        startHoverGeometryTracking();
+      } else {
+        stopHoverGeometryTracking();
+      }
+    }).observe(island, {
+      attributes: true,
+      attributeFilter: ["data-panel-state", "data-transitioning"],
+    });
+  }
   document.querySelector("#refreshBtn")?.addEventListener("click", async () => refreshSnapshot());
-  islandBar?.addEventListener("pointerenter", () => {
-    setInteraction(uiState, "pointerInsideBar", true);
-    reconcileHoverState();
-    scheduleHoverExpand();
-  });
-  islandBar?.addEventListener("pointerleave", () => {
-    setInteraction(uiState, "pointerInsideBar", false);
-    clearHoverExpandTimer();
-    reconcileHoverState();
-  });
   islandBar?.addEventListener("click", handleIslandBarClick);
   islandPanel?.addEventListener("pointerenter", () => {
     setInteraction(uiState, "pointerInsidePanel", true);
