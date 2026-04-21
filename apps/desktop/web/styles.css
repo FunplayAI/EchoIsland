@@ -864,6 +864,148 @@ button.ghost {
   padding: 0;
 }
 
+.settings-panel {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+}
+
+.settings-card {
+  padding: 14px;
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.055);
+  backdrop-filter: blur(14px);
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.settings-card-header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.settings-card-header span,
+.settings-card p {
+  color: var(--muted);
+}
+
+.settings-card p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings-option:first-of-type {
+  margin-top: 2px;
+}
+
+.settings-option-copy {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.settings-option-copy strong {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(245, 247, 251, 0.96);
+}
+
+.settings-option-copy p {
+  display: none;
+}
+
+.settings-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.settings-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.settings-switch-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 42px;
+  height: 24px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 140ms ease-out, border-color 140ms ease-out;
+}
+
+.settings-switch-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  transform: translateX(0);
+  transition: transform 160ms cubic-bezier(0.22, 0.84, 0.24, 1);
+}
+
+.settings-switch input:checked + .settings-switch-track {
+  background: rgba(78, 214, 126, 0.34);
+  border-color: rgba(78, 214, 126, 0.42);
+}
+
+.settings-switch input:checked + .settings-switch-track .settings-switch-thumb {
+  transform: translateX(18px);
+}
+
+.settings-select {
+  min-width: 146px;
+  max-width: 178px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(245, 247, 251, 0.92);
+}
+
+.settings-pill-button {
+  min-width: 88px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(245, 247, 251, 0.92);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.settings-pill-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
 .panel-main {
   overflow: visible;
 }

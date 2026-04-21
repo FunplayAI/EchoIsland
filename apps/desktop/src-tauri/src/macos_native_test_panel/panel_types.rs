@@ -147,9 +147,19 @@ pub(super) struct NativeStatusQueueSyncResult {
     pub(super) added_completions: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum NativePanelHitAction {
+    FocusSession,
+    CycleDisplay,
+    ToggleCompletionSound,
+    ToggleMascot,
+    OpenReleasePage,
+}
+
 #[derive(Clone)]
 pub(super) struct NativeCardHitTarget {
-    pub(super) session_id: String,
+    pub(super) action: NativePanelHitAction,
+    pub(super) value: String,
     pub(super) frame: NSRect,
 }
 
@@ -157,6 +167,7 @@ pub(super) struct NativeCardHitTarget {
 pub(super) enum NativeExpandedSurface {
     Default,
     Status,
+    Settings,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

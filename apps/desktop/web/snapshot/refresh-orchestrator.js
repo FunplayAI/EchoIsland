@@ -2,6 +2,7 @@ import {
   getTimer,
   getLastRawSnapshot,
   getSurfaceMode,
+  isCompletionSoundEnabled,
   hasStatusQueueItems,
   isExpanded,
   isTransitioning,
@@ -114,7 +115,7 @@ export async function refreshSnapshot(api, deps) {
   const hasStatusItems = hasStatusQueueItems(uiState);
   const queueInteractionActive = hasQueueInteraction(uiState);
 
-  if (statusQueueSync.addedCount > 0) {
+  if (statusQueueSync.addedCount > 0 && isCompletionSoundEnabled(uiState)) {
     void playNotificationSound();
   }
 

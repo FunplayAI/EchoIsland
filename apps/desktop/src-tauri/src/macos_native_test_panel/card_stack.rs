@@ -11,6 +11,11 @@ pub(super) unsafe fn render_expanded_cards(
     let mut card_hit_targets = Vec::new();
     let cards_width = expanded_cards_width(expanded_width);
 
+    if native_settings_surface_active() {
+        render_settings_surface(cards_container, cards_width);
+        return;
+    }
+
     let status_queue = native_status_queue_surface_items();
     if !status_queue.is_empty() {
         render_status_queue_cards(
@@ -31,6 +36,41 @@ pub(super) unsafe fn render_expanded_cards(
         &mut card_hit_targets,
     );
     replace_native_card_hit_targets(card_hit_targets);
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn render_settings_surface(cards_container: &NSView, cards_width: f64) {
+    let body_height = settings_surface_card_height();
+    set_cards_container_body_height(cards_container, cards_width, body_height);
+    let mut cursor_y = body_height;
+    if let Some(frame) = next_expanded_card_frame(&mut cursor_y, false, body_height, cards_width) {
+        let card = create_settings_surface_card(frame);
+        cards_container.addSubview(&card);
+        replace_native_card_hit_targets(vec![
+            NativeCardHitTarget {
+                action: NativePanelHitAction::CycleDisplay,
+                value: String::new(),
+                frame: settings_surface_row_frame(frame, 0),
+            },
+            NativeCardHitTarget {
+                action: NativePanelHitAction::ToggleCompletionSound,
+                value: String::new(),
+                frame: settings_surface_row_frame(frame, 1),
+            },
+            NativeCardHitTarget {
+                action: NativePanelHitAction::ToggleMascot,
+                value: String::new(),
+                frame: settings_surface_row_frame(frame, 2),
+            },
+            NativeCardHitTarget {
+                action: NativePanelHitAction::OpenReleasePage,
+                value: String::new(),
+                frame: settings_surface_row_frame(frame, 3),
+            },
+        ]);
+        return;
+    }
+    replace_native_card_hit_targets(Vec::new());
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -60,7 +100,8 @@ unsafe fn render_status_queue_cards(
         apply_status_queue_item_visual_state(&card, item);
         cards_container.addSubview(&card);
         card_hit_targets.push(NativeCardHitTarget {
-            session_id: item.session_id.clone(),
+            action: NativePanelHitAction::FocusSession,
+            value: item.session_id.clone(),
             frame,
         });
         rendered_count += 1;
@@ -95,7 +136,8 @@ unsafe fn render_default_cards(
                 create_pending_permission_card(frame, pending, snapshot.pending_permission_count);
             cards_container.addSubview(&card);
             card_hit_targets.push(NativeCardHitTarget {
-                session_id: pending.session_id.clone(),
+                action: NativePanelHitAction::FocusSession,
+                value: pending.session_id.clone(),
                 frame,
             });
             rendered_count += 1;
@@ -113,7 +155,8 @@ unsafe fn render_default_cards(
                 create_pending_question_card(frame, pending, snapshot.pending_question_count);
             cards_container.addSubview(&card);
             card_hit_targets.push(NativeCardHitTarget {
-                session_id: pending.session_id.clone(),
+                action: NativePanelHitAction::FocusSession,
+                value: pending.session_id.clone(),
                 frame,
             });
             rendered_count += 1;
@@ -132,7 +175,8 @@ unsafe fn render_default_cards(
         let card = create_prompt_assist_card(frame, session);
         cards_container.addSubview(&card);
         card_hit_targets.push(NativeCardHitTarget {
-            session_id: session.session_id.clone(),
+            action: NativePanelHitAction::FocusSession,
+            value: session.session_id.clone(),
             frame,
         });
         rendered_count += 1;
@@ -156,7 +200,8 @@ unsafe fn render_default_cards(
         let card = create_session_card(frame, session, false);
         cards_container.addSubview(&card);
         card_hit_targets.push(NativeCardHitTarget {
-            session_id: session.session_id.clone(),
+            action: NativePanelHitAction::FocusSession,
+            value: session.session_id.clone(),
             frame,
         });
         rendered_count += 1;

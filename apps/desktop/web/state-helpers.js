@@ -50,6 +50,38 @@ export function getLastRawSnapshot(uiState) {
   return uiState.snapshot.lastRawSnapshot;
 }
 
+export function isCompletionSoundEnabled(uiState) {
+  return Boolean(uiState.settings.completionSoundEnabled);
+}
+
+export function setCompletionSoundEnabled(uiState, enabled) {
+  uiState.settings.completionSoundEnabled = Boolean(enabled);
+}
+
+export function isMascotEnabled(uiState) {
+  return Boolean(uiState.settings.mascotEnabled);
+}
+
+export function setMascotEnabled(uiState, enabled) {
+  uiState.settings.mascotEnabled = Boolean(enabled);
+}
+
+export function getPreferredDisplayIndex(uiState) {
+  return Number(uiState.settings.preferredDisplayIndex ?? 0);
+}
+
+export function setPreferredDisplayIndex(uiState, index) {
+  uiState.settings.preferredDisplayIndex = Number(index ?? 0);
+}
+
+export function getAvailableDisplays(uiState) {
+  return Array.isArray(uiState.settings.availableDisplays) ? uiState.settings.availableDisplays : [];
+}
+
+export function setAvailableDisplays(uiState, displays) {
+  uiState.settings.availableDisplays = Array.isArray(displays) ? displays : [];
+}
+
 export function setLastRawSnapshot(uiState, snapshot) {
   uiState.snapshot.lastRawSnapshot = snapshot;
 }

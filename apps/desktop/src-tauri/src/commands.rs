@@ -9,7 +9,12 @@ use echoisland_runtime::RuntimeSnapshot;
 use tauri::{AppHandle, State};
 
 use crate::{
+    app_settings::{
+        AppSettings, current_app_settings, update_completion_sound_enabled,
+        update_mascot_enabled, update_preferred_display_index,
+    },
     app_runtime::AppRuntime,
+    display_settings::{DisplayOption, list_available_displays},
     command_services::{SampleIngestService, SnapshotCommandService},
     http_receiver::{HttpReceiverStatus, default_http_receiver_status},
     native_ui_refresh::maybe_refresh_native_ui_for_event,
@@ -27,6 +32,16 @@ pub async fn get_snapshot(runtime: State<'_, AppRuntime>) -> Result<RuntimeSnaps
     SnapshotCommandService::new(runtime.inner())
         .get_snapshot()
         .await
+}
+
+#[tauri::command]
+pub fn get_app_settings() -> AppSettings {
+    current_app_settings()
+}
+
+#[tauri::command]
+pub fn get_available_displays(app: AppHandle) -> Result<Vec<DisplayOption>, String> {
+    list_available_displays(&app)
 }
 
 #[tauri::command]
@@ -176,8 +191,37 @@ pub fn open_settings_location() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn set_completion_sound_enabled(enabled: bool) -> Result<AppSettings, String> {
+    update_completion_sound_enabled(enabled).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_mascot_enabled(enabled: bool, app: AppHandle) -> Result<AppSettings, String> {
+    let settings = update_mascot_enabled(enabled).map_err(|error| error.to_string())?;
+    refresh_desktop_after_settings_change(&app);
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn set_preferred_display_index(index: usize, app: AppHandle) -> Result<AppSettings, String> {
+    let displays = list_available_displays(&app)?;
+    if index >= displays.len() {
+        return Err(format!("display index out of range: {index}"));
+    }
+    let settings = update_preferred_display_index(index).map_err(|error| error.to_string())?;
+    refresh_desktop_after_settings_change(&app);
+    reposition_desktop_to_selected_display(&app)?;
+    Ok(settings)
+}
+
+#[tauri::command]
 pub fn quit_application(app: AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+pub fn open_release_page() -> Result<(), String> {
+    open_url_with_system("https://github.com/FunplayAI/EchoIsland/releases/latest")
 }
 
 fn open_path_with_system(path: &std::path::Path) -> Result<(), String> {
@@ -203,6 +247,47 @@ fn open_path_with_system(path: &std::path::Path) -> Result<(), String> {
     } else {
         Err(format!("failed to open settings location: {status}"))
     }
+}
+
+fn open_url_with_system(url: &str) -> Result<(), String> {
+    let status = if cfg!(target_os = "windows") {
+        std::process::Command::new("explorer")
+            .arg(url)
+            .status()
+            .map_err(|error| error.to_string())?
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+            .arg(url)
+            .status()
+            .map_err(|error| error.to_string())?
+    } else {
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .status()
+            .map_err(|error| error.to_string())?
+    };
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("failed to open url: {status}"))
+    }
+}
+
+fn refresh_desktop_after_settings_change<R: tauri::Runtime>(app: &AppHandle<R>) {
+    #[cfg(target_os = "macos")]
+    if crate::macos_native_test_panel::native_ui_enabled() {
+        let _ = crate::macos_native_test_panel::refresh_native_panel_from_last_snapshot(app);
+    }
+}
+
+fn reposition_desktop_to_selected_display<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    if crate::macos_native_test_panel::native_ui_enabled() {
+        return crate::macos_native_test_panel::reposition_native_panel_to_selected_display(app);
+    }
+
+    crate::window_surface_service::WindowSurfaceService::new(app).reposition_to_selected_display()
 }
 
 #[tauri::command]

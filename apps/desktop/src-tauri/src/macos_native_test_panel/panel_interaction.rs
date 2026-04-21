@@ -35,7 +35,7 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
     let now = Instant::now();
     let mut transition_snapshot: Option<(RuntimeSnapshot, bool)> = None;
     let mut surface_transition_snapshot: Option<RuntimeSnapshot> = None;
-    let mut clicked_session_id: Option<String> = None;
+    let mut clicked_action: Option<NativeCardHitTarget> = None;
     let mut settings_clicked = false;
     let mut quit_clicked = false;
 
@@ -71,14 +71,17 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
             && !quit_clicked
             && !cards_container.isHidden()
         {
-            clicked_session_id = find_clicked_card_session_id(
+            clicked_action = find_clicked_card_target(
                 &state.card_hit_targets,
                 panel_frame,
                 expanded_container.frame(),
                 cards_container.frame(),
                 mouse,
             );
-            if let Some(session_id) = clicked_session_id.as_ref() {
+            if let Some(target) = clicked_action.as_ref().filter(|target| {
+                target.action == NativePanelHitAction::FocusSession
+            }) {
+                let session_id = &target.value;
                 let suppressed =
                     state
                         .last_focus_click
@@ -89,7 +92,7 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
                                     < CARD_FOCUS_CLICK_DEBOUNCE_MS
                         });
                 if suppressed {
-                    clicked_session_id = None;
+                    clicked_action = None;
                 } else {
                     state.last_focus_click = Some((session_id.clone(), now));
                 }
@@ -98,6 +101,7 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
         state.primary_mouse_down = primary_mouse_down;
         let was_status_surface =
             state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
+        let was_surface_mode = state.surface_mode;
 
         if let Some(hover_transition) = sync_native_hover_expansion_state(&mut state, inside, now) {
             if let Some(snapshot) = state.last_snapshot.clone() {
@@ -106,12 +110,36 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
             }
         }
 
+        if primary_click_started
+            && state.expanded
+            && !state.transitioning
+            && settings_clicked
+        {
+            state.status_auto_expanded = false;
+            state.surface_mode = if state.surface_mode == NativeExpandedSurface::Settings {
+                NativeExpandedSurface::Default
+            } else {
+                NativeExpandedSurface::Settings
+            };
+            surface_transition_snapshot = state.last_snapshot.clone();
+        }
+
         let is_status_surface =
             state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
-        if was_status_surface != is_status_surface && state.expanded && !state.transitioning {
+        if surface_transition_snapshot.is_none()
+            && was_status_surface != is_status_surface
+            && state.expanded
+            && !state.transitioning
+        {
             if let Some(snapshot) = state.last_snapshot.clone() {
                 surface_transition_snapshot = Some(snapshot);
             }
+        } else if surface_transition_snapshot.is_none()
+            && was_surface_mode != state.surface_mode
+            && state.expanded
+            && !state.transitioning
+        {
+            surface_transition_snapshot = state.last_snapshot.clone();
         }
     }
 
@@ -121,10 +149,25 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
         begin_native_panel_surface_transition(app.clone(), handles, snapshot);
     }
 
-    if let Some(session_id) = clicked_session_id {
-        spawn_native_focus_session(app, session_id);
+    if let Some(target) = clicked_action {
+        match target.action {
+            NativePanelHitAction::FocusSession => {
+                spawn_native_focus_session(app, target.value);
+            }
+            NativePanelHitAction::CycleDisplay => {
+                spawn_native_cycle_display(app);
+            }
+            NativePanelHitAction::ToggleCompletionSound => {
+                spawn_native_toggle_completion_sound(app);
+            }
+            NativePanelHitAction::ToggleMascot => {
+                spawn_native_toggle_mascot(app);
+            }
+            NativePanelHitAction::OpenReleasePage => {
+                spawn_native_open_release_page();
+            }
+        }
     } else if settings_clicked {
-        spawn_native_open_settings_location();
     } else if quit_clicked {
         app.exit(0);
     }
@@ -184,6 +227,16 @@ pub(super) fn native_status_surface_active() -> bool {
         .unwrap_or(false)
 }
 
+pub(super) fn native_settings_surface_active() -> bool {
+    native_panel_state()
+        .and_then(|state| {
+            state.lock().ok().map(|guard| {
+                guard.surface_mode == NativeExpandedSurface::Settings && guard.expanded
+            })
+        })
+        .unwrap_or(false)
+}
+
 pub(super) fn replace_native_card_hit_targets(targets: Vec<NativeCardHitTarget>) {
     if let Some(state) = native_panel_state() {
         if let Ok(mut guard) = state.lock() {
@@ -192,13 +245,13 @@ pub(super) fn replace_native_card_hit_targets(targets: Vec<NativeCardHitTarget>)
     }
 }
 
-fn find_clicked_card_session_id(
+fn find_clicked_card_target(
     targets: &[NativeCardHitTarget],
     panel_frame: NSRect,
     expanded_frame: NSRect,
     cards_frame: NSRect,
     mouse: NSPoint,
-) -> Option<String> {
+) -> Option<NativeCardHitTarget> {
     targets
         .iter()
         .find(|target| {
@@ -213,7 +266,7 @@ fn find_clicked_card_session_id(
                 ),
             )
         })
-        .map(|target| target.session_id.clone())
+        .cloned()
 }
 
 fn native_edge_action_button_rect(
@@ -240,10 +293,81 @@ fn spawn_native_focus_session<R: tauri::Runtime + 'static>(app: AppHandle<R>, se
     crate::native_panel_runtime::spawn_native_focus_session(app, session_id);
 }
 
-fn spawn_native_open_settings_location() {
+fn spawn_native_open_release_page() {
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = crate::commands::open_settings_location() {
-            warn!(error = %error, "native settings button failed to open settings location");
+        if let Err(error) = crate::commands::open_release_page() {
+            warn!(error = %error, "native settings button failed to open release page");
         }
+    });
+}
+
+fn spawn_native_toggle_completion_sound<R: tauri::Runtime + 'static>(app: AppHandle<R>) {
+    tauri::async_runtime::spawn(async move {
+        let next_enabled = !crate::app_settings::current_app_settings().completion_sound_enabled;
+        if let Err(error) = crate::app_settings::update_completion_sound_enabled(next_enabled) {
+            warn!(error = %error, "failed to update completion sound setting");
+            return;
+        }
+
+        let Some(handles) = native_panel_handles() else {
+            return;
+        };
+        let rerender = native_panel_state().and_then(|state| {
+            state.lock().ok().and_then(|guard| {
+                guard.last_snapshot.clone().map(|snapshot| {
+                    (
+                        snapshot,
+                        guard.expanded,
+                        guard.shared_body_height,
+                        guard.transitioning,
+                        guard.transition_cards_progress,
+                        guard.transition_cards_entering,
+                    )
+                })
+            })
+        });
+
+        if let Some((snapshot, expanded, shared_body_height, transitioning, cards_progress, cards_entering)) =
+            rerender
+        {
+            let _ = app.run_on_main_thread(move || unsafe {
+                apply_snapshot_to_panel(
+                    handles,
+                    &snapshot,
+                    expanded,
+                    shared_body_height,
+                    transitioning,
+                    cards_progress,
+                    cards_entering,
+                );
+            });
+        }
+    });
+}
+
+fn spawn_native_toggle_mascot<R: tauri::Runtime + 'static>(app: AppHandle<R>) {
+    tauri::async_runtime::spawn(async move {
+        let next_enabled = !crate::app_settings::current_app_settings().mascot_enabled;
+        if let Err(error) = crate::app_settings::update_mascot_enabled(next_enabled) {
+            warn!(error = %error, "failed to update mascot setting");
+            return;
+        }
+        let _ = crate::macos_native_test_panel::refresh_native_panel_from_last_snapshot(&app);
+    });
+}
+
+fn spawn_native_cycle_display<R: tauri::Runtime + 'static>(app: AppHandle<R>) {
+    tauri::async_runtime::spawn(async move {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let total = NSScreen::screens(mtm).len().max(1);
+        let current = crate::app_settings::current_app_settings().preferred_display_index;
+        let next = (current + 1) % total;
+        if let Err(error) = crate::app_settings::update_preferred_display_index(next) {
+            warn!(error = %error, "failed to update preferred display");
+            return;
+        }
+        let _ = crate::macos_native_test_panel::reposition_native_panel_to_selected_display(&app);
     });
 }

@@ -1,3 +1,4 @@
+use crate::app_settings::current_app_settings;
 use tauri::window::Color;
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
@@ -63,6 +64,21 @@ pub fn show_main_window<R: tauri::Runtime>(
         window.set_focus()?;
     }
     Ok(())
+}
+
+pub fn reposition_main_window_to_selected_display<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    main_window_label: &str,
+) -> tauri::Result<()> {
+    let Some(window) = app.get_webview_window(main_window_label) else {
+        return Ok(());
+    };
+    let size = window.inner_size()?;
+    let scale = window.scale_factor()?;
+    let width = size.width as f64 / scale;
+    let height = size.height as f64 / scale;
+    let expanded = width > COMPACT_WIDTH + 1.0 || height > COMPACT_HEIGHT + 1.0;
+    position_island_window(&window, width, expanded)
 }
 
 fn apply_overlay_window_flags<R: tauri::Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
@@ -258,8 +274,12 @@ fn position_island_window<R: tauri::Runtime>(
     width: f64,
     expanded: bool,
 ) -> tauri::Result<()> {
+    let preferred_index = current_app_settings().preferred_display_index;
     let monitor = window
-        .primary_monitor()?
+        .available_monitors()?
+        .into_iter()
+        .nth(preferred_index)
+        .or_else(|| window.primary_monitor().ok().flatten())
         .or_else(|| window.current_monitor().ok().flatten());
     if let Some(monitor) = monitor {
         let monitor_size = monitor.size();

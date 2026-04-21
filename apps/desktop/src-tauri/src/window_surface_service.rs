@@ -5,7 +5,7 @@ use crate::{
     constants::MAIN_WINDOW_LABEL,
     island_window::{
         apply_island_bar_stage, apply_island_panel_stage, apply_island_window_mode,
-        show_main_window,
+        reposition_main_window_to_selected_display, show_main_window,
     },
     platform::current_platform_capabilities,
 };
@@ -68,6 +68,11 @@ impl<'a, R: tauri::Runtime> WindowSurfaceService<'a, R> {
     pub fn hide_main_window(&self) -> Result<(), String> {
         let window = self.main_window()?;
         window.hide().map_err(|error| error.to_string())
+    }
+
+    pub fn reposition_to_selected_display(&self) -> Result<(), String> {
+        reposition_main_window_to_selected_display(self.app, MAIN_WINDOW_LABEL)
+            .map_err(|error| error.to_string())
     }
 
     fn main_window(&self) -> Result<tauri::WebviewWindow<R>, String> {

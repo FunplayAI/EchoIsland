@@ -10,11 +10,13 @@ use tauri::WindowEvent;
 use tracing_subscriber::{EnvFilter, fmt};
 
 mod app_runtime;
+mod app_settings;
 mod claude_scan;
 mod codex_scan;
 mod command_services;
 mod commands;
 mod constants;
+mod display_settings;
 mod focus_store;
 mod http_receiver;
 mod island_window;
@@ -42,11 +44,13 @@ use claude_scan::spawn_claude_scan_loop;
 use codex_scan::spawn_codex_scan_loop;
 use commands::{
     answer_question, approve_permission, bind_session_terminal, claude_status, codex_status,
-    deny_permission, focus_session_terminal, get_snapshot, hide_main_window, http_receiver_status,
-    ingest_sample, ipc_addr, open_settings_location, openclaw_status, platform_capabilities,
-    platform_paths, quit_application, set_island_bar_stage, set_island_bar_stage_passive,
-    set_island_expanded, set_island_expanded_passive, set_island_panel_stage,
-    set_island_panel_stage_passive, set_macos_shared_expanded_height, show_main_window_interactive,
+    deny_permission, focus_session_terminal, get_app_settings, get_available_displays,
+    get_snapshot, hide_main_window, http_receiver_status, ingest_sample, ipc_addr,
+    open_release_page, open_settings_location, openclaw_status, platform_capabilities,
+    platform_paths, quit_application, set_completion_sound_enabled, set_island_bar_stage,
+    set_island_bar_stage_passive, set_island_expanded, set_island_expanded_passive,
+    set_island_panel_stage, set_island_panel_stage_passive, set_mascot_enabled,
+    set_macos_shared_expanded_height, set_preferred_display_index, show_main_window_interactive,
     skip_question,
 };
 use http_receiver::spawn_http_receiver;
@@ -107,6 +111,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
+            get_app_settings,
+            get_available_displays,
             ingest_sample,
             ipc_addr,
             codex_status,
@@ -129,6 +135,10 @@ fn main() {
             set_macos_shared_expanded_height,
             hide_main_window,
             open_settings_location,
+            open_release_page,
+            set_completion_sound_enabled,
+            set_mascot_enabled,
+            set_preferred_display_index,
             quit_application,
             focus_session_terminal,
             bind_session_terminal

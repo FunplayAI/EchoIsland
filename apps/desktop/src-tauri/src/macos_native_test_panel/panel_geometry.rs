@@ -385,6 +385,10 @@ pub(super) fn estimated_expanded_body_height(snapshot: &RuntimeSnapshot) -> f64 
 }
 
 pub(super) fn estimated_expanded_content_height(snapshot: &RuntimeSnapshot) -> f64 {
+    if native_settings_surface_active() {
+        return settings_surface_card_height();
+    }
+
     let status_queue = native_status_queue_surface_items();
     if !status_queue.is_empty() {
         let cards = status_queue

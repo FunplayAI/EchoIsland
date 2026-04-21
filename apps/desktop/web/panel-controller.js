@@ -63,6 +63,10 @@ export function createPanelController({
   }
 
   function startSessionCardReveal() {
+    if (getSurfaceMode(uiState) === "settings") {
+      resetSessionCardReveal();
+      return;
+    }
     const cardCount = sessionList?.children.length ?? 0;
     if (!cardCount || !island) return;
 
@@ -90,6 +94,9 @@ export function createPanelController({
   }
 
   async function playSessionCardExit() {
+    if (getSurfaceMode(uiState) === "settings") {
+      return;
+    }
     const cardCount = sessionList?.children.length ?? 0;
     if (!cardCount || island?.dataset.panelState !== "expanded" || getInteraction(uiState, "cardExitInProgress")) {
       return;
@@ -206,6 +213,7 @@ export function createPanelController({
       if (expanded) {
         setExpanded(uiState, true);
         setStatusAutoExpanded(uiState, Boolean(options.autoStatus));
+        setSurfaceMode(uiState, options.surface ?? (options.autoStatus ? "status" : "default"));
         if (!options.autoStatus) {
           clearCompletionBadgeItems(uiState);
         }
@@ -241,6 +249,7 @@ export function createPanelController({
       await wait(timings.shoulderTransitionMs);
       setExpanded(uiState, false);
       setStatusAutoExpanded(uiState, false);
+      setSurfaceMode(uiState, "default");
       island.dataset.mode = "compact";
       island.dataset.panelState = "compact";
       if (syncWindowSurface) {

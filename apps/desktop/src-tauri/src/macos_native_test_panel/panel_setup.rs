@@ -31,15 +31,7 @@ pub(super) struct NativePanelColors {
 pub(super) fn resolve_native_panel_setup(
     mtm: MainThreadMarker,
 ) -> Result<NativePanelSetup, String> {
-    let screen = NSScreen::mainScreen(mtm)
-        .or_else(|| {
-            let screens = NSScreen::screens(mtm);
-            if screens.is_empty() {
-                None
-            } else {
-                Some(screens.objectAtIndex(0))
-            }
-        })
+    let screen = resolve_preferred_native_screen(mtm)
         .ok_or_else(|| "failed to resolve a macOS screen".to_string())?;
 
     let compact_height = compact_pill_height_for_screen(&screen);
@@ -70,6 +62,18 @@ pub(super) fn resolve_native_panel_setup(
         frame,
         pill_frame,
     })
+}
+
+pub(super) fn resolve_preferred_native_screen(mtm: MainThreadMarker) -> Option<Retained<NSScreen>> {
+    let screens = NSScreen::screens(mtm);
+    if screens.is_empty() {
+        return None;
+    }
+    let preferred_index = crate::app_settings::current_app_settings().preferred_display_index;
+    if preferred_index < screens.len() {
+        return Some(screens.objectAtIndex(preferred_index));
+    }
+    NSScreen::mainScreen(mtm).or_else(|| Some(screens.objectAtIndex(0)))
 }
 
 pub(super) fn native_panel_colors() -> NativePanelColors {

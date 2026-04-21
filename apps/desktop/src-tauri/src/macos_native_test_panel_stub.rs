@@ -38,3 +38,15 @@ pub fn spawn_native_status_queue_loop<R: tauri::Runtime + 'static>(_: AppHandle<
 pub fn hide_main_webview_window<R: tauri::Runtime>(_: &AppHandle<R>) -> Result<(), String> {
     Ok(())
 }
+
+pub fn reposition_native_panel_to_selected_display<R: tauri::Runtime>(
+    _: &AppHandle<R>,
+) -> Result<(), String> {
+    Ok(())
+}
+
+pub fn refresh_native_panel_from_last_snapshot<R: tauri::Runtime>(
+    _: &AppHandle<R>,
+) -> Result<(), String> {
+    Ok(())
+}

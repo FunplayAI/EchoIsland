@@ -4,7 +4,14 @@ import {
   loadOpenClawStatus as loadOpenClawStatusState,
 } from "../snapshot-controller.js";
 import { applyPlatformTheme } from "../platform-theme.js";
-import { setPlatformCapabilities, setPlatformPaths } from "../state-helpers.js";
+import {
+  setAvailableDisplays,
+  setCompletionSoundEnabled,
+  setMascotEnabled,
+  setPlatformCapabilities,
+  setPlatformPaths,
+  setPreferredDisplayIndex,
+} from "../state-helpers.js";
 import { setLog } from "../utils.js";
 
 export async function bootApp({
@@ -25,8 +32,14 @@ export async function bootApp({
   const ipcAddr = await desktopApi.ipcAddr();
   const capabilities = await desktopApi.platformCapabilities();
   const platformPaths = await desktopApi.platformPaths();
+  const appSettings = await desktopApi.getAppSettings();
+  const availableDisplays = await desktopApi.getAvailableDisplays();
   setPlatformCapabilities(uiState, capabilities);
   setPlatformPaths(uiState, platformPaths);
+  setAvailableDisplays(uiState, availableDisplays);
+  setCompletionSoundEnabled(uiState, appSettings.completionSoundEnabled);
+  setMascotEnabled(uiState, appSettings.mascotEnabled);
+  setPreferredDisplayIndex(uiState, appSettings.preferredDisplayIndex);
   applyPlatformTheme(capabilities, { island });
   if (ipcAddrInline) {
     ipcAddrInline.textContent = ipcAddr;

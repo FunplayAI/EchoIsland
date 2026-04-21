@@ -187,6 +187,7 @@ pub(super) unsafe fn relayout_compact_content(
     bar_size: NSSize,
     actions_active: bool,
 ) {
+    let mascot_enabled = crate::app_settings::current_app_settings().mascot_enabled;
     let top_highlight = refs.top_highlight;
     let completion_glow = refs.completion_glow;
     let settings_button = refs.settings_button;
@@ -196,7 +197,11 @@ pub(super) unsafe fn relayout_compact_content(
     let active_count_clip = refs.active_count_clip;
     let slash = refs.slash;
     let total_count = refs.total_count;
-    let mascot_size = (bar_size.height - 9.0).clamp(24.0, 28.0);
+    let mascot_size = if mascot_enabled {
+        (bar_size.height - 9.0).clamp(24.0, 28.0)
+    } else {
+        0.0
+    };
     let action_size = 26.0;
     let settings_gap = 14.0;
     let quit_gap = 6.0;
@@ -254,6 +259,7 @@ pub(super) unsafe fn relayout_compact_content(
         ),
         NSSize::new(mascot_size, mascot_size),
     ));
+    mascot_shell.setHidden(!mascot_enabled);
     headline.setFrame(NSRect::new(
         NSPoint::new(title_x, compact_headline_y(bar_size.height)),
         NSSize::new(headline_width, COMPACT_HEADLINE_LABEL_HEIGHT),

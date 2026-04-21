@@ -53,6 +53,50 @@
         <section class="island-panel">
           <section class="panel panel-main panel-sessions-only">
             <div id="sessionList" class="session-list"></div>
+            <section id="settingsPanel" class="settings-panel" hidden>
+              <article class="settings-card">
+                <header class="settings-card-header">
+                  <h2>Settings</h2>
+                  <span>EchoIsland v0.1.1</span>
+                </header>
+                <div class="settings-option">
+                  <div class="settings-option-copy">
+                    <strong>Island Display</strong>
+                  </div>
+                  <select id="displaySelect" class="settings-select" data-keep-open="true"></select>
+                </div>
+                <div class="settings-option">
+                  <div class="settings-option-copy">
+                    <strong>Mute Completion Sound</strong>
+                  </div>
+                  <label class="settings-switch" data-keep-open="true">
+                    <input id="completionSoundToggle" type="checkbox" />
+                    <span class="settings-switch-track" aria-hidden="true">
+                      <span class="settings-switch-thumb"></span>
+                    </span>
+                  </label>
+                </div>
+                <div class="settings-option">
+                  <div class="settings-option-copy">
+                    <strong>Hide Mascot</strong>
+                  </div>
+                  <label class="settings-switch" data-keep-open="true">
+                    <input id="mascotToggle" type="checkbox" />
+                    <span class="settings-switch-track" aria-hidden="true">
+                      <span class="settings-switch-thumb"></span>
+                    </span>
+                  </label>
+                </div>
+                <div class="settings-option">
+                  <div class="settings-option-copy">
+                    <strong>Update & Upgrade</strong>
+                  </div>
+                  <button id="openReleasePageBtn" class="settings-pill-button" type="button" data-keep-open="true">
+                    Open
+                  </button>
+                </div>
+              </article>
+            </section>
           </section>
         </section>
       </section>

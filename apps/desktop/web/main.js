@@ -3,6 +3,13 @@ import { bindUiEvents } from "./bindings.js";
 import { startMascotLoop } from "./mascot.js";
 import { createPanelController } from "./panel-controller.js";
 import { renderCurrentSurface as renderCurrentSurfaceState, refreshSnapshot as refreshSnapshotState } from "./snapshot-controller.js";
+import {
+  getSurfaceMode,
+  setCompletionSoundEnabled,
+  setMascotEnabled,
+  setPreferredDisplayIndex,
+  setSurfaceMode,
+} from "./state-helpers.js";
 import { elements, KEEP_OPEN_SELECTOR, timings, uiState } from "./ui-context.js";
 import { setLog } from "./utils.js";
 import { createPendingActions } from "./actions/pending-actions.js";
@@ -15,6 +22,11 @@ const {
   islandPanel,
   settingsBtn,
   quitBtn,
+  settingsPanel,
+  completionSoundToggle,
+  mascotToggle,
+  displaySelect,
+  openReleasePageBtn,
   mascotCanvas,
   mascotShell,
   mascotCompletionBadge,
@@ -52,7 +64,7 @@ async function main() {
   async function renderCurrentSurface(snapshot, syncExpanded = true) {
     return renderCurrentSurfaceState(
       snapshot,
-      { headline, island, islandPanel, sessionList, uiState, syncExpandedPanelHeight },
+      { headline, island, islandPanel, sessionList, settingsPanel, uiState, syncExpandedPanelHeight },
       syncExpanded
     );
   }
@@ -85,6 +97,7 @@ async function main() {
     island,
     islandPanel,
     sessionList,
+    settingsPanel,
     primaryStatus,
     primarySource,
     activeCount,
@@ -159,6 +172,10 @@ async function main() {
       islandPanel,
       settingsBtn,
       quitBtn,
+      completionSoundToggle,
+      mascotToggle,
+      displaySelect,
+      openReleasePageBtn,
       pendingActions,
       sessionList,
       KEEP_OPEN_SELECTOR,
@@ -169,10 +186,41 @@ async function main() {
       handlePendingAction,
       handleSessionCardClick,
       handleIslandBarClick,
+      openSettingsSurface: async () => {
+        const snapshot = uiState.snapshot.lastSnapshot;
+        if (!snapshot) return;
+        setSurfaceMode(uiState, getSurfaceMode(uiState) === "settings" ? "default" : "settings");
+        await renderCurrentSurface(snapshot, true);
+      },
+      setCompletionSoundEnabled: async (enabled) => {
+        const settings = await desktopApi.setCompletionSoundEnabled(enabled);
+        setCompletionSoundEnabled(uiState, settings.completionSoundEnabled);
+        if (completionSoundToggle) {
+          completionSoundToggle.checked = !settings.completionSoundEnabled;
+        }
+      },
+      setMascotEnabled: async (hidden) => {
+        const settings = await desktopApi.setMascotEnabled(!hidden);
+        setMascotEnabled(uiState, settings.mascotEnabled);
+        if (mascotToggle) {
+          mascotToggle.checked = !settings.mascotEnabled;
+        }
+        if (uiState.snapshot.lastSnapshot) {
+          await renderCurrentSurface(uiState.snapshot.lastSnapshot, true);
+        }
+      },
+      setPreferredDisplayIndex: async (index) => {
+        const settings = await desktopApi.setPreferredDisplayIndex(index);
+        setPreferredDisplayIndex(uiState, settings.preferredDisplayIndex);
+        if (displaySelect) {
+          displaySelect.value = String(settings.preferredDisplayIndex);
+        }
+      },
       loadSample: (fileName) => loadSample(fileName, refreshSnapshot),
       refreshSnapshot,
       hideMainWindow: () => desktopApi.hideMainWindow(),
       openSettingsLocation: () => desktopApi.openSettingsLocation(),
+      openReleasePage: () => desktopApi.openReleasePage(),
       quitApplication: () => desktopApi.quitApplication(),
     },
     startMascotLoop,

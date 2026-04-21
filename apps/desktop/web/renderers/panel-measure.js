@@ -107,9 +107,12 @@ export function estimateMessageCardTargetHeight(kind, { body = "", options = [] 
   }
 }
 
-export function estimateExpandedPanelHeight({ islandPanel, sessionList }) {
-  if (!islandPanel || !sessionList || !sessionList.children.length) {
-    return 132;
+export function estimateExpandedPanelHeight({ islandPanel, sessionList, settingsPanel, uiState }) {
+  const surfaceMode = uiState?.surface?.mode ?? "default";
+  const hasSessionContent = Boolean(sessionList?.children.length);
+  const hasSettingsContent = Boolean(settingsPanel && !settingsPanel.hidden);
+  if (!islandPanel || (!hasSessionContent && !hasSettingsContent)) {
+    return surfaceMode === "settings" ? 176 : 132;
   }
 
   const expandedWidth =
@@ -132,7 +135,7 @@ export function estimateExpandedPanelHeight({ islandPanel, sessionList }) {
   const panelHeight = Math.ceil(clone.getBoundingClientRect().height);
   clone.remove();
 
-  const cardCount = sessionList.children.length;
-  const minimumHeight = cardCount <= 1 ? 124 : 160;
+  const cardCount = sessionList?.children.length ?? 0;
+  const minimumHeight = surfaceMode === "settings" ? 176 : cardCount <= 1 ? 124 : 160;
   return Math.max(minimumHeight, topOffset + panelHeight);
 }

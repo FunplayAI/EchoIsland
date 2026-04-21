@@ -28,6 +28,7 @@ pub(super) fn resolved_expanded_target_height(
 ) -> f64 {
     let shared_body_height = if macos_shared_expanded_window::shared_expanded_enabled()
         && !native_status_surface_active()
+        && !native_settings_surface_active()
     {
         native_panel_state()
             .and_then(|state| state.lock().ok().and_then(|guard| guard.shared_body_height))

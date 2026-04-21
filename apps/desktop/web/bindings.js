@@ -7,6 +7,10 @@ export function bindUiEvents({
   islandPanel,
   settingsBtn,
   quitBtn,
+  completionSoundToggle,
+  mascotToggle,
+  displaySelect,
+  openReleasePageBtn,
   pendingActions,
   sessionList,
   KEEP_OPEN_SELECTOR,
@@ -20,7 +24,11 @@ export function bindUiEvents({
   loadSample,
   refreshSnapshot,
   hideMainWindow,
-  openSettingsLocation,
+  openSettingsSurface,
+  setCompletionSoundEnabled,
+  setMascotEnabled,
+  setPreferredDisplayIndex,
+  openReleasePage,
   quitApplication,
 }) {
   window.addEventListener(
@@ -167,7 +175,27 @@ export function bindUiEvents({
   document.querySelector("#hideBtn")?.addEventListener("click", async () => hideMainWindow());
   settingsBtn?.addEventListener("click", async (event) => {
     event.stopPropagation();
-    await openSettingsLocation();
+    await openSettingsSurface?.();
+  });
+  completionSoundToggle?.addEventListener("change", async (event) => {
+    event.stopPropagation();
+    const enabled = !Boolean(event.target?.checked);
+    await setCompletionSoundEnabled?.(enabled);
+  });
+  mascotToggle?.addEventListener("change", async (event) => {
+    event.stopPropagation();
+    const hidden = Boolean(event.target?.checked);
+    await setMascotEnabled?.(hidden);
+  });
+  displaySelect?.addEventListener("change", async (event) => {
+    event.stopPropagation();
+    const index = Number.parseInt(String(event.target?.value ?? "0"), 10);
+    if (Number.isNaN(index)) return;
+    await setPreferredDisplayIndex?.(index);
+  });
+  openReleasePageBtn?.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    await openReleasePage?.();
   });
   quitBtn?.addEventListener("click", async (event) => {
     event.stopPropagation();
@@ -194,4 +222,5 @@ export function bindUiEvents({
     }
     await handleSessionCardClick(event);
   });
+
 }

@@ -4,17 +4,53 @@ import {
   getMascotState,
   getInteraction,
   getPanelHeight,
+  getSurfaceMode,
+  getAvailableDisplays,
+  getPreferredDisplayIndex,
+  isCompletionSoundEnabled,
+  isMascotEnabled,
   isExpanded,
   setPanelHeight,
 } from "../state-helpers.js";
 
 export async function renderCurrentSurface(snapshot, deps, syncExpanded = true) {
-  const { headline, island, islandPanel, sessionList, uiState, syncExpandedPanelHeight } = deps;
+  const { headline, island, islandPanel, sessionList, settingsPanel, uiState, syncExpandedPanelHeight } = deps;
+  const surfaceMode = getSurfaceMode(uiState);
   updateHeadline(snapshot, { headline, uiState });
-  if (!getInteraction(uiState, "cardExitInProgress")) {
+  if (!getInteraction(uiState, "cardExitInProgress") && surfaceMode !== "settings") {
     renderSessions(snapshot, { islandPanel, sessionList, uiState });
   }
-  setPanelHeight(uiState, estimateExpandedPanelHeight({ islandPanel, sessionList }));
+  if (sessionList) {
+    sessionList.hidden = surfaceMode === "settings";
+    sessionList.setAttribute("aria-hidden", surfaceMode === "settings" ? "true" : "false");
+  }
+  if (settingsPanel) {
+    settingsPanel.hidden = surfaceMode !== "settings";
+    settingsPanel.setAttribute("aria-hidden", surfaceMode === "settings" ? "false" : "true");
+    const toggle = settingsPanel.querySelector("#completionSoundToggle");
+    if (toggle) {
+      toggle.checked = !isCompletionSoundEnabled(uiState);
+    }
+    const mascotToggle = settingsPanel.querySelector("#mascotToggle");
+    if (mascotToggle) {
+      mascotToggle.checked = !isMascotEnabled(uiState);
+    }
+    const displaySelect = settingsPanel.querySelector("#displaySelect");
+    if (displaySelect) {
+      const displays = getAvailableDisplays(uiState);
+      const selectedIndex = getPreferredDisplayIndex(uiState);
+      displaySelect.innerHTML = displays
+        .map(
+          (display) =>
+            `<option value="${display.index}" ${display.index === selectedIndex ? "selected" : ""}>${display.name} (${display.width}×${display.height})</option>`
+        )
+        .join("");
+    }
+  }
+  if (island) {
+    island.dataset.surface = surfaceMode;
+  }
+  setPanelHeight(uiState, estimateExpandedPanelHeight({ islandPanel, sessionList, settingsPanel, uiState }));
   document.documentElement.style.setProperty("--menu-bar-height", `${getPanelHeight(uiState)}px`);
   if (syncExpanded && isExpanded(uiState) && island?.dataset.panelState === "expanded") {
     await syncExpandedPanelHeight(true);
@@ -47,6 +83,7 @@ export async function presentSnapshot(snapshot, deps) {
     island,
     islandPanel,
     sessionList,
+    settingsPanel,
     pendingActions,
     pendingSummary,
     statusChip,
@@ -56,7 +93,7 @@ export async function presentSnapshot(snapshot, deps) {
 
   await renderCurrentSurface(
     snapshot,
-    { headline, island, islandPanel, sessionList, uiState, syncExpandedPanelHeight },
+    { headline, island, islandPanel, sessionList, settingsPanel, uiState, syncExpandedPanelHeight },
     false
   );
   if (!getInteraction(uiState, "cardExitInProgress")) {

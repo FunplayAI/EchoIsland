@@ -17,6 +17,10 @@ export function hasQueueInteraction(uiState) {
 }
 
 export function resolveSurfaceMode(uiState) {
+  if (getSurfaceMode(uiState) === "settings") {
+    return "settings";
+  }
+
   if (getSurfaceMode(uiState) === "status" && hasStatusQueueItems(uiState)) {
     return "status";
   }

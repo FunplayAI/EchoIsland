@@ -135,8 +135,9 @@ use panel_constants::*;
 #[cfg(target_os = "macos")]
 pub(crate) use panel_entry::{
     create_native_island_panel, hide_main_webview_window, hide_native_island_panel,
-    native_ui_enabled, spawn_native_count_marquee_loop, spawn_native_hover_loop,
-    spawn_native_status_queue_loop,
+    native_ui_enabled, refresh_native_panel_from_last_snapshot,
+    reposition_native_panel_to_selected_display, spawn_native_count_marquee_loop,
+    spawn_native_hover_loop, spawn_native_status_queue_loop,
 };
 #[cfg(target_os = "macos")]
 use panel_geometry::*;

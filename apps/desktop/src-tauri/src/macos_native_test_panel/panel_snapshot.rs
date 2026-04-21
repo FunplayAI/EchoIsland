@@ -263,6 +263,7 @@ pub(super) unsafe fn apply_snapshot_to_panel(
     let total_height = if expanded {
         let shared_body_height = if macos_shared_expanded_window::shared_expanded_enabled()
             && !native_status_surface_active()
+            && !native_settings_surface_active()
         {
             shared_body_height
         } else {

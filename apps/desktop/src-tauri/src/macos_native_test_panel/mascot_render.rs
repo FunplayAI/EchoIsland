@@ -6,6 +6,12 @@ pub(super) unsafe fn apply_native_mascot_frame(
     frame: NativeMascotFrame,
 ) {
     let refs = resolve_native_panel_refs(handles);
+    if !crate::app_settings::current_app_settings().mascot_enabled {
+        refs.mascot_shell.setHidden(true);
+        refs.mascot_completion_badge.setHidden(true);
+        refs.completion_glow.setHidden(true);
+        return;
+    }
     let mascot_shell = refs.mascot_shell;
     let mascot_body = refs.mascot_body;
     let mascot_left_eye = refs.mascot_left_eye;
@@ -18,6 +24,7 @@ pub(super) unsafe fn apply_native_mascot_frame(
     let completion_glow = refs.completion_glow;
     let motion = frame.motion;
 
+    mascot_shell.setHidden(false);
     mascot_shell.setAlphaValue(motion.shell_alpha.clamp(0.0, 1.0));
     let body_width = 24.0 * motion.scale_x;
     let body_height = 20.0 * motion.scale_y;

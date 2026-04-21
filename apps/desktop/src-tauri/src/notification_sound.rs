@@ -1,3 +1,5 @@
+use crate::app_settings::current_app_settings;
+
 #[cfg(target_os = "macos")]
 use std::{
     fs,
@@ -61,6 +63,10 @@ fn resolve_click_sound_path() -> Option<PathBuf> {
 
 #[cfg(target_os = "macos")]
 pub(crate) fn play_message_card_sound() {
+    if !current_app_settings().completion_sound_enabled {
+        return;
+    }
+
     let Ok(mut last_play_at) = last_sound_play_at().lock() else {
         return;
     };
