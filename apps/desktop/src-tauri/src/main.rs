@@ -39,23 +39,26 @@ mod startup_service;
 mod terminal_focus;
 mod terminal_focus_service;
 mod tray;
+mod web_panel_scene_service;
 mod window_surface_service;
 
 use app_runtime::{AppRuntime, spawn_ipc_server};
 use claude_scan::spawn_claude_scan_loop;
 use codex_scan::spawn_codex_scan_loop;
 use commands::{
-    answer_question, approve_permission, bind_session_terminal, claude_status, codex_status,
-    deny_permission, focus_session_terminal, get_app_settings, get_available_displays,
-    get_snapshot, hide_main_window, http_receiver_status, ingest_sample, ipc_addr,
-    open_release_page, open_settings_location, openclaw_status, platform_capabilities,
-    platform_paths, quit_application, set_completion_sound_enabled, set_island_bar_stage,
-    set_island_bar_stage_passive, set_island_expanded, set_island_expanded_passive,
-    set_island_panel_stage, set_island_panel_stage_passive, set_macos_shared_expanded_height,
-    set_mascot_enabled, set_preferred_display_index, show_main_window_interactive, skip_question,
+    answer_question, approve_permission, bind_session_terminal, build_status_surface_scene,
+    claude_status, codex_status, deny_permission, focus_session_terminal, get_app_settings,
+    get_available_displays, get_snapshot, get_snapshot_status_surface_bundle, hide_main_window,
+    http_receiver_status, ingest_sample, ipc_addr, open_release_page, open_settings_location,
+    openclaw_status, platform_capabilities, platform_paths, quit_application,
+    set_completion_sound_enabled, set_island_bar_stage, set_island_bar_stage_passive,
+    set_island_expanded, set_island_expanded_passive, set_island_panel_stage,
+    set_island_panel_stage_passive, set_macos_shared_expanded_height, set_mascot_enabled,
+    set_preferred_display_index, show_main_window_interactive, skip_question,
 };
 use http_receiver::spawn_http_receiver;
 use startup_service::AppStartupService;
+use web_panel_scene_service::WebPanelSceneState;
 
 fn main() {
     setup_tracing();
@@ -69,6 +72,7 @@ fn main() {
 
     builder
         .manage(app_runtime.clone())
+        .manage(WebPanelSceneState::default())
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
@@ -112,6 +116,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
+            get_snapshot_status_surface_bundle,
+            build_status_surface_scene,
             get_app_settings,
             get_available_displays,
             ingest_sample,

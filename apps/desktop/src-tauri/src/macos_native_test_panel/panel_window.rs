@@ -1,5 +1,10 @@
-use super::*;
 use objc2::rc::Retained;
+use objc2::{MainThreadMarker, MainThreadOnly};
+use objc2_app_kit::{
+    NSBackingStoreType, NSColor, NSPanel, NSView, NSWindowAnimationBehavior,
+    NSWindowCollectionBehavior, NSWindowStyleMask,
+};
+use objc2_foundation::NSRect;
 
 pub(super) fn create_native_panel_window(
     mtm: MainThreadMarker,

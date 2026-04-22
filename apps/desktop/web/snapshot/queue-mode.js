@@ -1,4 +1,6 @@
-import { getInteraction, getSurfaceMode, hasStatusQueueItems } from "../state-helpers.js";
+import { getInteraction, getSurfaceMode } from "../state-helpers.js";
+import { hasStatusQueueDisplayItems } from "../renderers/surface-state.js";
+import { getSurfaceSceneMode } from "../renderers/surface-scene.js";
 
 function hasPanelInteraction(uiState) {
   return (
@@ -21,21 +23,24 @@ export function resolveSurfaceMode(uiState) {
     return "settings";
   }
 
-  if (getSurfaceMode(uiState) === "status" && hasStatusQueueItems(uiState)) {
+  const sharedMode = getSurfaceSceneMode(uiState);
+  const baseMode = sharedMode === "status" ? "status" : "default";
+
+  if (baseMode === "status" && hasStatusQueueDisplayItems(uiState)) {
     return "status";
   }
 
   if (hasPanelInteraction(uiState)) {
-    return getSurfaceMode(uiState) === "status" && hasStatusQueueItems(uiState) ? "status" : "default";
+    return baseMode === "status" && hasStatusQueueDisplayItems(uiState) ? "status" : "default";
   }
 
   if (isDefaultQueueInteractionActive(uiState)) {
     return "default";
   }
 
-  return hasStatusQueueItems(uiState) ? "status" : "default";
+  return baseMode === "status" || hasStatusQueueDisplayItems(uiState) ? "status" : "default";
 }
 
 export function shouldAutoPopupStatusQueue(uiState) {
-  return hasStatusQueueItems(uiState) && !hasQueueInteraction(uiState);
+  return hasStatusQueueDisplayItems(uiState) && !hasQueueInteraction(uiState);
 }

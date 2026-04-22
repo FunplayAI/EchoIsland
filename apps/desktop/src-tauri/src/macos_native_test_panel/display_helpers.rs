@@ -1,11 +1,16 @@
-use super::*;
+use echoisland_runtime::SessionSnapshotView;
 
+#[cfg(test)]
+use echoisland_runtime::{PendingPermissionView, PendingQuestionView, RuntimeSnapshot};
+
+#[cfg(test)]
 pub(super) fn displayed_pending_permissions(
     snapshot: &RuntimeSnapshot,
 ) -> Vec<PendingPermissionView> {
     crate::native_panel_core::displayed_pending_permissions(snapshot)
 }
 
+#[cfg(test)]
 pub(super) fn displayed_pending_questions(snapshot: &RuntimeSnapshot) -> Vec<PendingQuestionView> {
     crate::native_panel_core::displayed_pending_questions(snapshot)
 }
@@ -28,14 +33,6 @@ pub(super) fn session_title(session: &SessionSnapshotView) -> String {
 
 pub(super) fn compact_title(value: &str, max_length: usize) -> String {
     crate::native_panel_core::compact_title(value, max_length)
-}
-
-pub(super) fn short_session_id(session_id: &str) -> String {
-    crate::native_panel_core::short_session_id(session_id)
-}
-
-pub(super) fn time_ago(last_activity: chrono::DateTime<chrono::Utc>) -> String {
-    crate::native_panel_core::time_ago(last_activity)
 }
 
 pub(super) fn session_meta_line(session: &SessionSnapshotView) -> String {

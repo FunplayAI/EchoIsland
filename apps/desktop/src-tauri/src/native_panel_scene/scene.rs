@@ -1,11 +1,20 @@
+use serde::Serialize;
+
 use echoisland_runtime::{PendingPermissionView, PendingQuestionView, SessionSnapshotView};
 
 use crate::native_panel_core::{ExpandedSurface, PanelHitAction, StatusQueueItem};
+use crate::native_panel_scene::{
+    SessionSurfaceScene, SettingsSurfaceScene, StatusCardScene, SurfaceScene,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PanelScene {
     pub(crate) surface: ExpandedSurface,
     pub(crate) compact_bar: CompactBarScene,
+    pub(crate) surface_scene: SurfaceScene,
+    pub(crate) status_surface: StatusSurfaceScene,
+    pub(crate) session_surface: SessionSurfaceScene,
+    pub(crate) settings_surface: SettingsSurfaceScene,
     pub(crate) cards: Vec<SceneCard>,
     pub(crate) glow: Option<SceneGlow>,
     pub(crate) mascot_pose: SceneMascotPose,
@@ -20,6 +29,42 @@ pub(crate) struct CompactBarScene {
     pub(crate) total_count: String,
     pub(crate) completion_count: usize,
     pub(crate) actions_visible: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StatusSurfaceScene {
+    pub(crate) cards: Vec<StatusCardScene>,
+    pub(crate) display_mode: StatusSurfaceDisplayMode,
+    pub(crate) default_state: StatusSurfaceDefaultState,
+    pub(crate) queue_state: StatusSurfaceQueueState,
+    pub(crate) completion_badge_count: usize,
+    pub(crate) show_completion_glow: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum StatusSurfaceDisplayMode {
+    Hidden,
+    DefaultStack,
+    Queue,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StatusSurfaceDefaultState {
+    pub(crate) approval_count: usize,
+    pub(crate) question_count: usize,
+    pub(crate) prompt_assist_count: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StatusSurfaceQueueState {
+    pub(crate) total_count: usize,
+    pub(crate) live_count: usize,
+    pub(crate) removing_count: usize,
+    pub(crate) next_transition_in_ms: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

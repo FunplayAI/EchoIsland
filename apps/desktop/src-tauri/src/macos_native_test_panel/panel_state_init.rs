@@ -1,4 +1,9 @@
-use super::*;
+use std::sync::Mutex;
+use std::time::Instant;
+
+use super::mascot::NativeMascotRuntime;
+use super::panel_globals::{ACTIVE_COUNT_SCROLL_TEXT, NATIVE_TEST_PANEL_STATE};
+use super::panel_types::{NativeExpandedSurface, NativePanelState};
 
 pub(super) fn initialize_native_panel_state() {
     let _ = NATIVE_TEST_PANEL_STATE.set(Mutex::new(NativePanelState {

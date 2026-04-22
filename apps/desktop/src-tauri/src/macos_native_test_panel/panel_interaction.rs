@@ -1,7 +1,27 @@
-use super::*;
-use crate::native_panel_core::{
-    LastFocusClick, PanelClickInput, PanelHitTarget, PanelInteractionCommand,
-    resolve_panel_click_action,
+use crate::native_panel_core::{LastFocusClick, PanelClickInput, resolve_panel_click_action};
+use echoisland_runtime::RuntimeSnapshot;
+use objc2_app_kit::NSEvent;
+use std::time::Instant;
+use tauri::AppHandle;
+
+use super::compact_bar_layout::sync_active_count_marquee;
+use super::panel_constants::{
+    CARD_FOCUS_CLICK_DEBOUNCE_MS, COLLAPSED_PANEL_HEIGHT, HOVER_DELAY_MS,
+};
+use super::panel_geometry::{absolute_rect, point_in_rect};
+use super::panel_hit_testing::{
+    native_edge_action_button_rect, native_hover_pill_rect, resolve_native_click_command,
+};
+use super::panel_interaction_effects::handle_native_click_command;
+use super::panel_refs::{
+    native_panel_handles, native_panel_state, panel_from_ptr, resolve_native_panel_refs,
+    view_from_ptr,
+};
+use super::panel_transition_entry::{
+    begin_native_panel_surface_transition, begin_native_panel_transition,
+};
+use super::panel_types::{
+    NativeCardHitTarget, NativeExpandedSurface, NativeHoverTransition, NativePanelState,
 };
 
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -73,36 +93,23 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
             && !state.transitioning
             && !settings_clicked
             && !quit_clicked
-            && !cards_container.isHidden()
         {
-            let clicked_action = find_clicked_card_target(
-                &state.card_hit_targets,
+            let (resolved_command, focus_click_to_record) = resolve_native_click_command(
+                &state,
+                primary_click_started,
+                settings_clicked,
+                quit_clicked,
+                !cards_container.isHidden(),
                 panel_frame,
                 expanded_container.frame(),
                 cards_container.frame(),
                 mouse,
-            );
-            let click_resolution = resolve_panel_click_action(PanelClickInput {
-                primary_click_started,
-                expanded: state.expanded,
-                transitioning: state.transitioning,
-                settings_button_hit: settings_clicked,
-                quit_button_hit: quit_clicked,
-                cards_visible: !cards_container.isHidden(),
-                card_target: clicked_action.map(native_card_hit_target_action),
-                last_focus_click: state.last_focus_click.as_ref().map(
-                    |(session_id, clicked_at)| LastFocusClick {
-                        session_id,
-                        clicked_at: *clicked_at,
-                    },
-                ),
                 now,
-                focus_debounce_ms: CARD_FOCUS_CLICK_DEBOUNCE_MS,
-            });
-            if let Some(session_id) = click_resolution.focus_click_to_record {
+            );
+            if let Some(session_id) = focus_click_to_record {
                 state.last_focus_click = Some((session_id, now));
             }
-            click_command = click_resolution.command;
+            click_command = resolved_command;
         } else {
             click_command = resolve_panel_click_action(PanelClickInput {
                 primary_click_started,
@@ -166,28 +173,7 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
         begin_native_panel_surface_transition(app.clone(), handles, snapshot);
     }
 
-    match click_command {
-        PanelInteractionCommand::HitTarget(target) => match target.action {
-            NativePanelHitAction::FocusSession => {
-                spawn_native_focus_session(app, target.value);
-            }
-            NativePanelHitAction::CycleDisplay => {
-                spawn_native_cycle_display(app);
-            }
-            NativePanelHitAction::ToggleCompletionSound => {
-                spawn_native_toggle_completion_sound(app);
-            }
-            NativePanelHitAction::ToggleMascot => {
-                spawn_native_toggle_mascot(app);
-            }
-            NativePanelHitAction::OpenReleasePage => {
-                spawn_native_open_release_page();
-            }
-        },
-        PanelInteractionCommand::ToggleSettingsSurface => {}
-        PanelInteractionCommand::QuitApplication => app.exit(0),
-        PanelInteractionCommand::None => {}
-    }
+    handle_native_click_command(app, click_command);
 }
 
 pub(super) fn toggle_native_settings_surface(state: &mut NativePanelState) -> bool {
@@ -240,128 +226,4 @@ pub(super) fn replace_native_card_hit_targets(targets: Vec<NativeCardHitTarget>)
             guard.card_hit_targets = targets;
         }
     }
-}
-
-fn find_clicked_card_target(
-    targets: &[NativeCardHitTarget],
-    panel_frame: NSRect,
-    expanded_frame: NSRect,
-    cards_frame: NSRect,
-    mouse: NSPoint,
-) -> Option<NativeCardHitTarget> {
-    targets
-        .iter()
-        .find(|target| {
-            point_in_rect(
-                mouse,
-                absolute_rect(
-                    panel_frame,
-                    compose_local_rect(
-                        expanded_frame,
-                        compose_local_rect(cards_frame, target.frame),
-                    ),
-                ),
-            )
-        })
-        .cloned()
-}
-
-fn native_card_hit_target_action(target: NativeCardHitTarget) -> PanelHitTarget {
-    PanelHitTarget {
-        action: target.action,
-        value: target.value,
-    }
-}
-
-fn native_edge_action_button_rect(
-    panel_frame: NSRect,
-    pill_frame: NSRect,
-    button_frame: NSRect,
-) -> NSRect {
-    absolute_rect(panel_frame, compose_local_rect(pill_frame, button_frame))
-}
-
-pub(super) fn native_hover_pill_rect(panel_frame: NSRect, pill_frame: NSRect) -> NSRect {
-    let top_gap =
-        (panel_frame.size.height - (pill_frame.origin.y + pill_frame.size.height)).max(0.0);
-    absolute_rect(
-        panel_frame,
-        NSRect::new(
-            pill_frame.origin,
-            NSSize::new(pill_frame.size.width, pill_frame.size.height + top_gap),
-        ),
-    )
-}
-
-fn spawn_native_focus_session<R: tauri::Runtime + 'static>(app: AppHandle<R>, session_id: String) {
-    crate::native_panel_runtime::spawn_native_focus_session(app, session_id);
-}
-
-fn spawn_native_open_release_page() {
-    tauri::async_runtime::spawn(async move {
-        if let Err(error) = crate::commands::open_release_page() {
-            warn!(error = %error, "native settings button failed to open release page");
-        }
-    });
-}
-
-fn spawn_native_toggle_completion_sound<R: tauri::Runtime + 'static>(app: AppHandle<R>) {
-    tauri::async_runtime::spawn(async move {
-        let next_enabled = !crate::app_settings::current_app_settings().completion_sound_enabled;
-        if let Err(error) = crate::app_settings::update_completion_sound_enabled(next_enabled) {
-            warn!(error = %error, "failed to update completion sound setting");
-            return;
-        }
-
-        let Some(handles) = native_panel_handles() else {
-            return;
-        };
-        let rerender = native_panel_state().and_then(|state| {
-            state
-                .lock()
-                .ok()
-                .and_then(|guard| native_panel_render_payload(&guard))
-        });
-
-        if let Some(payload) = rerender {
-            let _ = app.run_on_main_thread(move || unsafe {
-                apply_native_panel_render_payload(handles, payload);
-            });
-        }
-    });
-}
-
-fn spawn_native_toggle_mascot<R: tauri::Runtime + 'static>(app: AppHandle<R>) {
-    tauri::async_runtime::spawn(async move {
-        let next_enabled = !crate::app_settings::current_app_settings().mascot_enabled;
-        if let Err(error) = crate::app_settings::update_mascot_enabled(next_enabled) {
-            warn!(error = %error, "failed to update mascot setting");
-            return;
-        }
-        let _ = crate::macos_native_test_panel::refresh_native_panel_from_last_snapshot(&app);
-    });
-}
-
-fn spawn_native_cycle_display<R: tauri::Runtime + 'static>(app: AppHandle<R>) {
-    tauri::async_runtime::spawn(async move {
-        let Ok(displays) = crate::display_settings::list_available_displays(&app) else {
-            return;
-        };
-        let total = displays.len().max(1);
-        let settings = crate::app_settings::current_app_settings();
-        let current = crate::display_settings::resolve_preferred_display_index(
-            &displays,
-            settings.preferred_display_key.as_deref(),
-        );
-        let next = (current + 1) % total;
-        let selected = &displays[next];
-        if let Err(error) = crate::app_settings::update_preferred_display_selection(
-            next,
-            Some(selected.key.clone()),
-        ) {
-            warn!(error = %error, "failed to update preferred display");
-            return;
-        }
-        let _ = crate::macos_native_test_panel::reposition_native_panel_to_selected_display(&app);
-    });
 }

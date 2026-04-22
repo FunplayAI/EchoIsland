@@ -48,6 +48,10 @@ export const uiState = {
   snapshot: {
     lastSnapshot: null,
     lastRawSnapshot: null,
+    surfaceScene: null,
+    statusSurfaceScene: null,
+    sessionSurfaceScene: null,
+    settingsSurfaceScene: null,
     codexStatus: null,
     claudeStatus: null,
     openclawStatus: null,
@@ -63,11 +67,11 @@ export const uiState = {
   surface: {
     mode: "default",
     statusAutoExpanded: false,
-    completionSessionIds: [],
     completionBadgeItems: [],
     pendingPermissionCard: null,
     pendingQuestionCard: null,
     statusQueueItems: [],
+    statusQueueKeys: [],
   },
   timers: {
     statusQueueRefresh: null,

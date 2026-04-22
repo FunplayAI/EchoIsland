@@ -1,7 +1,9 @@
 use std::time::Instant;
 
 use chrono::Utc;
-use echoisland_runtime::{PendingPermissionView, RuntimeSnapshot, SessionSnapshotView};
+use echoisland_runtime::{
+    PendingPermissionView, PendingQuestionView, RuntimeSnapshot, SessionSnapshotView,
+};
 
 use crate::native_panel_core::{
     CompletionBadgeItem, ExpandedSurface, PanelHitAction, PanelSettingsState, PanelState,
@@ -67,6 +69,23 @@ fn pending_permission(request_id: &str, session_id: &str) -> PendingPermissionVi
     }
 }
 
+fn pending_question(session_id: &str) -> PendingQuestionView {
+    PendingQuestionView {
+        request_id: "question-1".to_string(),
+        session_id: session_id.to_string(),
+        source: "claude".to_string(),
+        header: Some("Pick one".to_string()),
+        text: "Choose the deployment target".to_string(),
+        options: vec![
+            "Local".to_string(),
+            "Staging".to_string(),
+            "Production".to_string(),
+            "Other".to_string(),
+        ],
+        requested_at: Utc::now(),
+    }
+}
+
 #[test]
 fn scene_builder_emits_compact_bar_content() {
     let mut snapshot = snapshot(2, 5);
@@ -83,6 +102,173 @@ fn scene_builder_emits_compact_bar_content() {
     assert_eq!(scene.compact_bar.active_count, "2");
     assert_eq!(scene.compact_bar.total_count, "5");
     assert!(!scene.compact_bar.actions_visible);
+}
+
+#[test]
+fn scene_builder_emits_default_status_surface_scene_cards() {
+    let mut snapshot = snapshot(1, 1);
+    let pending = pending_permission("request-1", "session-1");
+    snapshot.pending_permission_count = 1;
+    snapshot.pending_permission = Some(pending.clone());
+    snapshot.pending_permissions = vec![pending];
+    let mut codex = session("Running");
+    codex.session_id = "session-2".to_string();
+    codex.source = "codex".to_string();
+    codex.last_activity = Utc::now() - chrono::Duration::seconds(20);
+    snapshot.sessions = vec![codex];
+
+    let scene = build_panel_scene(
+        &PanelState::default(),
+        &snapshot,
+        &PanelSceneBuildInput::default(),
+    );
+
+    assert_eq!(
+        scene.status_surface.display_mode,
+        StatusSurfaceDisplayMode::DefaultStack
+    );
+    assert_eq!(scene.status_surface.cards.len(), 2);
+    assert!(matches!(
+        scene.status_surface.cards[0].kind,
+        StatusCardSceneKind::Approval
+    ));
+    assert!(matches!(
+        scene.status_surface.cards[1].kind,
+        StatusCardSceneKind::PromptAssist
+    ));
+}
+
+#[test]
+fn scene_builder_emits_shared_session_surface_cards() {
+    let mut snapshot = snapshot(2, 2);
+    let mut running = session("Running");
+    running.session_id = "session-1".to_string();
+    running.last_user_prompt = Some("Open the logs".to_string());
+    running.last_assistant_message = Some("Reading latest output".to_string());
+    running.current_tool = Some("Read".to_string());
+    running.tool_description = Some("Scanning log files".to_string());
+
+    let mut idle = session("Idle");
+    idle.session_id = "session-2".to_string();
+    idle.last_user_prompt = None;
+    idle.last_assistant_message = None;
+    idle.current_tool = None;
+    idle.tool_description = None;
+    idle.last_activity = Utc::now() - chrono::Duration::minutes(20);
+
+    snapshot.sessions = vec![running, idle];
+
+    let scene = build_panel_scene(
+        &PanelState::default(),
+        &snapshot,
+        &PanelSceneBuildInput::default(),
+    );
+
+    assert_eq!(scene.session_surface.cards.len(), 2);
+    assert_eq!(scene.session_surface.cards[0].status_key, "running");
+    assert_eq!(
+        scene.session_surface.cards[0].user_line.as_deref(),
+        Some("Open the logs")
+    );
+    assert_eq!(
+        scene.session_surface.cards[0].assistant_line.as_deref(),
+        Some("Reading latest output")
+    );
+    assert_eq!(
+        scene.session_surface.cards[0].tool_name.as_deref(),
+        Some("Read")
+    );
+    assert!(!scene.session_surface.cards[0].compact);
+    assert!(scene.session_surface.cards[1].compact);
+}
+
+#[test]
+fn scene_builder_emits_shared_surface_scene_state() {
+    let mut snapshot = snapshot(1, 1);
+    snapshot.sessions = vec![session("Running")];
+
+    let default_scene = build_panel_scene(
+        &PanelState::default(),
+        &snapshot,
+        &PanelSceneBuildInput::default(),
+    );
+    assert_eq!(default_scene.surface_scene.mode, SurfaceSceneMode::Default);
+    assert_eq!(default_scene.surface_scene.headline_text, "1 active task");
+    assert!(!default_scene.surface_scene.headline_emphasized);
+
+    let status_scene = build_panel_scene(
+        &PanelState {
+            expanded: true,
+            surface_mode: ExpandedSurface::Status,
+            status_queue: vec![StatusQueueItem {
+                key: "approval:request-1".to_string(),
+                session_id: "session-1".to_string(),
+                sort_time: Utc::now(),
+                expires_at: Instant::now(),
+                is_live: true,
+                is_removing: false,
+                remove_after: None,
+                payload: StatusQueuePayload::Approval(pending_permission("request-1", "session-1")),
+            }],
+            ..PanelState::default()
+        },
+        &snapshot,
+        &PanelSceneBuildInput::default(),
+    );
+    assert_eq!(status_scene.surface_scene.mode, SurfaceSceneMode::Status);
+    assert_eq!(status_scene.surface_scene.headline_text, "Approval waiting");
+    assert!(status_scene.surface_scene.headline_emphasized);
+    assert!(status_scene.surface_scene.edge_actions_visible);
+}
+
+#[test]
+fn scene_builder_emits_queue_status_surface_scene_state() {
+    let state = PanelState {
+        expanded: false,
+        surface_mode: ExpandedSurface::Status,
+        completion_badge_items: vec![CompletionBadgeItem {
+            session_id: "session-2".to_string(),
+            completed_at: Utc::now(),
+            last_user_prompt: None,
+            last_assistant_message: Some("Done".to_string()),
+        }],
+        status_queue: vec![
+            StatusQueueItem {
+                key: "approval:request-1".to_string(),
+                session_id: "session-1".to_string(),
+                sort_time: Utc::now(),
+                expires_at: Instant::now(),
+                is_live: true,
+                is_removing: false,
+                remove_after: None,
+                payload: StatusQueuePayload::Approval(pending_permission("request-1", "session-1")),
+            },
+            StatusQueueItem {
+                key: "completion:session-2".to_string(),
+                session_id: "session-2".to_string(),
+                sort_time: Utc::now(),
+                expires_at: Instant::now(),
+                is_live: false,
+                is_removing: true,
+                remove_after: Some(Instant::now()),
+                payload: StatusQueuePayload::Completion(session("Idle")),
+            },
+        ],
+        ..PanelState::default()
+    };
+
+    let scene = build_panel_scene(&state, &snapshot(1, 1), &PanelSceneBuildInput::default());
+
+    assert_eq!(
+        scene.status_surface.display_mode,
+        StatusSurfaceDisplayMode::Queue
+    );
+    assert_eq!(scene.status_surface.cards.len(), 2);
+    assert_eq!(scene.status_surface.queue_state.total_count, 2);
+    assert_eq!(scene.status_surface.queue_state.live_count, 1);
+    assert_eq!(scene.status_surface.queue_state.removing_count, 1);
+    assert_eq!(scene.status_surface.completion_badge_count, 1);
+    assert!(scene.status_surface.show_completion_glow);
 }
 
 #[test]
@@ -130,6 +316,12 @@ fn scene_builder_emits_settings_rows_and_value_badges() {
     assert_eq!(rows[1].value.text, "Off");
     assert_eq!(rows[2].value.text, "On");
     assert_eq!(rows[3].action, PanelHitAction::OpenReleasePage);
+    assert_eq!(scene.settings_surface.title, "Settings");
+    assert_eq!(scene.settings_surface.version_text, "EchoIsland v0.2.0");
+    assert_eq!(scene.settings_surface.rows[0].id, "island_display");
+    assert_eq!(scene.settings_surface.rows[1].label, "Mute Sound");
+    assert_eq!(scene.settings_surface.rows[1].checked, Some(true));
+    assert_eq!(scene.settings_surface.rows[2].checked, Some(false));
 }
 
 #[test]
@@ -206,6 +398,70 @@ fn scene_builder_emits_prompt_assist_card_descriptor() {
             .iter()
             .any(|card| matches!(card, SceneCard::PromptAssist { .. }))
     );
+}
+
+#[test]
+fn shared_completion_status_card_scene_formats_platform_neutral_fields() {
+    let scene = build_completion_status_card_scene(&session("Idle"));
+
+    assert_eq!(scene.kind, StatusCardSceneKind::Completion);
+    assert_eq!(scene.status_text, "Complete");
+    assert_eq!(scene.source_text, "Claude");
+    assert_eq!(scene.body, "Done");
+    assert!(scene.action_hint.is_none());
+}
+
+#[test]
+fn shared_pending_question_status_card_scene_uses_compact_option_hint() {
+    let scene = build_pending_question_status_card_scene(&pending_question("session-1"));
+
+    assert_eq!(scene.kind, StatusCardSceneKind::Question);
+    assert_eq!(scene.status_text, "Question");
+    assert_eq!(scene.source_text, "Claude");
+    assert_eq!(
+        scene.action_hint.as_deref(),
+        Some("Local / Staging / Production / …")
+    );
+}
+
+#[test]
+fn shared_status_queue_scene_reuses_approval_card_builder() {
+    let item = StatusQueueItem {
+        key: "approval:request-1".to_string(),
+        session_id: "session-1".to_string(),
+        sort_time: Utc::now(),
+        expires_at: Instant::now(),
+        is_live: true,
+        is_removing: false,
+        remove_after: None,
+        payload: StatusQueuePayload::Approval(pending_permission("request-1", "session-1")),
+    };
+
+    let scene = build_status_queue_status_card_scene(&item);
+
+    assert_eq!(scene.kind, StatusCardSceneKind::Approval);
+    assert_eq!(scene.status_text, "Approval");
+    assert_eq!(scene.source_text, "Claude");
+}
+
+#[test]
+fn shared_status_queue_scene_reuses_completion_card_builder() {
+    let item = StatusQueueItem {
+        key: "completion:session-1".to_string(),
+        session_id: "session-1".to_string(),
+        sort_time: Utc::now(),
+        expires_at: Instant::now(),
+        is_live: true,
+        is_removing: false,
+        remove_after: None,
+        payload: StatusQueuePayload::Completion(session("Idle")),
+    };
+
+    let scene = build_status_queue_status_card_scene(&item);
+
+    assert_eq!(scene.kind, StatusCardSceneKind::Completion);
+    assert_eq!(scene.status_text, "Complete");
+    assert_eq!(scene.body, "Done");
 }
 
 #[test]
@@ -366,6 +622,26 @@ fn scene_cards_total_height_delegates_card_height_resolution() {
             completion_count: 0,
             actions_visible: false,
         },
+        surface_scene: SurfaceScene {
+            mode: SurfaceSceneMode::Default,
+            headline_text: "No active tasks".to_string(),
+            headline_emphasized: false,
+            edge_actions_visible: false,
+        },
+        status_surface: StatusSurfaceScene {
+            cards: Vec::new(),
+            display_mode: StatusSurfaceDisplayMode::Hidden,
+            default_state: StatusSurfaceDefaultState::default(),
+            queue_state: StatusSurfaceQueueState::default(),
+            completion_badge_count: 0,
+            show_completion_glow: false,
+        },
+        session_surface: SessionSurfaceScene { cards: Vec::new() },
+        settings_surface: build_settings_surface_scene(
+            1,
+            PanelSettingsState::default(),
+            env!("CARGO_PKG_VERSION"),
+        ),
         cards: vec![SceneCard::Empty, SceneCard::Empty, SceneCard::Empty],
         glow: None,
         mascot_pose: SceneMascotPose::Idle,

@@ -3,16 +3,20 @@ import {
   getLastRawSnapshot,
   getSurfaceMode,
   isCompletionSoundEnabled,
-  hasStatusQueueItems,
   isExpanded,
   isTransitioning,
   setInteraction,
   setLastRawSnapshot,
   setLastSnapshot,
+  setSessionSurfaceScene,
+  setSettingsSurfaceScene,
+  setSurfaceScene,
+  setStatusSurfaceScene,
   setStatusAutoExpanded,
   setSurfaceMode,
   setTimer,
 } from "../state-helpers.js";
+import { hasStatusQueueDisplayItems } from "../renderers/surface-state.js";
 import { formatSource, formatStatus } from "../utils.js";
 import { detectCompletedSessions, syncCompletionBadges } from "./completion-tracker.js";
 import { applyModeHint } from "./fallback-hints.js";
@@ -21,9 +25,11 @@ import { applyPendingCardsToSnapshot, syncPendingCardVisibility } from "./pendin
 import { hasQueueInteraction, resolveSurfaceMode, shouldAutoPopupStatusQueue } from "./queue-mode.js";
 import { applyCompletionAttention, applyStatusTone, presentSnapshot } from "./snapshot-presenter.js";
 import { syncStatusQueue } from "./status-queue.js";
+import { summarizeDefaultStatusSurfaceWithFallback } from "../renderers/status-surface-scene.js";
 
 function updateSummaryFields(snapshot, deps) {
   const {
+    uiState,
     primaryStatus,
     primarySource,
     activeCount,
@@ -35,6 +41,8 @@ function updateSummaryFields(snapshot, deps) {
     permissionCount,
     questionCount,
   } = deps;
+  const statusSurfaceScene = uiState?.snapshot?.statusSurfaceScene ?? null;
+  const defaultStatusSummary = summarizeDefaultStatusSurfaceWithFallback(statusSurfaceScene, snapshot);
 
   if (primaryStatus) {
     primaryStatus.textContent = formatStatus(snapshot.status);
@@ -61,10 +69,10 @@ function updateSummaryFields(snapshot, deps) {
     totalCountLabel.textContent = `${snapshot.total_session_count} total`;
   }
   if (permissionCount) {
-    permissionCount.textContent = String(snapshot.pending_permission_count);
+    permissionCount.textContent = String(defaultStatusSummary.approvalCount || snapshot.pending_permission_count);
   }
   if (questionCount) {
-    questionCount.textContent = String(snapshot.pending_question_count);
+    questionCount.textContent = String(defaultStatusSummary.questionCount || snapshot.pending_question_count);
   }
 }
 
@@ -100,19 +108,35 @@ export async function refreshSnapshot(api, deps) {
   } = deps;
 
   const previousRawSnapshot = getLastRawSnapshot(uiState);
-  const rawSnapshot = await api.getSnapshot();
+  const bundle = await api.getSnapshotStatusSurfaceBundle();
+  const rawSnapshot = bundle?.snapshot ?? null;
+  const surfaceScene = bundle?.surfaceScene ?? null;
+  const statusSurfaceScene = bundle?.statusSurfaceScene ?? null;
+  const sessionSurfaceScene = bundle?.sessionSurfaceScene ?? null;
+  const settingsSurfaceScene = bundle?.settingsSurfaceScene ?? null;
   const completedSessionIds = detectCompletedSessions(previousRawSnapshot, rawSnapshot);
-  syncPendingCardVisibility(rawSnapshot, uiState, timings);
+  syncPendingCardVisibility(rawSnapshot, statusSurfaceScene, uiState, timings);
   const snapshot = applyPendingCardsToSnapshot(rawSnapshot, uiState);
-  const statusQueueSync = syncStatusQueue(snapshot, previousRawSnapshot, completedSessionIds, uiState, timings);
+  const statusQueueSync = syncStatusQueue(
+    statusSurfaceScene,
+    snapshot,
+    previousRawSnapshot,
+    completedSessionIds,
+    uiState,
+    timings
+  );
   syncCompletionBadges(rawSnapshot, completedSessionIds, uiState);
   scheduleStatusQueueRefresh(uiState, requestRefresh, statusQueueSync.nextRefreshDelayMs);
   setLastRawSnapshot(uiState, rawSnapshot);
   setLastSnapshot(uiState, snapshot);
+  setSurfaceScene(uiState, surfaceScene);
+  setStatusSurfaceScene(uiState, statusSurfaceScene);
+  setSessionSurfaceScene(uiState, sessionSurfaceScene);
+  setSettingsSurfaceScene(uiState, settingsSurfaceScene);
 
   updateSummaryFields(snapshot, deps);
   const currentSurfaceMode = getSurfaceMode(uiState);
-  const hasStatusItems = hasStatusQueueItems(uiState);
+  const hasStatusItems = hasStatusQueueDisplayItems(uiState);
   const queueInteractionActive = hasQueueInteraction(uiState);
 
   if (statusQueueSync.addedCount > 0 && isCompletionSoundEnabled(uiState)) {

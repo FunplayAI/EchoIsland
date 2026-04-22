@@ -1,56 +1,4 @@
 #[cfg(target_os = "macos")]
-use std::collections::{HashMap, HashSet};
-
-#[cfg(target_os = "macos")]
-use std::sync::{
-    Mutex, OnceLock,
-    atomic::{AtomicBool, AtomicU64, Ordering},
-};
-
-#[cfg(target_os = "macos")]
-use std::time::Instant;
-
-#[cfg(target_os = "macos")]
-use chrono::Utc;
-
-#[cfg(target_os = "macos")]
-use objc2::{MainThreadMarker, MainThreadOnly};
-
-#[cfg(target_os = "macos")]
-use objc2_app_kit::{
-    NSBackingStoreType, NSClipView, NSColor, NSEvent, NSFont, NSPanel, NSScreen, NSTextAlignment,
-    NSTextField, NSView, NSWindowAnimationBehavior, NSWindowCollectionBehavior, NSWindowStyleMask,
-};
-
-#[cfg(target_os = "macos")]
-use objc2_foundation::{NSPoint, NSRect, NSSize, NSString, ns_string};
-
-#[cfg(target_os = "macos")]
-use objc2_core_graphics::{
-    CGAffineTransformMakeScale, CGAffineTransformTranslate, CGMutablePath, CGPath,
-};
-
-#[cfg(target_os = "macos")]
-use objc2_quartz_core::{CACornerMask, CALayer, CAShapeLayer, CATransaction};
-
-#[cfg(target_os = "macos")]
-use tauri::AppHandle;
-
-#[cfg(target_os = "macos")]
-use tokio::time::Duration;
-
-#[cfg(target_os = "macos")]
-use tracing::warn;
-
-#[cfg(target_os = "macos")]
-use echoisland_runtime::{
-    PendingPermissionView, PendingQuestionView, RuntimeSnapshot, SessionSnapshotView,
-};
-
-#[cfg(target_os = "macos")]
-use crate::macos_shared_expanded_window;
-
-#[cfg(target_os = "macos")]
 mod card_animation;
 #[cfg(target_os = "macos")]
 mod card_metrics;
@@ -61,13 +9,27 @@ mod card_views;
 #[cfg(target_os = "macos")]
 mod compact_bar;
 #[cfg(target_os = "macos")]
+mod compact_bar_layout;
+#[cfg(target_os = "macos")]
+mod completion_glow_view;
+#[cfg(target_os = "macos")]
 mod display_helpers;
 #[cfg(target_os = "macos")]
 mod mascot;
 #[cfg(target_os = "macos")]
+mod mascot_motion;
+#[cfg(target_os = "macos")]
 mod mascot_render;
 #[cfg(target_os = "macos")]
+mod mascot_scene;
+#[cfg(target_os = "macos")]
+mod mascot_views;
+#[cfg(target_os = "macos")]
+mod panel_action_buttons;
+#[cfg(target_os = "macos")]
 mod panel_assembly;
+#[cfg(target_os = "macos")]
+mod panel_base_container_views;
 #[cfg(target_os = "macos")]
 mod panel_constants;
 #[cfg(target_os = "macos")]
@@ -75,11 +37,19 @@ mod panel_entry;
 #[cfg(target_os = "macos")]
 mod panel_geometry;
 #[cfg(target_os = "macos")]
+mod panel_globals;
+#[cfg(target_os = "macos")]
 mod panel_handles_init;
 #[cfg(target_os = "macos")]
 mod panel_helpers;
 #[cfg(target_os = "macos")]
+mod panel_hit_testing;
+#[cfg(target_os = "macos")]
 mod panel_interaction;
+#[cfg(target_os = "macos")]
+mod panel_interaction_effects;
+#[cfg(target_os = "macos")]
+mod panel_loops;
 #[cfg(target_os = "macos")]
 mod panel_refs;
 #[cfg(target_os = "macos")]
@@ -103,10 +73,14 @@ mod panel_transition_entry;
 #[cfg(target_os = "macos")]
 mod panel_types;
 #[cfg(target_os = "macos")]
+mod panel_view_updates;
+#[cfg(target_os = "macos")]
 mod panel_views;
 #[cfg(target_os = "macos")]
 mod panel_window;
 #[cfg(target_os = "macos")]
+mod panel_window_control;
+#[cfg(all(test, target_os = "macos"))]
 mod queue_logic;
 #[cfg(target_os = "macos")]
 mod transition_logic;
@@ -116,90 +90,18 @@ mod transition_runner;
 mod transition_ui;
 
 #[cfg(target_os = "macos")]
-use card_animation::*;
+pub(crate) use panel_entry::{create_native_island_panel, native_ui_enabled};
 #[cfg(target_os = "macos")]
-use card_metrics::*;
-#[cfg(target_os = "macos")]
-use card_stack::*;
-#[cfg(target_os = "macos")]
-use card_views::*;
-#[cfg(target_os = "macos")]
-use compact_bar::*;
-#[cfg(target_os = "macos")]
-use display_helpers::*;
-#[cfg(target_os = "macos")]
-use mascot::*;
-#[cfg(target_os = "macos")]
-use mascot_render::*;
-#[cfg(target_os = "macos")]
-use panel_assembly::*;
-#[cfg(target_os = "macos")]
-use panel_constants::*;
-#[cfg(target_os = "macos")]
-pub(crate) use panel_entry::{
-    create_native_island_panel, hide_main_webview_window, hide_native_island_panel,
-    native_ui_enabled, refresh_native_panel_from_last_snapshot,
-    reposition_native_panel_to_selected_display, spawn_native_count_marquee_loop,
-    spawn_native_hover_loop, spawn_native_status_queue_loop,
+pub(crate) use panel_loops::{
+    spawn_native_count_marquee_loop, spawn_native_hover_loop, spawn_native_status_queue_loop,
 };
-#[cfg(target_os = "macos")]
-use panel_geometry::*;
-#[cfg(target_os = "macos")]
-use panel_handles_init::*;
-#[cfg(target_os = "macos")]
-use panel_helpers::*;
-#[cfg(target_os = "macos")]
-use panel_interaction::*;
-#[cfg(target_os = "macos")]
-use panel_refs::*;
-#[cfg(target_os = "macos")]
-use panel_render::*;
-#[cfg(target_os = "macos")]
-use panel_scene_adapter::*;
-#[cfg(target_os = "macos")]
-use panel_screen_geometry::*;
-#[cfg(target_os = "macos")]
-use panel_setup::*;
-#[cfg(target_os = "macos")]
-use panel_snapshot::*;
 #[cfg(target_os = "macos")]
 pub(crate) use panel_snapshot::{set_shared_expanded_body_height, update_native_island_snapshot};
 #[cfg(target_os = "macos")]
-use panel_state_init::*;
-#[cfg(target_os = "macos")]
-use panel_transition_entry::*;
-#[cfg(target_os = "macos")]
-use panel_types::*;
-#[cfg(target_os = "macos")]
-use panel_views::*;
-#[cfg(target_os = "macos")]
-use queue_logic::*;
-#[cfg(target_os = "macos")]
-use transition_logic::*;
-#[cfg(target_os = "macos")]
-use transition_runner::*;
-#[cfg(target_os = "macos")]
-use transition_ui::*;
-
-#[cfg(target_os = "macos")]
-static NATIVE_TEST_PANEL_CREATED: AtomicBool = AtomicBool::new(false);
-
-#[cfg(target_os = "macos")]
-static NATIVE_TEST_PANEL_HANDLES: OnceLock<NativePanelHandles> = OnceLock::new();
-
-#[cfg(target_os = "macos")]
-static NATIVE_TEST_PANEL_STATE: OnceLock<Mutex<NativePanelState>> = OnceLock::new();
-
-#[cfg(target_os = "macos")]
-static NATIVE_TEST_PANEL_ANIMATION_ID: AtomicU64 = AtomicU64::new(0);
-
-#[cfg(target_os = "macos")]
-static ACTIVE_COUNT_SCROLL_STARTED: OnceLock<Instant> = OnceLock::new();
-#[cfg(target_os = "macos")]
-static ACTIVE_COUNT_SCROLL_TEXT: OnceLock<Mutex<String>> = OnceLock::new();
-#[cfg(target_os = "macos")]
-static CARD_ANIMATION_LAYOUTS: OnceLock<Mutex<HashMap<usize, CardAnimationLayout>>> =
-    OnceLock::new();
+pub(crate) use panel_window_control::{
+    hide_main_webview_window, hide_native_island_panel, refresh_native_panel_from_last_snapshot,
+    reposition_native_panel_to_selected_display,
+};
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests;

@@ -1,4 +1,19 @@
-use super::*;
+use chrono::Utc;
+use echoisland_runtime::{
+    PendingPermissionView, PendingQuestionView, RuntimeSnapshot, SessionSnapshotView,
+};
+
+use super::card_views::settings_surface_card_height;
+use super::display_helpers::{display_snippet, normalize_status};
+use super::panel_constants::{
+    CARD_CHAT_GAP, CARD_CHAT_LINE_HEIGHT, CARD_CHAT_PREFIX_WIDTH, CARD_CONTENT_BOTTOM_INSET,
+    CARD_HEADER_HEIGHT, CARD_INSET_X, CARD_PENDING_ACTION_GAP, CARD_PENDING_ACTION_HEIGHT,
+    CARD_PENDING_ACTION_Y, CARD_TOOL_GAP, EXPANDED_CARD_GAP, EXPANDED_MAX_BODY_HEIGHT,
+    PENDING_QUESTION_CARD_MAX_HEIGHT, PENDING_QUESTION_CARD_MIN_HEIGHT,
+};
+use super::panel_helpers::estimated_default_chat_body_width;
+use super::panel_scene_adapter::build_native_panel_scene;
+use super::panel_types::{NativeStatusQueueItem, NativeStatusQueuePayload};
 use crate::native_panel_scene::{PanelScene, SceneCard};
 
 pub(super) fn estimated_expanded_body_height(snapshot: &RuntimeSnapshot) -> f64 {

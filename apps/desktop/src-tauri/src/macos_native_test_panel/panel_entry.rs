@@ -1,10 +1,21 @@
-use super::*;
+use std::sync::atomic::Ordering;
 
-use tauri::{AppHandle, Manager};
-use tokio::time::{Duration, MissedTickBehavior};
-use tracing::{info, warn};
+use objc2::MainThreadMarker;
 
-use crate::{constants::MAIN_WINDOW_LABEL, macos_shared_expanded_window};
+use super::compact_bar::{CompactBarViews, create_compact_bar_views};
+use super::mascot_views::{MascotViews, create_mascot_views};
+use super::panel_assembly::{NativePanelAssemblyViews, assemble_native_panel_views};
+use super::panel_globals::NATIVE_TEST_PANEL_CREATED;
+use super::panel_handles_init::{NativePanelHandleViews, initialize_native_panel_handles};
+use super::panel_screen_geometry::screen_has_camera_housing;
+use super::panel_setup::{
+    NativePanelColors, NativePanelSetup, native_panel_colors, resolve_native_panel_setup,
+};
+use super::panel_state_init::{initialize_active_count_scroll_text, initialize_native_panel_state};
+use super::panel_views::{PanelBaseViews, create_panel_base_views};
+use super::panel_window;
+
+use tracing::info;
 
 pub(crate) fn native_ui_enabled() -> bool {
     !matches!(
@@ -177,176 +188,6 @@ pub(crate) fn create_native_island_panel() -> Result<(), String> {
     let _: &'static mut _ = Box::leak(Box::new(panel));
 
     Ok(())
-}
-
-pub(crate) fn hide_native_island_panel<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-) -> Result<(), String> {
-    if !native_ui_enabled() {
-        return Ok(());
-    }
-
-    let _ = macos_shared_expanded_window::hide_shared_expanded_window(app);
-
-    app.run_on_main_thread(move || {
-        if let Some(handles) = native_panel_handles() {
-            unsafe {
-                panel_from_ptr(handles.panel).orderOut(None);
-            }
-        }
-    })
-    .map_err(|error| error.to_string())
-}
-
-pub(crate) fn spawn_native_hover_loop<R: tauri::Runtime + 'static>(app: AppHandle<R>) {
-    tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_millis(HOVER_POLL_MS));
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-        loop {
-            interval.tick().await;
-            if !native_ui_enabled() {
-                continue;
-            }
-
-            let app_for_hover = app.clone();
-            let _ = app.run_on_main_thread(move || unsafe {
-                sync_hover_state_on_main_thread(app_for_hover);
-            });
-        }
-    });
-}
-
-pub(crate) fn spawn_native_count_marquee_loop<R: tauri::Runtime + 'static>(app: AppHandle<R>) {
-    tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_millis(
-            ACTIVE_COUNT_SCROLL_REFRESH_MS.min(MASCOT_ANIMATION_REFRESH_MS),
-        ));
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-        loop {
-            interval.tick().await;
-            if !native_ui_enabled() {
-                continue;
-            }
-
-            let _ = app.run_on_main_thread(move || unsafe {
-                let Some(handles) = native_panel_handles() else {
-                    return;
-                };
-                let refs = resolve_native_panel_refs(handles);
-                sync_active_count_marquee(&refs);
-                sync_native_mascot(handles);
-                panel_from_ptr(handles.panel).displayIfNeeded();
-            });
-        }
-    });
-}
-
-pub(crate) fn spawn_native_status_queue_loop<R: tauri::Runtime + 'static>(app: AppHandle<R>) {
-    tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_millis(STATUS_QUEUE_REFRESH_MS));
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-        loop {
-            interval.tick().await;
-            if !native_ui_enabled() {
-                continue;
-            }
-
-            let snapshot = native_panel_state().and_then(|state| {
-                state.lock().ok().and_then(|guard| {
-                    if guard.status_queue.is_empty()
-                        && guard.pending_permission_card.is_none()
-                        && guard.pending_question_card.is_none()
-                    {
-                        None
-                    } else {
-                        guard.last_raw_snapshot.clone()
-                    }
-                })
-            });
-            let Some(snapshot) = snapshot else {
-                continue;
-            };
-
-            if let Err(error) = update_native_island_snapshot(&app, &snapshot) {
-                warn!(error = %error, "failed to refresh native macOS status queue animation");
-            }
-        }
-    });
-}
-
-pub(crate) fn hide_main_webview_window<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-) -> Result<(), String> {
-    if !native_ui_enabled() {
-        return Ok(());
-    }
-
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        window.hide().map_err(|error| error.to_string())?;
-    }
-
-    Ok(())
-}
-
-pub(crate) fn reposition_native_panel_to_selected_display<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-) -> Result<(), String> {
-    if !native_ui_enabled() {
-        return Ok(());
-    }
-
-    app.run_on_main_thread(move || unsafe {
-        let Some(handles) = native_panel_handles() else {
-            return;
-        };
-        let Some(mtm) = MainThreadMarker::new() else {
-            return;
-        };
-        let Some(screen) = resolve_preferred_native_screen(mtm) else {
-            return;
-        };
-        let panel = panel_from_ptr(handles.panel);
-        let frame = centered_top_frame(screen.frame(), panel.frame().size);
-        panel.setFrame_display(frame, true);
-
-        if let Some(payload) = native_panel_state().and_then(|state| {
-            state
-                .lock()
-                .ok()
-                .and_then(|guard| native_panel_render_payload(&guard))
-        }) {
-            apply_native_panel_render_payload(handles, payload);
-        } else {
-            panel.displayIfNeeded();
-        }
-    })
-    .map_err(|error| error.to_string())
-}
-
-pub(crate) fn refresh_native_panel_from_last_snapshot<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-) -> Result<(), String> {
-    if !native_ui_enabled() {
-        return Ok(());
-    }
-
-    app.run_on_main_thread(move || unsafe {
-        let Some(handles) = native_panel_handles() else {
-            return;
-        };
-        if let Some(payload) = native_panel_state().and_then(|state| {
-            state
-                .lock()
-                .ok()
-                .and_then(|guard| native_panel_render_payload(&guard))
-        }) {
-            apply_native_panel_render_payload(handles, payload);
-        }
-    })
-    .map_err(|error| error.to_string())
 }
 
 #[cfg(not(target_os = "macos"))]

@@ -1,4 +1,4 @@
-use super::*;
+use objc2_app_kit::{NSClipView, NSTextField, NSView};
 
 pub(super) struct NativePanelAssemblyViews<'a> {
     pub(super) content_view: &'a NSView,

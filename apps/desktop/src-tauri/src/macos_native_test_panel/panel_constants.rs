@@ -30,21 +30,31 @@ pub(super) const CARD_PENDING_ACTION_HEIGHT: f64 = 18.0;
 pub(super) const CARD_PENDING_ACTION_GAP: f64 = 6.0;
 pub(super) const PENDING_QUESTION_CARD_MIN_HEIGHT: f64 = 108.0;
 pub(super) const PENDING_QUESTION_CARD_MAX_HEIGHT: f64 = 132.0;
+#[cfg(test)]
 pub(super) const STATUS_COMPLETION_VISIBLE_SECONDS: u64 = 10;
+#[cfg(test)]
 pub(super) const STATUS_APPROVAL_VISIBLE_SECONDS: u64 = 30;
 pub(super) const STATUS_QUEUE_EXIT_EXTRA_MS: u64 = 80;
 pub(super) const STATUS_QUEUE_REFRESH_MS: u64 = 33;
 pub(super) const HOVER_POLL_MS: u64 = 120;
 pub(super) const HOVER_DELAY_MS: u64 = 500;
+#[cfg(test)]
 pub(super) const PENDING_CARD_MIN_VISIBLE_MS: u64 = 2200;
+#[cfg(test)]
 pub(super) const PENDING_CARD_RELEASE_GRACE_MS: u64 = 1600;
 pub(super) const PANEL_OPEN_TOTAL_MS: u64 = 660;
 pub(super) const PANEL_CLOSE_TOTAL_MS: u64 = 660;
+#[cfg(test)]
 pub(super) const PANEL_MORPH_DELAY_MS: u64 = 120;
+#[cfg(test)]
 pub(super) const PANEL_MORPH_MS: u64 = 270;
+#[cfg(test)]
 pub(super) const PANEL_SHOULDER_HIDE_MS: u64 = 120;
+#[cfg(test)]
 pub(super) const PANEL_HEIGHT_MS: u64 = 270;
+#[cfg(test)]
 pub(super) const PANEL_CLOSE_MORPH_DELAY_MS: u64 = 270;
+#[cfg(test)]
 pub(super) const PANEL_CLOSE_SHOULDER_DELAY_MS: u64 = 540;
 pub(super) const PANEL_DROP_DISTANCE: f64 = 4.5;
 pub(super) const PANEL_MORPH_PILL_RADIUS: f64 = 14.0;

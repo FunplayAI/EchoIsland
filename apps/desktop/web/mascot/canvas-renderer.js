@@ -1,4 +1,5 @@
-import { getCompletionBadgeCount, getMascotState } from "../state-helpers.js";
+import { getCompletionBadgeCount, getMascotState, getStatusSurfaceScene } from "../state-helpers.js";
+import { getCompletionBadgeCountWithFallback } from "../renderers/status-surface-scene.js";
 import { smoothstep } from "./math.js";
 import { drawMascotFace } from "./face-renderer.js";
 import { buildRoundedRectPath, getStateStyle, syncCanvasResolution } from "./primitives.js";
@@ -106,7 +107,7 @@ export function drawNiloMascot(now, { mascotCanvas, mascotShell, uiState }) {
 function syncCompletionBadge(mascotShell, uiState) {
   const badge = mascotShell.querySelector(".mascot-completion-badge");
   if (!badge) return;
-  const count = getCompletionBadgeCount(uiState);
+  const count = getCompletionBadgeCountWithFallback(getStatusSurfaceScene(uiState), getCompletionBadgeCount(uiState));
   if (count <= 0) {
     badge.hidden = true;
     return;

@@ -1,4 +1,9 @@
-use super::*;
+use std::time::Instant;
+
+use echoisland_runtime::RuntimeSnapshot;
+use objc2_foundation::NSRect;
+
+use super::mascot::NativeMascotRuntime;
 
 #[derive(Clone, Copy)]
 pub(super) struct NativePanelHandles {
@@ -77,6 +82,7 @@ pub(super) type NativeStatusQueueItem = crate::native_panel_core::StatusQueueIte
 pub(super) type NativePendingPermissionCard = crate::native_panel_core::PendingPermissionCardState;
 pub(super) type NativePendingQuestionCard = crate::native_panel_core::PendingQuestionCardState;
 pub(super) type NativeCompletionBadgeItem = crate::native_panel_core::CompletionBadgeItem;
+#[cfg(test)]
 pub(super) type NativeStatusQueueSyncResult = crate::native_panel_core::StatusQueueSyncResult;
 pub(super) type NativePanelHitAction = crate::native_panel_core::PanelHitAction;
 

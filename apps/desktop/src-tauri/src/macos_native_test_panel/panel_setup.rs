@@ -1,5 +1,14 @@
-use super::*;
+use objc2::MainThreadMarker;
 use objc2::rc::Retained;
+use objc2_app_kit::{NSColor, NSScreen};
+use objc2_foundation::{NSRect, NSSize};
+
+use super::panel_constants::COLLAPSED_PANEL_HEIGHT;
+use super::panel_geometry::{centered_top_frame, island_bar_frame};
+use super::panel_screen_geometry::{
+    compact_pill_height_for_screen, compact_pill_width_for_screen, expanded_panel_width_for_screen,
+    panel_canvas_width_for_screen,
+};
 
 pub(super) struct NativePanelSetup {
     pub(super) screen: Retained<NSScreen>,

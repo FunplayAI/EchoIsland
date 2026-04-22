@@ -1,4 +1,5 @@
-use super::*;
+use super::panel_refs::native_panel_state;
+use super::panel_types::{NativePanelState, NativePanelTransitionFrame};
 
 fn with_native_panel_state_mut<T>(f: impl FnOnce(&mut NativePanelState) -> T) -> Option<T> {
     native_panel_state()
@@ -41,6 +42,7 @@ pub(super) fn update_timeline_transition_state(
     set_transition_cards_state(frame.cards_progress.clamp(0.0, 1.0), cards_entering);
 }
 
+#[cfg(test)]
 pub(super) fn surface_switch_card_progress(elapsed_ms: u64, card_total_ms: u64) -> f64 {
     crate::native_panel_core::surface_switch_card_progress(elapsed_ms, card_total_ms)
 }

@@ -5,7 +5,7 @@ import {
   getLastSnapshot,
   getPanelHeight,
   getPlatformCapabilities,
-  hasStatusQueueItems,
+  getStatusSurfaceScene,
   getTimer,
   isExpanded,
   isTransitioning,
@@ -16,6 +16,8 @@ import {
   setTimer,
   setTransitioning,
 } from "./state-helpers.js";
+import { hasDefaultPendingStatusWithFallback } from "./renderers/status-surface-scene.js";
+import { hasStatusQueueDisplayItems } from "./renderers/surface-state.js";
 import { resolveSurfaceMode } from "./snapshot/queue-mode.js";
 import { nextFrame, wait } from "./utils.js";
 
@@ -33,7 +35,8 @@ export function createPanelController({
 
   function hasPendingInteraction() {
     const snapshot = getLastSnapshot(uiState);
-    return Number(snapshot?.pending_permission_count ?? 0) > 0 || Number(snapshot?.pending_question_count ?? 0) > 0;
+    const statusSurfaceScene = getStatusSurfaceScene(uiState);
+    return hasDefaultPendingStatusWithFallback(statusSurfaceScene, snapshot);
   }
 
   function clearHoverExpandTimer() {
@@ -116,7 +119,7 @@ export function createPanelController({
   function shouldKeepIslandExpanded() {
     return (
       hasPendingInteraction() ||
-      hasStatusQueueItems(uiState) ||
+      hasStatusQueueDisplayItems(uiState) ||
       getInteraction(uiState, "pointerInsideBar") ||
       getInteraction(uiState, "pointerInsidePanel") ||
       getInteraction(uiState, "panelHasInteractiveFocus") ||

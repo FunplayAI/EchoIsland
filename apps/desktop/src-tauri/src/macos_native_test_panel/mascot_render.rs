@@ -1,4 +1,14 @@
-use super::*;
+use objc2_app_kit::NSView;
+use objc2_core_graphics::CGAffineTransformMakeScale;
+use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+
+use super::mascot::{NativeMascotFrame, NativeMascotState};
+use super::mascot_motion::smoothstep_range;
+use super::panel_constants::MASCOT_VERTICAL_NUDGE_Y;
+use super::panel_helpers::{lerp, ns_color};
+use super::panel_refs::resolve_native_panel_refs;
+use super::panel_types::NativePanelHandles;
+use super::panel_view_updates::with_disabled_layer_actions;
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_native_mascot_frame(

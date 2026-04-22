@@ -1,9 +1,14 @@
 import {
   getCompletionBadgeCount,
-  getCompletionSessionIds,
-  getSurfaceMode,
   isExpanded,
+  getStatusSurfaceScene,
 } from "../state-helpers.js";
+import { isCompletionSurfaceActive } from "../renderers/surface-state.js";
+import {
+  getCompletionBadgeCountWithFallback,
+  getPrimaryDefaultStatusKind,
+  summarizeDefaultStatusSurfaceWithFallback,
+} from "../renderers/status-surface-scene.js";
 import { clamp, lerp, lerpMotion, pseudoRandom, smoothstep } from "./math.js";
 import {
   DEFAULT_MOTION,
@@ -19,19 +24,28 @@ import {
 } from "./runtime-state.js";
 
 export function inferMascotState(snapshot, uiState) {
-  if (snapshot.pending_permission_count > 0) {
+  const statusSurfaceScene = getStatusSurfaceScene(uiState);
+  const primaryDefaultStatusKind = getPrimaryDefaultStatusKind(statusSurfaceScene);
+  const defaultStatusSummary = summarizeDefaultStatusSurfaceWithFallback(statusSurfaceScene, snapshot);
+
+  if (primaryDefaultStatusKind === "approval") {
     return "approval";
   }
-  if (snapshot.pending_question_count > 0) {
+  if (primaryDefaultStatusKind === "question") {
+    return "question";
+  }
+  if (defaultStatusSummary.approvalCount > 0) {
+    return "approval";
+  }
+  if (defaultStatusSummary.questionCount > 0) {
     return "question";
   }
 
-  const isCompletionSurface =
-    isExpanded(uiState) && getSurfaceMode(uiState) === "status" && getCompletionSessionIds(uiState).length > 0;
+  const isCompletionSurface = isCompletionSurfaceActive(uiState);
   if (isCompletionSurface) {
     return "messageBubble";
   }
-  if (getCompletionBadgeCount(uiState) > 0) {
+  if (getCompletionBadgeCountWithFallback(statusSurfaceScene, getCompletionBadgeCount(uiState)) > 0) {
     return "complete";
   }
 

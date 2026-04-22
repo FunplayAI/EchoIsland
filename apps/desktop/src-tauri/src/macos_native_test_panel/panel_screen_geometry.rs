@@ -1,4 +1,11 @@
-use super::*;
+use objc2::MainThreadMarker;
+use objc2_app_kit::{NSPanel, NSScreen};
+use objc2_foundation::NSRect;
+
+use super::panel_constants::{
+    DEFAULT_COMPACT_PILL_HEIGHT, DEFAULT_COMPACT_PILL_WIDTH, DEFAULT_EXPANDED_PILL_WIDTH,
+    DEFAULT_PANEL_CANVAS_WIDTH, EXPANDED_PILL_WIDTH_DELTA,
+};
 
 pub(super) fn compact_pill_height_for_screen(screen: &NSScreen) -> f64 {
     let safe_top = screen.safeAreaInsets().top;
@@ -33,6 +40,7 @@ pub(super) fn screen_has_camera_housing(screen: &NSScreen) -> bool {
     crate::native_panel_core::resolve_panel_screen_has_camera_housing(panel_screen_top_area(screen))
 }
 
+#[cfg(test)]
 pub(super) fn shell_width_for_non_camera_housing_screen(
     _screen_width: f64,
     compact_height: f64,
@@ -43,10 +51,12 @@ pub(super) fn shell_width_for_non_camera_housing_screen(
     )
 }
 
+#[cfg(test)]
 pub(super) fn expanded_width_for_non_camera_housing_screen() -> f64 {
     DEFAULT_EXPANDED_PILL_WIDTH
 }
 
+#[cfg(test)]
 pub(super) fn expanded_width_for_camera_housing_screen(compact_width: f64) -> f64 {
     crate::native_panel_core::resolve_panel_expanded_width_for_camera_housing(
         compact_width,

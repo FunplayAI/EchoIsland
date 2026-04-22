@@ -5,13 +5,15 @@ import {
   getInteraction,
   getPanelHeight,
   getSurfaceMode,
-  getAvailableDisplays,
-  getPreferredDisplayIndex,
-  isCompletionSoundEnabled,
-  isMascotEnabled,
+  getStatusSurfaceScene,
   isExpanded,
   setPanelHeight,
 } from "../state-helpers.js";
+import {
+  hasDefaultPendingStatusWithFallback,
+  shouldShowCompletionGlow,
+} from "../renderers/status-surface-scene.js";
+import { renderSettingsPanel } from "../renderers/settings-surface-scene.js";
 
 export async function renderCurrentSurface(snapshot, deps, syncExpanded = true) {
   const { headline, island, islandPanel, sessionList, settingsPanel, uiState, syncExpandedPanelHeight } = deps;
@@ -27,25 +29,7 @@ export async function renderCurrentSurface(snapshot, deps, syncExpanded = true) 
   if (settingsPanel) {
     settingsPanel.hidden = surfaceMode !== "settings";
     settingsPanel.setAttribute("aria-hidden", surfaceMode === "settings" ? "false" : "true");
-    const toggle = settingsPanel.querySelector("#completionSoundToggle");
-    if (toggle) {
-      toggle.checked = !isCompletionSoundEnabled(uiState);
-    }
-    const mascotToggle = settingsPanel.querySelector("#mascotToggle");
-    if (mascotToggle) {
-      mascotToggle.checked = !isMascotEnabled(uiState);
-    }
-    const displaySelect = settingsPanel.querySelector("#displaySelect");
-    if (displaySelect) {
-      const displays = getAvailableDisplays(uiState);
-      const selectedIndex = getPreferredDisplayIndex(uiState);
-      displaySelect.innerHTML = displays
-        .map(
-          (display) =>
-            `<option value="${display.index}" ${display.index === selectedIndex ? "selected" : ""}>${display.name} (${display.width}×${display.height})</option>`
-        )
-        .join("");
-    }
+    renderSettingsPanel(settingsPanel, uiState);
   }
   if (island) {
     island.dataset.surface = surfaceMode;
@@ -57,11 +41,12 @@ export async function renderCurrentSurface(snapshot, deps, syncExpanded = true) 
   }
 }
 
-export function applyStatusTone(snapshot, { island, statusChip }) {
+export function applyStatusTone(snapshot, { island, statusChip, uiState }) {
   if (!island) return;
+  const statusSurfaceScene = getStatusSurfaceScene(uiState);
+  const hasPendingAttention = hasDefaultPendingStatusWithFallback(statusSurfaceScene, snapshot);
 
-  island.dataset.attention =
-    snapshot.pending_permission_count > 0 || snapshot.pending_question_count > 0 ? "hot" : "calm";
+  island.dataset.attention = hasPendingAttention ? "hot" : "calm";
   if (statusChip) {
     statusChip.textContent = snapshot.status;
     statusChip.dataset.status = snapshot.status.toLowerCase();
@@ -72,7 +57,10 @@ export function applyStatusTone(snapshot, { island, statusChip }) {
 export function applyCompletionAttention(snapshot, { island, mascotShell, uiState }) {
   applyMascot(snapshot, { mascotShell, uiState });
   if (island) {
-    island.dataset.completionAttention = getMascotState(uiState) === "complete" ? "true" : "false";
+    const statusSurfaceScene = getStatusSurfaceScene(uiState);
+    const hasCompletionGlow = shouldShowCompletionGlow(statusSurfaceScene);
+    island.dataset.completionAttention =
+      hasCompletionGlow || getMascotState(uiState) === "complete" ? "true" : "false";
   }
 }
 
@@ -97,8 +85,8 @@ export async function presentSnapshot(snapshot, deps) {
     false
   );
   if (!getInteraction(uiState, "cardExitInProgress")) {
-    renderPending(snapshot, { pendingActions, pendingSummary });
+    renderPending(snapshot, { pendingActions, pendingSummary, uiState });
   }
-  applyStatusTone(snapshot, { island, statusChip });
+  applyStatusTone(snapshot, { island, statusChip, uiState });
   applyCompletionAttention(snapshot, { island, mascotShell, uiState });
 }

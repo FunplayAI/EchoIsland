@@ -6,6 +6,7 @@ use echoisland_adapters::{
 use echoisland_core::ResponseEnvelope;
 use echoisland_ipc::DEFAULT_ADDR;
 use echoisland_runtime::RuntimeSnapshot;
+use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::{
@@ -17,21 +18,86 @@ use crate::{
     command_services::{SampleIngestService, SnapshotCommandService},
     display_settings::{DisplayOption, list_available_displays, resolve_preferred_display_index},
     http_receiver::{HttpReceiverStatus, default_http_receiver_status},
+    native_panel_core::PanelSettingsState,
+    native_panel_scene::{
+        PanelSceneBuildInput, SessionSurfaceScene, SettingsSurfaceScene, StatusSurfaceScene,
+        SurfaceScene,
+    },
     native_ui_refresh::maybe_refresh_native_ui_for_event,
     platform::{
         PlatformCapabilities, PlatformPathsPayload, current_platform_capabilities,
         current_platform_paths,
     },
     terminal_focus_service::TerminalFocusService,
+    web_panel_scene_service::WebPanelSceneState,
     window_surface_service::WindowSurfaceService,
 };
 const PANEL_STAGE_HEIGHT: f64 = 580.0;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotStatusSurfaceBundle {
+    pub snapshot: RuntimeSnapshot,
+    pub surface_scene: SurfaceScene,
+    pub status_surface_scene: StatusSurfaceScene,
+    pub session_surface_scene: SessionSurfaceScene,
+    pub settings_surface_scene: SettingsSurfaceScene,
+}
 
 #[tauri::command]
 pub async fn get_snapshot(runtime: State<'_, AppRuntime>) -> Result<RuntimeSnapshot, String> {
     SnapshotCommandService::new(runtime.inner())
         .get_snapshot()
         .await
+}
+
+#[tauri::command]
+pub async fn get_snapshot_status_surface_bundle(
+    app: AppHandle,
+    runtime: State<'_, AppRuntime>,
+    scene_state: State<'_, WebPanelSceneState>,
+) -> Result<SnapshotStatusSurfaceBundle, String> {
+    let snapshot = SnapshotCommandService::new(runtime.inner())
+        .get_snapshot()
+        .await?;
+    let input = web_panel_scene_build_input(&app);
+    let (surface_scene, status_surface_scene, session_surface_scene, settings_surface_scene) =
+        scene_state.build_surface_scenes(&snapshot, &input)?;
+    Ok(SnapshotStatusSurfaceBundle {
+        snapshot,
+        surface_scene,
+        status_surface_scene,
+        session_surface_scene,
+        settings_surface_scene,
+    })
+}
+
+fn web_panel_scene_build_input(app: &AppHandle) -> PanelSceneBuildInput {
+    let mut settings = current_app_settings();
+    let displays = list_available_displays(app).unwrap_or_default();
+    settings.preferred_display_index =
+        resolve_preferred_display_index(&displays, settings.preferred_display_key.as_deref());
+
+    PanelSceneBuildInput {
+        display_count: displays.len().max(1),
+        settings: PanelSettingsState {
+            selected_display_index: settings.preferred_display_index,
+            completion_sound_enabled: settings.completion_sound_enabled,
+            mascot_enabled: settings.mascot_enabled,
+        },
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
+
+#[tauri::command]
+pub async fn build_status_surface_scene(
+    runtime: State<'_, AppRuntime>,
+    scene_state: State<'_, WebPanelSceneState>,
+) -> Result<StatusSurfaceScene, String> {
+    let snapshot = SnapshotCommandService::new(runtime.inner())
+        .get_snapshot()
+        .await?;
+    scene_state.build_status_surface_scene(&snapshot)
 }
 
 #[tauri::command]

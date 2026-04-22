@@ -1,4 +1,26 @@
-use super::*;
+use std::sync::atomic::Ordering;
+use std::time::Instant;
+
+use tauri::AppHandle;
+use tokio::time::Duration;
+
+use super::card_animation::card_transition_total_ms;
+use super::panel_constants::{
+    COLLAPSED_PANEL_HEIGHT, PANEL_ANIMATION_FRAME_MS, PANEL_CARD_EXIT_MS,
+    PANEL_CARD_EXIT_SETTLE_MS, PANEL_CARD_EXIT_STAGGER_MS, PANEL_CARD_REVEAL_MS,
+    PANEL_CARD_REVEAL_STAGGER_MS, PANEL_CLOSE_TOTAL_MS, PANEL_OPEN_TOTAL_MS,
+    PANEL_SURFACE_SWITCH_CARD_REVEAL_MS, PANEL_SURFACE_SWITCH_CARD_REVEAL_STAGGER_MS,
+    PANEL_SURFACE_SWITCH_HEIGHT_MS,
+};
+use super::panel_geometry::panel_transition_canvas_height;
+use super::panel_globals::NATIVE_TEST_PANEL_ANIMATION_ID;
+use super::panel_types::{NativePanelHandles, NativePanelTransitionFrame};
+use super::panel_view_updates::with_disabled_layer_actions;
+use super::transition_logic::{
+    resolve_close_transition_frame, resolve_open_transition_frame,
+    resolve_surface_switch_transition_frame, update_timeline_transition_state,
+};
+use super::transition_ui::apply_transition_timeline_frame;
 
 pub(super) async fn animate_open_transition<R: tauri::Runtime + 'static>(
     app: AppHandle<R>,

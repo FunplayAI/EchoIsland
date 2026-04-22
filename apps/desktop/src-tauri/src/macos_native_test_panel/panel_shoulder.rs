@@ -1,4 +1,9 @@
-use super::*;
+use objc2_app_kit::{NSColor, NSView};
+use objc2_core_graphics::{CGAffineTransformMakeScale, CGMutablePath, CGPath};
+use objc2_foundation::NSRect;
+use objc2_quartz_core::CAShapeLayer;
+
+use super::panel_constants::{COMPACT_SHOULDER_SIZE, SHOULDER_CURVE_FACTOR};
 
 pub(super) fn apply_shoulder_layer(view: &NSView, background: &NSColor, align_right: bool) {
     let size = COMPACT_SHOULDER_SIZE;

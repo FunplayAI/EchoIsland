@@ -858,6 +858,56 @@ pub(crate) fn display_snippet(value: Option<&str>, max_chars: usize) -> Option<S
     }
 }
 
+pub(crate) fn session_prompt_preview(session: &SessionSnapshotView) -> Option<String> {
+    display_snippet(session.last_user_prompt.as_deref(), 68)
+}
+
+pub(crate) fn session_reply_preview(session: &SessionSnapshotView) -> Option<String> {
+    display_snippet(
+        session
+            .last_assistant_message
+            .as_deref()
+            .or(session.tool_description.as_deref()),
+        92,
+    )
+}
+
+pub(crate) fn session_tool_preview(
+    session: &SessionSnapshotView,
+) -> Option<(String, Option<String>)> {
+    let tool_name = session.current_tool.as_deref()?.trim();
+    if tool_name.is_empty() {
+        return None;
+    }
+
+    Some((
+        tool_name.to_string(),
+        display_snippet(session.tool_description.as_deref(), 48),
+    ))
+}
+
+pub(crate) fn session_has_visible_card_body(session: &SessionSnapshotView) -> bool {
+    session_prompt_preview(session).is_some()
+        || session_reply_preview(session).is_some()
+        || session_tool_preview(session).is_some()
+}
+
+pub(crate) fn is_long_idle_session(session: &SessionSnapshotView) -> bool {
+    normalize_status(&session.status) == "idle"
+        && (Utc::now() - session.last_activity).num_minutes() > 15
+}
+
+pub(crate) fn completion_preview_text(session: &SessionSnapshotView) -> String {
+    display_snippet(
+        session
+            .last_assistant_message
+            .as_deref()
+            .or(session.tool_description.as_deref()),
+        92,
+    )
+    .unwrap_or_else(|| "Task complete".to_string())
+}
+
 fn status_queue_exit_duration() -> Duration {
     Duration::from_millis(PANEL_CARD_EXIT_MS.max(220) + STATUS_QUEUE_EXIT_EXTRA_MS)
 }

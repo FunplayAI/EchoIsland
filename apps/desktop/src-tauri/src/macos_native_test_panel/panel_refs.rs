@@ -1,4 +1,9 @@
-use super::*;
+use std::sync::Mutex;
+
+use objc2_app_kit::{NSClipView, NSPanel, NSTextField, NSView};
+
+use super::panel_globals::{NATIVE_TEST_PANEL_HANDLES, NATIVE_TEST_PANEL_STATE};
+use super::panel_types::{NativePanelHandles, NativePanelState};
 
 #[derive(Clone, Copy)]
 pub(super) struct NativePanelRefs {

@@ -1,4 +1,10 @@
-use super::*;
+use objc2::{MainThreadMarker, MainThreadOnly};
+use objc2_app_kit::{NSColor, NSFont, NSTextAlignment, NSTextField, NSView};
+use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+
+use super::super::card_animation::register_card_animation_layout;
+use super::super::panel_constants::{CARD_CHAT_PREFIX_WIDTH, CARD_INSET_X, CARD_RADIUS};
+use super::super::panel_helpers::{card_chat_body_width, estimated_chat_body_height, ns_color};
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(crate) unsafe fn create_empty_card(frame: NSRect) -> objc2::rc::Retained<NSView> {

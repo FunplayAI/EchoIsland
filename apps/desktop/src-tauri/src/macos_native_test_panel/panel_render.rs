@@ -1,6 +1,16 @@
+use super::compact_bar_layout::relayout_compact_content;
+use super::panel_geometry::{
+    apply_panel_frame, native_panel_geometry_metrics, resolve_native_panel_layout,
+};
+use super::panel_helpers::native_panel_content_visibility;
+use super::panel_interaction::native_status_surface_active;
+use super::panel_refs::{NativePanelRefs, resolve_native_panel_refs};
+use super::panel_scene_adapter::resolve_current_native_panel_runtime_render_state;
+use super::panel_screen_geometry::resolve_screen_frame_for_panel;
 use super::panel_shoulder::apply_shoulder_path_scale_x;
 use super::panel_style::apply_panel_layer_styles;
-use super::*;
+use super::panel_types::{NativePanelHandles, NativePanelLayout, NativePanelTransitionFrame};
+use crate::macos_shared_expanded_window;
 use crate::native_panel_core::{
     PanelRenderProgress, PanelRenderState, PanelRenderStateInput, resolve_panel_render_progress,
     resolve_panel_render_state,

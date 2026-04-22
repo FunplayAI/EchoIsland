@@ -1,4 +1,24 @@
-use super::*;
+use echoisland_runtime::SessionSnapshotView;
+use objc2::{MainThreadMarker, MainThreadOnly};
+use objc2_app_kit::{NSFont, NSView};
+use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+use super::super::card_animation::register_card_animation_layout;
+use super::super::card_metrics::{
+    is_long_idle_session, session_card_collapsed_height, session_prompt_preview,
+    session_reply_preview, session_tool_preview,
+};
+use super::super::display_helpers::{
+    compact_title, format_source, format_status, normalize_status, session_meta_line, session_title,
+};
+use super::super::panel_constants::{
+    CARD_CHAT_GAP, CARD_CONTENT_BOTTOM_INSET, CARD_INSET_X, CARD_TOOL_GAP,
+};
+use super::super::panel_helpers::status_pill_colors;
+use super::common::{
+    add_chat_line_with_max_lines_from_bottom, apply_card_layer, badge_width, make_badge_view,
+    make_label, make_live_tool_view,
+};
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(crate) unsafe fn create_session_card(

@@ -1,4 +1,7 @@
-use super::*;
+use objc2_app_kit::{NSClipView, NSPanel, NSTextField, NSView};
+
+use super::panel_globals::NATIVE_TEST_PANEL_HANDLES;
+use super::panel_types::NativePanelHandles;
 
 pub(super) struct NativePanelHandleViews<'a> {
     pub(super) panel: &'a NSPanel,

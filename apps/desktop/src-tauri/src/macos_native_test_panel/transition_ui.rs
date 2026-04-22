@@ -1,4 +1,22 @@
-use super::*;
+use echoisland_runtime::RuntimeSnapshot;
+use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+use super::card_animation::apply_card_stack_transition;
+use super::card_stack::render_expanded_cards;
+use super::card_views::clear_subviews;
+use super::panel_constants::{
+    COLLAPSED_PANEL_HEIGHT, EXPANDED_CARDS_SIDE_INSET, PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
+};
+use super::panel_geometry::{expanded_cards_width, expanded_total_height};
+use super::panel_interaction::{native_settings_surface_active, native_status_surface_active};
+use super::panel_refs::{NativePanelRefs, native_panel_state, resolve_native_panel_refs};
+use super::panel_render::apply_panel_geometry;
+use super::panel_screen_geometry::{
+    compact_pill_height_for_screen_rect, expanded_panel_width_for_screen_rect,
+    resolve_screen_frame_for_panel,
+};
+use super::panel_types::{NativePanelHandles, NativePanelTransitionFrame};
+use crate::macos_shared_expanded_window;
 
 #[derive(Clone, Copy)]
 pub(super) struct NativeTransitionContext {

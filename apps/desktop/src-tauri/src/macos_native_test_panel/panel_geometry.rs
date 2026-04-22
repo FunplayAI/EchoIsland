@@ -1,4 +1,18 @@
-use super::*;
+use echoisland_runtime::RuntimeSnapshot;
+use objc2_app_kit::{NSPanel, NSScreen};
+use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+use super::card_metrics::estimated_expanded_body_height;
+use super::panel_constants::{
+    COLLAPSED_PANEL_HEIGHT, COMPACT_SHOULDER_SIZE, EXPANDED_CARDS_SIDE_INSET,
+    EXPANDED_CONTENT_BOTTOM_INSET, EXPANDED_CONTENT_TOP_GAP, EXPANDED_MAX_BODY_HEIGHT,
+    PANEL_DROP_DISTANCE,
+};
+use super::panel_screen_geometry::{
+    compact_pill_height_for_screen_rect, compact_pill_width_for_screen_rect,
+    expanded_panel_width_for_screen_rect, panel_canvas_width_for_screen_rect,
+};
+use super::panel_types::{NativePanelGeometryMetrics, NativePanelLayout};
 
 pub(super) fn native_panel_geometry_metrics(
     screen: Option<&NSScreen>,
@@ -63,6 +77,7 @@ pub(super) fn resolve_native_panel_layout(
     }
 }
 
+#[cfg(test)]
 pub(super) fn shared_expanded_content_state(
     shared_expanded_enabled: bool,
     shell_visible: bool,

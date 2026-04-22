@@ -4,7 +4,46 @@ use chrono::Utc;
 use echoisland_runtime::{PendingPermissionView, RuntimeSnapshot, SessionSnapshotView};
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
-use super::*;
+use super::card_animation::card_content_visibility_phase;
+use super::card_stack::settings_surface_hit_targets;
+use super::card_views::settings_surface_row_frame;
+use super::mascot::NativeMascotRuntime;
+use super::panel_constants::{
+    DEFAULT_COMPACT_PILL_HEIGHT, DEFAULT_COMPACT_PILL_WIDTH, DEFAULT_EXPANDED_PILL_WIDTH,
+    DEFAULT_PANEL_CANVAS_WIDTH, EXPANDED_PILL_WIDTH_DELTA, HOVER_DELAY_MS,
+    PANEL_CLOSE_MORPH_DELAY_MS, PANEL_CLOSE_SHOULDER_DELAY_MS, PANEL_HEIGHT_MS,
+    PANEL_MORPH_DELAY_MS, PANEL_MORPH_MS, PANEL_SHOULDER_HIDE_MS,
+    PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS, PENDING_CARD_MIN_VISIBLE_MS,
+    PENDING_CARD_RELEASE_GRACE_MS, STATUS_APPROVAL_VISIBLE_SECONDS,
+    STATUS_COMPLETION_VISIBLE_SECONDS,
+};
+use super::panel_geometry::{
+    centered_top_frame, island_bar_frame, panel_transition_canvas_height,
+    resolve_native_panel_layout, shared_expanded_content_state,
+};
+use super::panel_hit_testing::native_hover_pill_rect;
+use super::panel_interaction::{sync_native_hover_expansion_state, toggle_native_settings_surface};
+use super::panel_screen_geometry::{
+    expanded_width_for_camera_housing_screen, expanded_width_for_non_camera_housing_screen,
+    shell_width_for_non_camera_housing_screen,
+};
+use super::panel_snapshot::native_panel_render_payload;
+use super::panel_snapshot::sync_native_status_surface_policy;
+use super::panel_types::{
+    NativeCompletionBadgeItem, NativeExpandedSurface, NativeHoverTransition,
+    NativePanelGeometryMetrics, NativePanelHitAction, NativePanelState, NativePanelTransitionFrame,
+    NativePendingPermissionCard, NativeStatusQueueItem, NativeStatusQueuePayload,
+    NativeStatusQueueSyncResult,
+};
+use super::queue_logic::{
+    compare_native_status_queue_items, detect_completed_sessions,
+    resolve_native_pending_permission_card, sync_native_completion_badge,
+    sync_native_pending_card_visibility, sync_native_status_queue,
+};
+use super::transition_logic::{
+    resolve_close_transition_frame, resolve_open_transition_frame,
+    resolve_surface_switch_transition_frame, surface_switch_card_progress,
+};
 
 fn snapshot(active: usize, total: usize) -> RuntimeSnapshot {
     RuntimeSnapshot {

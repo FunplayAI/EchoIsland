@@ -1,4 +1,8 @@
-use super::*;
+use echoisland_runtime::RuntimeSnapshot;
+use objc2::MainThreadMarker;
+use objc2_app_kit::NSScreen;
+
+use super::panel_refs::native_panel_state;
 
 pub(super) fn build_native_panel_scene(
     snapshot: &RuntimeSnapshot,

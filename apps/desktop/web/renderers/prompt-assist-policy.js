@@ -1,20 +1,25 @@
 import { normalizeStatus, stripMarkdownDisplay } from "../utils.js";
-import { getCompletionDisplaySessions, isCompletionSurfaceActive } from "./surface-state.js";
+import { getStatusSurfaceScene } from "../state-helpers.js";
+import { getLivePendingSessionIdsFromSnapshot } from "./pending-snapshot-fallback.js";
+import {
+  getDefaultPendingSceneSessionIds,
+  getPrimaryPendingSessionIdWithFallback,
+  getPromptAssistSceneSessionIds,
+} from "./status-surface-scene.js";
+import {
+  findSnapshotSessionById,
+  getCompletionDisplaySessions,
+  isCompletionSurfaceActive,
+} from "./surface-state.js";
 
 const PROMPT_ASSIST_RUNNING_MS = 12_000;
 const PROMPT_ASSIST_PROCESSING_MS = 18_000;
 const PROMPT_ASSIST_RECENT_MS = 20 * 60_000;
 
-export function getLivePendingSessionIds(snapshot) {
-  const permissionIds = Array.isArray(snapshot?.pending_permissions)
-    ? snapshot.pending_permissions.map((item) => item?.session_id)
-    : [snapshot?.pending_permission?.session_id];
-  const questionIds = Array.isArray(snapshot?.pending_questions)
-    ? snapshot.pending_questions.map((item) => item?.session_id)
-    : [snapshot?.pending_question?.session_id];
-  return new Set(
-    [...permissionIds, ...questionIds].filter((sessionId) => typeof sessionId === "string" && sessionId.trim().length > 0)
-  );
+export function getLivePendingSessionIds(snapshot, statusSurfaceScene = null) {
+  const sceneIds = getDefaultPendingSceneSessionIds(statusSurfaceScene);
+  const snapshotIds = getLivePendingSessionIdsFromSnapshot(snapshot);
+  return new Set([...sceneIds, ...snapshotIds]);
 }
 
 export function isPromptAssistSession(session, uiState, nowMs = Date.now()) {
@@ -33,8 +38,17 @@ export function isPromptAssistSession(session, uiState, nowMs = Date.now()) {
 }
 
 export function getPromptAssistSessions(snapshot, uiState, limit = 1) {
+  const statusSurfaceScene = getStatusSurfaceScene(uiState);
+  const scenePromptAssistSessionIds = getPromptAssistSceneSessionIds(statusSurfaceScene);
+  if (scenePromptAssistSessionIds.length) {
+    return scenePromptAssistSessionIds
+      .map((sessionId) => findSnapshotSessionById(snapshot, sessionId))
+      .filter(Boolean)
+      .slice(0, limit);
+  }
+
   const nowMs = Date.now();
-  const livePendingSessionIds = getLivePendingSessionIds(snapshot);
+  const livePendingSessionIds = getLivePendingSessionIds(snapshot, statusSurfaceScene);
   return (snapshot?.sessions ?? [])
     .filter((session) => !livePendingSessionIds.has(session?.session_id))
     .filter((session) => isPromptAssistSession(session, uiState, nowMs))
@@ -53,9 +67,10 @@ export function getPrimaryPromptAssistSessionId(snapshot, uiState) {
 export function getPrimaryActionSession(snapshot, uiState) {
   if (!snapshot) return null;
 
-  const pendingSessionId = snapshot.pending_permission?.session_id ?? snapshot.pending_question?.session_id ?? null;
+  const statusSurfaceScene = getStatusSurfaceScene(uiState);
+  const pendingSessionId = getPrimaryPendingSessionIdWithFallback(statusSurfaceScene, snapshot);
   if (pendingSessionId) {
-    return snapshot.sessions?.find((session) => session.session_id === pendingSessionId) ?? null;
+    return findSnapshotSessionById(snapshot, pendingSessionId);
   }
 
   const promptAssistSession = getPromptAssistSessions(snapshot, uiState, 1)[0] ?? null;

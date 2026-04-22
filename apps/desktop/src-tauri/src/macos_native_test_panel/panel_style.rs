@@ -1,4 +1,8 @@
-use super::*;
+use objc2_core_graphics::CGAffineTransformMakeScale;
+use objc2_quartz_core::CACornerMask;
+
+use super::panel_constants::{COMPACT_PILL_RADIUS, EXPANDED_PANEL_RADIUS, PANEL_MORPH_PILL_RADIUS};
+use super::panel_refs::NativePanelRefs;
 use crate::native_panel_core::{
     PanelRenderLayerStyleState, PanelStyleResolverInput, resolve_panel_style,
 };

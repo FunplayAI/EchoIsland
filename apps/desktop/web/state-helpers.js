@@ -46,6 +46,38 @@ export function setLastSnapshot(uiState, snapshot) {
   uiState.snapshot.lastSnapshot = snapshot;
 }
 
+export function getStatusSurfaceScene(uiState) {
+  return uiState.snapshot.statusSurfaceScene;
+}
+
+export function setStatusSurfaceScene(uiState, scene) {
+  uiState.snapshot.statusSurfaceScene = scene;
+}
+
+export function getSessionSurfaceScene(uiState) {
+  return uiState.snapshot.sessionSurfaceScene;
+}
+
+export function setSessionSurfaceScene(uiState, scene) {
+  uiState.snapshot.sessionSurfaceScene = scene;
+}
+
+export function getSettingsSurfaceScene(uiState) {
+  return uiState.snapshot.settingsSurfaceScene;
+}
+
+export function setSettingsSurfaceScene(uiState, scene) {
+  uiState.snapshot.settingsSurfaceScene = scene;
+}
+
+export function getSurfaceScene(uiState) {
+  return uiState.snapshot.surfaceScene;
+}
+
+export function setSurfaceScene(uiState, scene) {
+  uiState.snapshot.surfaceScene = scene;
+}
+
 export function getLastRawSnapshot(uiState) {
   return uiState.snapshot.lastRawSnapshot;
 }
@@ -102,14 +134,6 @@ export function setStatusAutoExpanded(uiState, value) {
   uiState.surface.statusAutoExpanded = Boolean(value);
 }
 
-export function getCompletionSessionIds(uiState) {
-  return uiState.surface.completionSessionIds;
-}
-
-export function setCompletionSessionIds(uiState, sessionIds) {
-  uiState.surface.completionSessionIds = Array.from(new Set((sessionIds ?? []).filter(Boolean)));
-}
-
 export function getCompletionBadgeItems(uiState) {
   return uiState.surface.completionBadgeItems;
 }
@@ -137,8 +161,12 @@ export function setStatusQueueItems(uiState, items) {
   uiState.surface.statusQueueItems = items;
 }
 
-export function hasStatusQueueItems(uiState) {
-  return uiState.surface.statusQueueItems.length > 0;
+export function getStatusQueueKeys(uiState) {
+  return uiState.surface.statusQueueKeys;
+}
+
+export function setStatusQueueKeys(uiState, keys) {
+  uiState.surface.statusQueueKeys = keys ?? [];
 }
 
 export function getPendingPermissionCard(uiState) {

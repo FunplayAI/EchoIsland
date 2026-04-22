@@ -2,13 +2,19 @@ use crate::native_panel_core::{
     ExpandedSurface, PanelHitAction, PanelMascotBaseState, PanelSettingsState, PanelState,
     StatusQueuePayload, compact_active_session_count, displayed_default_pending_permissions,
     displayed_default_pending_questions, displayed_prompt_assist_sessions, displayed_sessions,
-    format_status, normalize_status, resolve_mascot_base_state, session_title, settings_row_action,
+    format_status, normalize_status, resolve_mascot_base_state, session_title,
 };
 use echoisland_runtime::RuntimeSnapshot;
+use std::time::Instant;
 
 use super::{
     CompactBarScene, PanelScene, SceneBadge, SceneCard, SceneGlow, SceneGlowStyle, SceneHitTarget,
-    SceneMascotPose, SceneNode, SceneText, SettingsRowScene,
+    SceneMascotPose, SceneNode, SceneText, SessionSurfaceScene, SettingsRowScene,
+    SettingsSurfaceScene, StatusSurfaceDefaultState, StatusSurfaceDisplayMode,
+    StatusSurfaceQueueState, StatusSurfaceScene, SurfaceScene,
+    build_pending_permission_status_card_scene, build_pending_question_status_card_scene,
+    build_prompt_assist_status_card_scene, build_session_card_scene, build_settings_surface_scene,
+    build_status_queue_status_card_scene, settings_surface_row_action, surface_scene_mode,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -34,6 +40,11 @@ pub(crate) fn build_panel_scene(
     input: &PanelSceneBuildInput,
 ) -> PanelScene {
     let compact_bar = build_compact_bar_scene(state, snapshot);
+    let surface_scene = build_surface_scene(state, &compact_bar);
+    let status_surface = build_status_surface_scene(state, snapshot);
+    let session_surface = build_session_surface_scene(state, snapshot);
+    let settings_surface =
+        build_settings_surface_scene(input.display_count, input.settings, &input.app_version);
     let glow = build_completion_glow(state);
     let mascot_pose = build_mascot_pose(state, snapshot, input.settings.mascot_enabled);
     let mut cards = Vec::new();
@@ -41,7 +52,7 @@ pub(crate) fn build_panel_scene(
 
     match state.surface_mode {
         ExpandedSurface::Settings if state.expanded => {
-            let settings = build_settings_card(input);
+            let settings = build_settings_card(&settings_surface);
             for row in settings_rows(&settings) {
                 hit_targets.push(SceneHitTarget {
                     action: row.action,
@@ -155,11 +166,136 @@ pub(crate) fn build_panel_scene(
     PanelScene {
         surface: state.surface_mode,
         compact_bar,
+        surface_scene,
+        status_surface,
+        session_surface,
+        settings_surface,
         cards,
         glow,
         mascot_pose,
         hit_targets,
         nodes,
+    }
+}
+
+fn build_surface_scene(state: &PanelState, compact_bar: &CompactBarScene) -> SurfaceScene {
+    SurfaceScene {
+        mode: surface_scene_mode(state.surface_mode),
+        headline_text: compact_bar.headline.text.clone(),
+        headline_emphasized: compact_bar.headline.emphasized,
+        edge_actions_visible: compact_bar.actions_visible,
+    }
+}
+
+fn build_session_surface_scene(
+    state: &PanelState,
+    snapshot: &RuntimeSnapshot,
+) -> SessionSurfaceScene {
+    let prompt_assist_sessions = displayed_prompt_assist_sessions(snapshot);
+    let completion_session_ids = state
+        .status_queue
+        .iter()
+        .filter_map(|item| match &item.payload {
+            StatusQueuePayload::Completion(_) => Some(item.session_id.as_str()),
+            _ => None,
+        })
+        .collect::<std::collections::HashSet<_>>();
+
+    SessionSurfaceScene {
+        cards: displayed_sessions(snapshot, &prompt_assist_sessions)
+            .into_iter()
+            .map(|session| {
+                let completion = completion_session_ids.contains(session.session_id.as_str());
+                build_session_card_scene(&session, completion)
+            })
+            .collect(),
+    }
+}
+
+fn build_status_surface_scene(
+    state: &PanelState,
+    snapshot: &RuntimeSnapshot,
+) -> StatusSurfaceScene {
+    if !state.status_queue.is_empty() {
+        let now = Instant::now();
+        return StatusSurfaceScene {
+            cards: state
+                .status_queue
+                .iter()
+                .map(build_status_queue_status_card_scene)
+                .collect(),
+            display_mode: StatusSurfaceDisplayMode::Queue,
+            default_state: StatusSurfaceDefaultState::default(),
+            queue_state: StatusSurfaceQueueState {
+                total_count: state.status_queue.len(),
+                live_count: state
+                    .status_queue
+                    .iter()
+                    .filter(|item| item.is_live)
+                    .count(),
+                removing_count: state
+                    .status_queue
+                    .iter()
+                    .filter(|item| item.is_removing)
+                    .count(),
+                next_transition_in_ms: state
+                    .status_queue
+                    .iter()
+                    .filter_map(|item| {
+                        if item.is_removing {
+                            item.remove_after
+                        } else {
+                            Some(item.expires_at)
+                        }
+                    })
+                    .filter(|transition_at| *transition_at > now)
+                    .map(|transition_at| {
+                        transition_at
+                            .saturating_duration_since(now)
+                            .as_millis()
+                            .min(u64::MAX as u128) as u64
+                    })
+                    .min(),
+            },
+            completion_badge_count: state.completion_badge_items.len(),
+            show_completion_glow: !state.completion_badge_items.is_empty() && !state.expanded,
+        };
+    }
+
+    let mut cards = Vec::new();
+    cards.extend(
+        displayed_default_pending_permissions(snapshot)
+            .into_iter()
+            .take(1)
+            .map(|pending| build_pending_permission_status_card_scene(&pending)),
+    );
+    cards.extend(
+        displayed_default_pending_questions(snapshot)
+            .into_iter()
+            .take(1)
+            .map(|pending| build_pending_question_status_card_scene(&pending)),
+    );
+    cards.extend(
+        displayed_prompt_assist_sessions(snapshot)
+            .into_iter()
+            .map(|session| build_prompt_assist_status_card_scene(&session)),
+    );
+
+    StatusSurfaceScene {
+        display_mode: if cards.is_empty() {
+            StatusSurfaceDisplayMode::Hidden
+        } else {
+            StatusSurfaceDisplayMode::DefaultStack
+        },
+        cards,
+        default_state: StatusSurfaceDefaultState {
+            approval_count: snapshot.pending_permission_count,
+            question_count: snapshot.pending_question_count,
+            prompt_assist_count: displayed_prompt_assist_sessions(snapshot).len(),
+        },
+        queue_state: StatusSurfaceQueueState::default(),
+        completion_badge_count: state.completion_badge_items.len(),
+        show_completion_glow: !state.completion_badge_items.is_empty() && !state.expanded,
     }
 }
 
@@ -247,59 +383,32 @@ fn build_mascot_pose(
     }
 }
 
-fn build_settings_card(input: &PanelSceneBuildInput) -> SceneCard {
+fn build_settings_card(settings_surface: &SettingsSurfaceScene) -> SceneCard {
     SceneCard::Settings {
-        title: "Settings".to_string(),
+        title: settings_surface.title.clone(),
         version: SceneBadge {
-            text: format!("v{}", input.app_version),
+            text: settings_surface
+                .version_text
+                .strip_prefix("EchoIsland ")
+                .unwrap_or(&settings_surface.version_text)
+                .to_string(),
             emphasized: false,
         },
-        rows: vec![
-            SettingsRowScene {
-                title: "Island display".to_string(),
-                value: SceneBadge {
-                    text: format!(
-                        "Screen {}/{}",
-                        input.settings.selected_display_index + 1,
-                        input.display_count.max(1)
-                    ),
-                    emphasized: false,
-                },
-                action: settings_row_action(0).unwrap(),
-            },
-            SettingsRowScene {
-                title: "Completion sound".to_string(),
-                value: SceneBadge {
-                    text: if input.settings.completion_sound_enabled {
-                        "On".to_string()
-                    } else {
-                        "Off".to_string()
+        rows: settings_surface
+            .rows
+            .iter()
+            .enumerate()
+            .filter_map(|(index, row)| {
+                Some(SettingsRowScene {
+                    title: row.label.clone(),
+                    value: SceneBadge {
+                        text: row.value_text.clone(),
+                        emphasized: row.checked.unwrap_or(false),
                     },
-                    emphasized: input.settings.completion_sound_enabled,
-                },
-                action: settings_row_action(1).unwrap(),
-            },
-            SettingsRowScene {
-                title: "Mascot".to_string(),
-                value: SceneBadge {
-                    text: if input.settings.mascot_enabled {
-                        "On".to_string()
-                    } else {
-                        "Off".to_string()
-                    },
-                    emphasized: input.settings.mascot_enabled,
-                },
-                action: settings_row_action(2).unwrap(),
-            },
-            SettingsRowScene {
-                title: "Update & upgrade".to_string(),
-                value: SceneBadge {
-                    text: "Open".to_string(),
-                    emphasized: false,
-                },
-                action: settings_row_action(3).unwrap(),
-            },
-        ],
+                    action: settings_surface_row_action(index)?,
+                })
+            })
+            .collect(),
     }
 }
 

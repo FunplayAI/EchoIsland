@@ -1,4 +1,24 @@
-use super::*;
+use std::sync::atomic::Ordering;
+
+use echoisland_runtime::RuntimeSnapshot;
+use tauri::AppHandle;
+
+use super::panel_constants::{COLLAPSED_PANEL_HEIGHT, PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS};
+use super::panel_globals::NATIVE_TEST_PANEL_ANIMATION_ID;
+use super::panel_types::NativePanelHandles;
+use super::panel_view_updates::apply_snapshot_values_to_panel;
+use super::transition_logic::{
+    finish_transition_state, set_transition_cards_state,
+    take_skip_close_card_exit_and_begin_transition,
+};
+use super::transition_runner::{
+    animate_close_transition, animate_open_transition, animate_surface_switch_transition,
+};
+use super::transition_ui::{
+    finalize_close_transition, finalize_open_transition, finalize_surface_switch_transition,
+    prepare_close_transition, prepare_open_transition, prepare_surface_switch_transition,
+    resolve_native_transition_context, resolved_expanded_target_height,
+};
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn begin_native_panel_transition<R: tauri::Runtime + 'static>(

@@ -1,4 +1,18 @@
-use super::*;
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use objc2_app_kit::NSView;
+use objc2_core_graphics::{CGAffineTransformMakeScale, CGAffineTransformTranslate};
+use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+use super::panel_constants::{
+    PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS, PANEL_CARD_CONTENT_REVEAL_DELAY_PROGRESS,
+    PANEL_CARD_EXIT_MS, PANEL_CARD_EXIT_STAGGER_MS, PANEL_CARD_REVEAL_MS,
+    PANEL_CARD_REVEAL_STAGGER_MS, PANEL_CARD_REVEAL_Y,
+};
+use super::panel_globals::CARD_ANIMATION_LAYOUTS;
+use super::panel_helpers::{ease_in_cubic, ease_out_cubic, lerp};
+use super::panel_types::CardAnimationLayout;
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_card_stack_transition(

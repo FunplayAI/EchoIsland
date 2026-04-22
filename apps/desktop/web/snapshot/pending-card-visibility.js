@@ -4,17 +4,23 @@ import {
   setPendingPermissionCard,
   setPendingQuestionCard,
 } from "../state-helpers.js";
+import {
+  getPendingPermissionPayloads,
+  getPendingQuestionPayloads,
+} from "../renderers/pending-snapshot-fallback.js";
+import { getPendingSceneCards } from "../renderers/status-surface-scene.js";
 
-function getRawPendingPermissions(snapshot) {
-  const items = Array.isArray(snapshot?.pending_permissions) ? snapshot.pending_permissions : [];
-  if (items.length) return items;
-  return snapshot?.pending_permission ? [snapshot.pending_permission] : [];
-}
+function selectScenePendingPayload(rawItems, sceneCard) {
+  if (!sceneCard) {
+    return rawItems[0] ?? null;
+  }
 
-function getRawPendingQuestions(snapshot) {
-  const items = Array.isArray(snapshot?.pending_questions) ? snapshot.pending_questions : [];
-  if (items.length) return items;
-  return snapshot?.pending_question ? [snapshot.pending_question] : [];
+  const requestId = sceneCard.requestId ?? null;
+  if (!requestId) {
+    return rawItems[0] ?? null;
+  }
+
+  return rawItems.find((item) => item?.request_id === requestId) ?? rawItems[0] ?? null;
 }
 
 function buildPendingCard(type, payload, nowMs, previousCard, minVisibleMs) {
@@ -60,14 +66,17 @@ function resolveHeldCard(currentPayload, previousCard, type, timings, nowMs) {
   };
 }
 
-export function syncPendingCardVisibility(snapshot, uiState, timings, nowMs = Date.now()) {
+export function syncPendingCardVisibility(snapshot, statusSurfaceScene, uiState, timings, nowMs = Date.now()) {
   const previousPermission = getPendingPermissionCard(uiState);
   const previousQuestion = getPendingQuestionCard(uiState);
-  const rawPendingPermissions = getRawPendingPermissions(snapshot);
-  const rawPendingQuestions = getRawPendingQuestions(snapshot);
+  const rawPendingPermissions = getPendingPermissionPayloads(snapshot);
+  const rawPendingQuestions = getPendingQuestionPayloads(snapshot);
+  const sceneCards = getPendingSceneCards(statusSurfaceScene);
+  const currentPermission = selectScenePendingPayload(rawPendingPermissions, sceneCards.permissions[0]);
+  const currentQuestion = selectScenePendingPayload(rawPendingQuestions, sceneCards.questions[0]);
 
-  const nextPermission = resolveHeldCard(rawPendingPermissions[0], previousPermission, "permission", timings, nowMs);
-  const nextQuestion = resolveHeldCard(rawPendingQuestions[0], previousQuestion, "question", timings, nowMs);
+  const nextPermission = resolveHeldCard(currentPermission, previousPermission, "permission", timings, nowMs);
+  const nextQuestion = resolveHeldCard(currentQuestion, previousQuestion, "question", timings, nowMs);
 
   setPendingPermissionCard(uiState, nextPermission);
   setPendingQuestionCard(uiState, nextQuestion);
@@ -84,8 +93,8 @@ export function syncPendingCardVisibility(snapshot, uiState, timings, nowMs = Da
 export function applyPendingCardsToSnapshot(snapshot, uiState) {
   const pendingPermissionCard = getPendingPermissionCard(uiState);
   const pendingQuestionCard = getPendingQuestionCard(uiState);
-  const rawPendingPermissions = getRawPendingPermissions(snapshot);
-  const rawPendingQuestions = getRawPendingQuestions(snapshot);
+  const rawPendingPermissions = getPendingPermissionPayloads(snapshot);
+  const rawPendingQuestions = getPendingQuestionPayloads(snapshot);
 
   let pendingPermissions = rawPendingPermissions;
   if (pendingPermissionCard) {
