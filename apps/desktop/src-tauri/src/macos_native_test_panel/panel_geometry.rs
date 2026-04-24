@@ -12,7 +12,9 @@ use super::panel_screen_geometry::{
     compact_pill_height_for_screen_rect, compact_pill_width_for_screen_rect,
     expanded_panel_width_for_screen_rect, panel_canvas_width_for_screen_rect,
 };
-use super::panel_types::{NativePanelGeometryMetrics, NativePanelLayout};
+use super::panel_types::{
+    NativePanelAnimationDescriptor, NativePanelGeometryMetrics, NativePanelLayout,
+};
 
 pub(super) fn native_panel_geometry_metrics(
     screen: Option<&NSScreen>,
@@ -105,6 +107,24 @@ pub(super) fn rects_nearly_equal(a: NSRect, b: NSRect) -> bool {
     crate::native_panel_core::rects_nearly_equal(panel_rect(a), panel_rect(b), 0.5)
 }
 
+pub(super) fn native_panel_core_layout(
+    layout: &NativePanelLayout,
+) -> crate::native_panel_core::PanelLayout {
+    crate::native_panel_core::PanelLayout {
+        panel_frame: panel_rect(layout.panel_frame),
+        content_frame: panel_rect(layout.content_frame),
+        pill_frame: panel_rect(layout.pill_frame),
+        left_shoulder_frame: panel_rect(layout.left_shoulder_frame),
+        right_shoulder_frame: panel_rect(layout.right_shoulder_frame),
+        expanded_frame: panel_rect(layout.expanded_frame),
+        cards_frame: panel_rect(layout.cards_frame),
+        separator_frame: panel_rect(layout.separator_frame),
+        shared_content_frame: panel_rect(layout.shared_content_frame),
+        shell_visible: layout.shell_visible,
+        separator_visibility: layout.separator_visibility,
+    }
+}
+
 pub(super) fn apply_panel_frame(panel: &NSPanel, frame: NSRect) {
     let current = panel.frame();
     if rects_nearly_equal(current, frame) {
@@ -132,6 +152,20 @@ pub(super) fn centered_top_frame(screen_frame: NSRect, size: NSSize) -> NSRect {
         NSPoint::new(frame.x, frame.y),
         NSSize::new(frame.width, frame.height),
     )
+}
+
+#[allow(dead_code)]
+pub(super) fn resolve_native_panel_host_frame(
+    screen_frame: NSRect,
+    metrics: NativePanelGeometryMetrics,
+    animation: NativePanelAnimationDescriptor,
+) -> NSRect {
+    ns_rect(crate::native_panel_core::resolve_native_panel_host_frame(
+        animation,
+        panel_rect(screen_frame),
+        metrics.compact_width,
+        metrics.expanded_width,
+    ))
 }
 
 pub(super) fn island_bar_frame(
@@ -221,6 +255,7 @@ pub(super) fn expanded_total_height(
     )
 }
 
+#[cfg(test)]
 pub(super) fn panel_transition_canvas_height(start_height: f64, target_height: f64) -> f64 {
     crate::native_panel_core::resolve_panel_transition_canvas_height(
         start_height,
@@ -243,6 +278,7 @@ pub(super) fn absolute_rect(panel_frame: NSRect, local_frame: NSRect) -> NSRect 
     ))
 }
 
+#[allow(dead_code)]
 pub(super) fn compose_local_rect(parent_frame: NSRect, child_frame: NSRect) -> NSRect {
     ns_rect(crate::native_panel_core::compose_local_rect(
         panel_rect(parent_frame),

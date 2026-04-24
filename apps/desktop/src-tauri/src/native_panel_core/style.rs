@@ -1,3 +1,9 @@
+use super::constants::{
+    PANEL_COMPACT_CORNER_MASK_MAX_PROGRESS, PANEL_EDGE_ACTIONS_MIN_SCALE,
+    PANEL_EDGE_ACTIONS_REVEAL_SPAN, PANEL_EDGE_ACTIONS_REVEAL_START_PROGRESS,
+    PANEL_HIGHLIGHT_MAX_ALPHA, PANEL_PILL_BORDER_MAX_WIDTH, PANEL_VISIBILITY_EPSILON,
+};
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct PanelStyleResolverInput {
     pub(crate) shell_visible: bool,
@@ -34,7 +40,7 @@ pub(crate) fn resolve_panel_style(input: PanelStyleResolverInput) -> PanelStyleR
     let bar_progress = input.bar_progress.clamp(0.0, 1.0);
     let height_progress = input.height_progress.clamp(0.0, 1.0);
     let highlight_alpha = if input.headline_emphasized {
-        lerp(0.0, 0.12, bar_progress)
+        lerp(0.0, PANEL_HIGHLIGHT_MAX_ALPHA, bar_progress)
     } else {
         0.0
     };
@@ -44,17 +50,17 @@ pub(crate) fn resolve_panel_style(input: PanelStyleResolverInput) -> PanelStyleR
         0.0
     };
     let action_alpha = action_progress;
-    let action_scale = lerp(0.82, 1.0, action_progress);
+    let action_scale = lerp(PANEL_EDGE_ACTIONS_MIN_SCALE, 1.0, action_progress);
 
     PanelStyleResolved {
         expanded_hidden: !input.shell_visible,
         expanded_alpha: if input.shell_visible { 1.0 } else { 0.0 },
-        separator_hidden: input.separator_visibility <= 0.02,
+        separator_hidden: input.separator_visibility <= PANEL_VISIBILITY_EPSILON,
         separator_alpha: input.separator_visibility,
         cards_hidden: input.shared_visible,
-        highlight_hidden: highlight_alpha <= 0.02,
+        highlight_hidden: highlight_alpha <= PANEL_VISIBILITY_EPSILON,
         highlight_alpha,
-        actions_hidden: action_alpha <= 0.02,
+        actions_hidden: action_alpha <= PANEL_VISIBILITY_EPSILON,
         action_alpha,
         action_scale,
         pill_corner_radius: lerp(
@@ -62,8 +68,8 @@ pub(crate) fn resolve_panel_style(input: PanelStyleResolverInput) -> PanelStyleR
             input.panel_morph_pill_radius,
             bar_progress,
         ),
-        use_compact_corner_mask: bar_progress <= 0.01,
-        pill_border_width: lerp(1.0, 0.0, bar_progress),
+        use_compact_corner_mask: bar_progress <= PANEL_COMPACT_CORNER_MASK_MAX_PROGRESS,
+        pill_border_width: lerp(PANEL_PILL_BORDER_MAX_WIDTH, 0.0, bar_progress),
         expanded_corner_radius: lerp(
             input.compact_pill_radius,
             input.expanded_panel_radius,
@@ -73,7 +79,8 @@ pub(crate) fn resolve_panel_style(input: PanelStyleResolverInput) -> PanelStyleR
 }
 
 fn edge_action_progress(bar_progress: f64) -> f64 {
-    ((bar_progress - 0.48) / 0.52).clamp(0.0, 1.0)
+    ((bar_progress - PANEL_EDGE_ACTIONS_REVEAL_START_PROGRESS) / PANEL_EDGE_ACTIONS_REVEAL_SPAN)
+        .clamp(0.0, 1.0)
 }
 
 fn lerp(start: f64, end: f64, progress: f64) -> f64 {

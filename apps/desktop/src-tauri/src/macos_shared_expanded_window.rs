@@ -8,7 +8,7 @@ use echoisland_runtime::RuntimeSnapshot;
 use objc2_app_kit::NSColor;
 
 #[cfg(target_os = "macos")]
-use objc2_app_kit::NSWindow;
+use objc2_app_kit::{NSWindow, NSWindowStyleMask};
 
 #[cfg(target_os = "macos")]
 use objc2_foundation::NSRect;
@@ -96,10 +96,12 @@ pub fn create_shared_expanded_window(app: &AppHandle) -> Result<(), String> {
     let ns_window_ptr = window.ns_window().map_err(|error| error.to_string())?;
     if !ns_window_ptr.is_null() {
         let ns_window = unsafe { &*(ns_window_ptr.cast::<NSWindow>()) };
+        ns_window.setStyleMask(ns_window.styleMask() | NSWindowStyleMask::NonactivatingPanel);
         ns_window.setLevel(SHARED_EXPANDED_WINDOW_LEVEL);
         ns_window.setOpaque(false);
         ns_window.setHasShadow(false);
         ns_window.setBackgroundColor(Some(&NSColor::clearColor()));
+        ns_window.setHidesOnDeactivate(false);
     }
 
     Ok(())
@@ -111,7 +113,11 @@ pub fn hide_shared_expanded_window<R: tauri::Runtime>(app: &AppHandle<R>) -> Res
         return Ok(());
     }
     if let Some(window) = app.get_webview_window(SHARED_EXPANDED_WINDOW_LABEL) {
-        if window.is_visible().unwrap_or(false) {
+        let ns_window_ptr = window.ns_window().map_err(|error| error.to_string())?;
+        if !ns_window_ptr.is_null() {
+            let ns_window = unsafe { &*(ns_window_ptr.cast::<NSWindow>()) };
+            ns_window.orderOut(None);
+        } else if window.is_visible().unwrap_or(false) {
             window.hide().map_err(|error| error.to_string())?;
         }
     }
@@ -203,7 +209,6 @@ pub unsafe fn sync_shared_expanded_frame(
     }
 
     if !window.is_visible().unwrap_or(false) {
-        window.show().map_err(|error| error.to_string())?;
         ns_window.orderFront(None);
     }
 

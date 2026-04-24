@@ -1,5 +1,3 @@
-import { isLongIdleSession } from "../utils.js";
-
 const MESSAGE_CARD_TEXT_WIDTH = 248;
 const MESSAGE_CARD_HEADER_HEIGHT = 62;
 const MESSAGE_CARD_TEXT_LINE_HEIGHT = 13;
@@ -9,24 +7,6 @@ const MESSAGE_CARD_INPUT_HEIGHT = 38;
 const MESSAGE_CARD_BUTTON_ROW_GAP = 8;
 const MESSAGE_CARD_BUTTON_HORIZONTAL_GAP = 8;
 const MESSAGE_CARD_BUTTONS_WIDTH = 255;
-
-export function estimateCardHeight(session) {
-  if (isLongIdleSession(session)) {
-    return 58;
-  }
-
-  let height = 46;
-  if (session.last_user_prompt) {
-    height += 18;
-  }
-  if (session.last_assistant_message ?? session.tool_description) {
-    height += 30;
-  }
-  if (session.current_tool) {
-    height += 26;
-  }
-  return height;
-}
 
 function estimateTextWidth(text, fontSize = 10) {
   return Array.from(String(text ?? "")).reduce((width, char) => {

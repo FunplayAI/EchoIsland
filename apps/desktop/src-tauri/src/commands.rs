@@ -18,11 +18,12 @@ use crate::{
     command_services::{SampleIngestService, SnapshotCommandService},
     display_settings::{DisplayOption, list_available_displays, resolve_preferred_display_index},
     http_receiver::{HttpReceiverStatus, default_http_receiver_status},
-    native_panel_core::PanelSettingsState,
+    native_panel_renderer::{NativePanelRuntimeBackend, current_native_panel_runtime_backend},
     native_panel_scene::{
         PanelSceneBuildInput, SessionSurfaceScene, SettingsSurfaceScene, StatusSurfaceScene,
         SurfaceScene,
     },
+    native_panel_scene_input::panel_scene_build_input_from_app_settings,
     native_ui_refresh::maybe_refresh_native_ui_for_event,
     platform::{
         PlatformCapabilities, PlatformPathsPayload, current_platform_capabilities,
@@ -73,20 +74,12 @@ pub async fn get_snapshot_status_surface_bundle(
 }
 
 fn web_panel_scene_build_input(app: &AppHandle) -> PanelSceneBuildInput {
-    let mut settings = current_app_settings();
+    let settings = current_app_settings();
     let displays = list_available_displays(app).unwrap_or_default();
-    settings.preferred_display_index =
+    let selected_display_index =
         resolve_preferred_display_index(&displays, settings.preferred_display_key.as_deref());
 
-    PanelSceneBuildInput {
-        display_count: displays.len().max(1),
-        settings: PanelSettingsState {
-            selected_display_index: settings.preferred_display_index,
-            completion_sound_enabled: settings.completion_sound_enabled,
-            mascot_enabled: settings.mascot_enabled,
-        },
-        app_version: env!("CARGO_PKG_VERSION").to_string(),
-    }
+    panel_scene_build_input_from_app_settings(displays.len(), selected_display_index, &settings)
 }
 
 #[tauri::command]
@@ -245,9 +238,9 @@ pub fn show_main_window_interactive(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn hide_main_window(app: AppHandle) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    if crate::macos_native_test_panel::native_ui_enabled() {
-        return crate::macos_native_test_panel::hide_native_island_panel(&app);
+    let native_panel_backend = current_native_panel_runtime_backend();
+    if native_panel_backend.native_ui_enabled() {
+        return native_panel_backend.hide_panel(&app);
     }
 
     WindowSurfaceService::new(&app).hide_main_window()
@@ -348,18 +341,18 @@ fn open_url_with_system(url: &str) -> Result<(), String> {
 }
 
 fn refresh_desktop_after_settings_change<R: tauri::Runtime>(app: &AppHandle<R>) {
-    #[cfg(target_os = "macos")]
-    if crate::macos_native_test_panel::native_ui_enabled() {
-        let _ = crate::macos_native_test_panel::refresh_native_panel_from_last_snapshot(app);
+    let native_panel_backend = current_native_panel_runtime_backend();
+    if native_panel_backend.native_ui_enabled() {
+        let _ = native_panel_backend.refresh_from_last_snapshot(app);
     }
 }
 
 fn reposition_desktop_to_selected_display<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    if crate::macos_native_test_panel::native_ui_enabled() {
-        return crate::macos_native_test_panel::reposition_native_panel_to_selected_display(app);
+    let native_panel_backend = current_native_panel_runtime_backend();
+    if native_panel_backend.native_ui_enabled() {
+        return native_panel_backend.reposition_to_selected_display(app);
     }
 
     crate::window_surface_service::WindowSurfaceService::new(app).reposition_to_selected_display()
@@ -367,9 +360,9 @@ fn reposition_desktop_to_selected_display<R: tauri::Runtime>(
 
 #[tauri::command]
 pub fn set_macos_shared_expanded_height(height: f64, app: AppHandle) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    if crate::macos_native_test_panel::native_ui_enabled() {
-        return crate::macos_native_test_panel::set_shared_expanded_body_height(&app, height);
+    let native_panel_backend = current_native_panel_runtime_backend();
+    if native_panel_backend.native_ui_enabled() {
+        return native_panel_backend.set_shared_expanded_body_height(&app, height);
     }
 
     let _ = (height, app);

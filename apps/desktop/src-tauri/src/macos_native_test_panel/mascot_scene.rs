@@ -1,5 +1,6 @@
 use super::mascot::NativeMascotState;
-use super::panel_scene_adapter::build_native_panel_scene_for_core_state;
+use super::panel_runtime_input::native_panel_runtime_input_descriptor;
+use super::panel_scene_adapter::build_native_panel_scene_for_state_with_input;
 use super::panel_types::{NativeExpandedSurface, NativePanelState, NativeStatusQueuePayload};
 
 pub(super) struct NativeMascotFrameInput {
@@ -14,10 +15,10 @@ pub(super) fn resolve_native_mascot_frame_input(
     state: &NativePanelState,
 ) -> NativeMascotFrameInput {
     let snapshot = state.last_snapshot.clone();
-    let core_state = state.to_core_panel_state();
+    let input = native_panel_runtime_input_descriptor();
     let scene = snapshot
         .as_ref()
-        .map(|snapshot| build_native_panel_scene_for_core_state(snapshot, &core_state));
+        .map(|snapshot| build_native_panel_scene_for_state_with_input(state, snapshot, &input));
     let has_status_completion = state.expanded
         && state.surface_mode == NativeExpandedSurface::Status
         && state

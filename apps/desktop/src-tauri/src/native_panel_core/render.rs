@@ -1,4 +1,4 @@
-use super::PanelTransitionFrame;
+use super::{PanelAnimationDescriptor, PanelTransitionFrame};
 
 const SHARED_CONTENT_REVEAL_PROGRESS: f64 = 0.94;
 const SHARED_CONTENT_INTERACTIVE_PROGRESS: f64 = 0.985;
@@ -301,6 +301,25 @@ pub(crate) fn resolve_centered_top_frame(screen_frame: PanelRect, size: PanelSiz
         width: snapped_width,
         height: snapped_height,
     }
+}
+
+pub(crate) fn resolve_native_panel_host_frame(
+    descriptor: PanelAnimationDescriptor,
+    screen_frame: PanelRect,
+    compact_width: f64,
+    expanded_width: f64,
+) -> PanelRect {
+    let width = lerp(
+        compact_width.max(1.0),
+        expanded_width.max(1.0),
+        descriptor.width_progress,
+    );
+    let height = descriptor
+        .canvas_height
+        .max(descriptor.visible_height)
+        .max(1.0);
+
+    resolve_centered_top_frame(screen_frame, PanelSize { width, height })
 }
 
 pub(crate) fn rects_nearly_equal(a: PanelRect, b: PanelRect, tolerance: f64) -> bool {

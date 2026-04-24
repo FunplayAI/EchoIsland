@@ -7,6 +7,7 @@ use super::mascot_views::{MascotViews, create_mascot_views};
 use super::panel_assembly::{NativePanelAssemblyViews, assemble_native_panel_views};
 use super::panel_globals::NATIVE_TEST_PANEL_CREATED;
 use super::panel_handles_init::{NativePanelHandleViews, initialize_native_panel_handles};
+use super::panel_host_descriptor::native_panel_host_window_descriptor;
 use super::panel_screen_geometry::screen_has_camera_housing;
 use super::panel_setup::{
     NativePanelColors, NativePanelSetup, native_panel_colors, resolve_native_panel_setup,
@@ -173,7 +174,13 @@ pub(crate) fn create_native_island_panel() -> Result<(), String> {
         slash: &slash,
         total_count: &total_count,
     });
-    initialize_native_panel_state();
+    initialize_native_panel_state(native_panel_host_window_descriptor(
+        true,
+        crate::app_settings::current_app_settings().preferred_display_index,
+        Some(screen_frame),
+        None,
+        None,
+    ));
     initialize_active_count_scroll_text();
 
     info!(

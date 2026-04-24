@@ -5,6 +5,7 @@ use echoisland_paths::{bridge_binary_name, bridge_binary_path, codex_dir};
 use tracing::{info, warn};
 
 use crate::{
+    native_panel_renderer::{NativePanelRuntimeBackend, current_native_panel_runtime_backend},
     platform::{PlatformBackend, current_platform_capabilities},
     tray::build_tray,
     window_surface_service::WindowSurfaceService,
@@ -53,8 +54,8 @@ impl<'a, R: tauri::Runtime> AppStartupService<'a, R> {
     }
 
     fn initialize_window_surface(&self) -> Result<(), String> {
-        #[cfg(target_os = "macos")]
-        if crate::macos_native_test_panel::native_ui_enabled() {
+        let native_panel_backend = current_native_panel_runtime_backend();
+        if native_panel_backend.native_ui_enabled() {
             info!("skipping webview window surface initialization in native macOS UI mode");
             return Ok(());
         }

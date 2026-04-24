@@ -78,6 +78,13 @@ export function setSurfaceScene(uiState, scene) {
   uiState.snapshot.surfaceScene = scene;
 }
 
+export function setSurfaceSceneBundle(uiState, bundle) {
+  uiState.snapshot.surfaceScene = bundle?.surfaceScene ?? null;
+  uiState.snapshot.statusSurfaceScene = bundle?.statusSurfaceScene ?? null;
+  uiState.snapshot.sessionSurfaceScene = bundle?.sessionSurfaceScene ?? null;
+  uiState.snapshot.settingsSurfaceScene = bundle?.settingsSurfaceScene ?? null;
+}
+
 export function getLastRawSnapshot(uiState) {
   return uiState.snapshot.lastRawSnapshot;
 }

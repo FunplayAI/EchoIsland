@@ -1,5 +1,6 @@
 import { applyMascot } from "../mascot.js";
 import { estimateExpandedPanelHeight, renderPending, renderSessions, updateHeadline } from "../renderers.js";
+import { buildSnapshotSummary, getSnapshotStatusKey } from "../renderers/snapshot-summary.js";
 import {
   getMascotState,
   getInteraction,
@@ -45,13 +46,14 @@ export function applyStatusTone(snapshot, { island, statusChip, uiState }) {
   if (!island) return;
   const statusSurfaceScene = getStatusSurfaceScene(uiState);
   const hasPendingAttention = hasDefaultPendingStatusWithFallback(statusSurfaceScene, snapshot);
+  const summary = buildSnapshotSummary(snapshot, statusSurfaceScene);
 
   island.dataset.attention = hasPendingAttention ? "hot" : "calm";
   if (statusChip) {
-    statusChip.textContent = snapshot.status;
-    statusChip.dataset.status = snapshot.status.toLowerCase();
+    statusChip.textContent = summary.statusText;
+    statusChip.dataset.status = getSnapshotStatusKey(snapshot);
   }
-  island.dataset.empty = snapshot.active_session_count > 0 ? "false" : "true";
+  island.dataset.empty = summary.emptyState;
 }
 
 export function applyCompletionAttention(snapshot, { island, mascotShell, uiState }) {

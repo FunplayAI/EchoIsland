@@ -6,10 +6,8 @@ use echoisland_runtime::{
 use super::card_views::settings_surface_card_height;
 use super::display_helpers::{display_snippet, normalize_status};
 use super::panel_constants::{
-    CARD_CHAT_GAP, CARD_CHAT_LINE_HEIGHT, CARD_CHAT_PREFIX_WIDTH, CARD_CONTENT_BOTTOM_INSET,
-    CARD_HEADER_HEIGHT, CARD_INSET_X, CARD_PENDING_ACTION_GAP, CARD_PENDING_ACTION_HEIGHT,
-    CARD_PENDING_ACTION_Y, CARD_TOOL_GAP, EXPANDED_CARD_GAP, EXPANDED_MAX_BODY_HEIGHT,
-    PENDING_QUESTION_CARD_MAX_HEIGHT, PENDING_QUESTION_CARD_MIN_HEIGHT,
+    EXPANDED_CARD_GAP, EXPANDED_MAX_BODY_HEIGHT, PENDING_QUESTION_CARD_MAX_HEIGHT,
+    PENDING_QUESTION_CARD_MIN_HEIGHT,
 };
 use super::panel_helpers::estimated_default_chat_body_width;
 use super::panel_scene_adapter::build_native_panel_scene;
@@ -26,11 +24,18 @@ pub(super) fn estimated_expanded_content_height(snapshot: &RuntimeSnapshot) -> f
 }
 
 pub(super) fn estimated_scene_content_height(scene: &PanelScene) -> f64 {
-    crate::native_panel_scene::resolve_scene_cards_total_height(
-        scene,
-        estimated_scene_card_height,
+    estimated_scene_cards_content_height(&scene.cards)
+}
+
+pub(super) fn estimated_scene_cards_content_height(cards: &[SceneCard]) -> f64 {
+    let card_heights = cards
+        .iter()
+        .map(estimated_scene_card_height)
+        .collect::<Vec<_>>();
+    crate::native_panel_core::resolve_stacked_cards_total_height(
+        &card_heights,
         EXPANDED_CARD_GAP,
-        84.0,
+        crate::native_panel_core::EMPTY_CARD_HEIGHT,
     )
 }
 
@@ -52,7 +57,9 @@ pub(super) fn estimated_scene_card_height(card: &SceneCard) -> f64 {
         crate::native_panel_scene::SceneCardHeightInput::StatusItem(item) => {
             native_status_queue_card_height(item)
         }
-        crate::native_panel_scene::SceneCardHeightInput::Empty => 84.0,
+        crate::native_panel_scene::SceneCardHeightInput::Empty => {
+            crate::native_panel_core::EMPTY_CARD_HEIGHT
+        }
     }
 }
 
@@ -66,7 +73,11 @@ pub(super) fn native_status_queue_card_height(item: &NativeStatusQueueItem) -> f
 pub(super) fn pending_permission_card_height(pending: &PendingPermissionView) -> f64 {
     let body = display_snippet(pending.tool_description.as_deref(), 78)
         .unwrap_or_else(|| "Waiting for your approval".to_string());
-    pending_like_card_height(&body, 92.0, 120.0)
+    pending_like_card_height(
+        &body,
+        crate::native_panel_core::PENDING_PERMISSION_CARD_MIN_HEIGHT,
+        crate::native_panel_core::PENDING_PERMISSION_CARD_MAX_HEIGHT,
+    )
 }
 
 pub(super) fn pending_question_card_height(pending: &PendingQuestionView) -> f64 {
@@ -75,20 +86,22 @@ pub(super) fn pending_question_card_height(pending: &PendingQuestionView) -> f64
     let min_height = if pending.options.is_empty() {
         PENDING_QUESTION_CARD_MIN_HEIGHT
     } else {
-        PENDING_QUESTION_CARD_MIN_HEIGHT + 6.0
+        PENDING_QUESTION_CARD_MIN_HEIGHT
+            + crate::native_panel_core::PENDING_QUESTION_CARD_OPTIONS_EXTRA_HEIGHT
     };
     pending_like_card_height(
         &body,
         min_height,
-        144.0_f64.max(PENDING_QUESTION_CARD_MAX_HEIGHT),
+        crate::native_panel_core::PENDING_QUESTION_CARD_FALLBACK_MAX_HEIGHT
+            .max(PENDING_QUESTION_CARD_MAX_HEIGHT),
     )
 }
 
 pub(super) fn prompt_assist_card_height(_session: &SessionSnapshotView) -> f64 {
     pending_like_card_height(
         "A command may be waiting for approval in the Codex terminal. Allow or deny it there.",
-        92.0,
-        108.0,
+        crate::native_panel_core::PROMPT_ASSIST_CARD_MIN_HEIGHT,
+        crate::native_panel_core::PROMPT_ASSIST_CARD_MAX_HEIGHT,
     )
 }
 
@@ -195,16 +208,5 @@ pub(super) fn is_long_idle_session(session: &SessionSnapshotView) -> bool {
 }
 
 pub(super) fn native_card_metrics() -> crate::native_panel_core::PanelCardMetricConstants {
-    crate::native_panel_core::PanelCardMetricConstants {
-        card_inset_x: CARD_INSET_X,
-        chat_prefix_width: CARD_CHAT_PREFIX_WIDTH,
-        chat_line_height: CARD_CHAT_LINE_HEIGHT,
-        header_height: CARD_HEADER_HEIGHT,
-        content_bottom_inset: CARD_CONTENT_BOTTOM_INSET,
-        chat_gap: CARD_CHAT_GAP,
-        tool_gap: CARD_TOOL_GAP,
-        pending_action_y: CARD_PENDING_ACTION_Y,
-        pending_action_height: CARD_PENDING_ACTION_HEIGHT,
-        pending_action_gap: CARD_PENDING_ACTION_GAP,
-    }
+    crate::native_panel_core::default_panel_card_metric_constants()
 }

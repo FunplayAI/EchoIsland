@@ -823,6 +823,40 @@ fn expanded_cards_width_never_goes_negative() {
 }
 
 #[test]
+fn native_panel_host_frame_interpolates_width_and_uses_canvas_height() {
+    let frame = resolve_native_panel_host_frame(
+        PanelAnimationDescriptor {
+            kind: PanelAnimationKind::Open,
+            canvas_height: 180.2,
+            visible_height: 140.0,
+            width_progress: 0.5,
+            height_progress: 0.0,
+            shoulder_progress: 0.0,
+            drop_progress: 0.0,
+            cards_progress: 0.0,
+        },
+        PanelRect {
+            x: 0.0,
+            y: 0.0,
+            width: 1440.0,
+            height: 900.0,
+        },
+        400.0,
+        700.0,
+    );
+
+    assert_eq!(
+        frame,
+        PanelRect {
+            x: 445.0,
+            y: 720.0,
+            width: 550.0,
+            height: 180.0,
+        }
+    );
+}
+
+#[test]
 fn expanded_total_height_prefers_larger_shared_height_and_caps_body() {
     assert_eq!(
         resolve_expanded_total_height(84.0, Some(124.0), 40.0, 8.0, 10.0, 220.0),
@@ -1214,4 +1248,73 @@ fn open_transition_expands_width_before_dropping_downward() {
     assert_eq!(height_growing.bar_progress, 1.0);
     assert!(height_growing.height_progress > 0.0);
     assert!(height_growing.drop_progress > 0.0);
+}
+
+#[test]
+fn animation_timeline_samples_match_existing_transition_descriptors() {
+    let open = PanelAnimationTimeline::open(80.0, 164.0, 3);
+    assert_eq!(
+        open.total_ms(),
+        PANEL_OPEN_TOTAL_MS
+            + card_transition_total_ms(3, PANEL_CARD_REVEAL_MS, PANEL_CARD_REVEAL_STAGGER_MS)
+    );
+    assert_eq!(
+        open.sample(120),
+        resolve_open_transition_descriptor(
+            120,
+            panel_transition_canvas_height(80.0, 164.0),
+            164.0,
+            card_transition_total_ms(3, PANEL_CARD_REVEAL_MS, PANEL_CARD_REVEAL_STAGGER_MS),
+        )
+    );
+
+    let surface_switch = PanelAnimationTimeline::surface_switch(120.0, 164.0, 2);
+    assert_eq!(
+        surface_switch.sample(80),
+        resolve_surface_switch_transition_descriptor(
+            80,
+            panel_transition_canvas_height(120.0, 164.0),
+            120.0,
+            164.0,
+            card_transition_total_ms(
+                2,
+                PANEL_SURFACE_SWITCH_CARD_REVEAL_MS,
+                PANEL_SURFACE_SWITCH_CARD_REVEAL_STAGGER_MS
+            ),
+        )
+    );
+
+    let close = PanelAnimationTimeline::close(164.0, 2);
+    assert_eq!(
+        close.total_ms(),
+        card_transition_total_ms(2, PANEL_CARD_EXIT_MS, PANEL_CARD_EXIT_STAGGER_MS)
+            + PANEL_CARD_EXIT_SETTLE_MS
+            + PANEL_CLOSE_TOTAL_MS
+    );
+    assert_eq!(close.sample(0).kind, PanelAnimationKind::Close);
+}
+
+#[test]
+fn animation_descriptor_clamps_transition_values_and_preserves_kind() {
+    let descriptor = resolve_panel_animation_descriptor(
+        PanelAnimationKind::Open,
+        PanelTransitionFrame {
+            canvas_height: 180.0,
+            visible_height: 140.0,
+            bar_progress: 1.4,
+            height_progress: -0.2,
+            shoulder_progress: 0.5,
+            drop_progress: 2.0,
+            cards_progress: -1.0,
+        },
+    );
+
+    assert_eq!(descriptor.kind, PanelAnimationKind::Open);
+    assert_eq!(descriptor.canvas_height, 180.0);
+    assert_eq!(descriptor.visible_height, 140.0);
+    assert_eq!(descriptor.width_progress, 1.0);
+    assert_eq!(descriptor.height_progress, 0.0);
+    assert_eq!(descriptor.shoulder_progress, 0.5);
+    assert_eq!(descriptor.drop_progress, 1.0);
+    assert_eq!(descriptor.cards_progress, 0.0);
 }

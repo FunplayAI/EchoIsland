@@ -4,6 +4,10 @@ use echoisland_runtime::SharedRuntime;
 use tauri::AppHandle;
 
 #[cfg(target_os = "macos")]
+use crate::native_panel_renderer::{
+    NativePanelRuntimeBackend, current_native_panel_runtime_backend,
+};
+#[cfg(target_os = "macos")]
 use tokio::time::{Duration, sleep};
 #[cfg(target_os = "macos")]
 use tracing::warn;
@@ -17,7 +21,8 @@ pub fn maybe_refresh_native_ui_for_event<R: tauri::Runtime + 'static>(
     if !should_refresh_native_ui_for_event(event_name) {
         return;
     }
-    if !crate::macos_native_test_panel::native_ui_enabled() {
+    let native_panel_backend = current_native_panel_runtime_backend();
+    if !native_panel_backend.native_ui_enabled() {
         return;
     }
     let event_name = event_name.to_string();
@@ -36,10 +41,7 @@ pub fn maybe_refresh_native_ui_for_event<R: tauri::Runtime + 'static>(
                 pending_question_count = snapshot.pending_question_count,
                 "native macOS pending-lifecycle snapshot refresh"
             );
-            if let Err(error) = crate::macos_native_test_panel::update_native_island_snapshot(
-                &app_handle,
-                &snapshot,
-            ) {
+            if let Err(error) = native_panel_backend.update_snapshot(&app_handle, &snapshot) {
                 warn!(error = %error, "failed to refresh native macOS island after pending event");
             }
         }

@@ -6,8 +6,8 @@ export {
   getPromptAssistSessions,
   hasPromptAssistSessions,
   isPromptAssistSession,
-  wasSessionRecentlyUpdated,
 } from "./renderers/prompt-assist-policy.js";
+export { wasSessionRecentlyUpdated } from "./renderers/session-snapshot-fallback.js";
 export { renderPending } from "./renderers/pending-renderer.js";
 export {
   renderExpandedPanel,

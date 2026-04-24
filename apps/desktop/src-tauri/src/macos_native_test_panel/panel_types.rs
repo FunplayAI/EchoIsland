@@ -4,6 +4,9 @@ use echoisland_runtime::RuntimeSnapshot;
 use objc2_foundation::NSRect;
 
 use super::mascot::NativeMascotRuntime;
+use crate::native_panel_renderer::{
+    NativePanelHostWindowDescriptor, NativePanelPointerRegion, NativePanelRuntimeSceneCache,
+};
 
 #[derive(Clone, Copy)]
 pub(super) struct NativePanelHandles {
@@ -43,6 +46,7 @@ pub(super) struct CardAnimationLayout {
 }
 
 pub(super) type NativePanelTransitionFrame = crate::native_panel_core::PanelTransitionFrame;
+pub(super) type NativePanelAnimationDescriptor = crate::native_panel_core::PanelAnimationDescriptor;
 
 #[derive(Clone, Copy)]
 pub(super) struct NativePanelGeometryMetrics {
@@ -84,14 +88,6 @@ pub(super) type NativePendingQuestionCard = crate::native_panel_core::PendingQue
 pub(super) type NativeCompletionBadgeItem = crate::native_panel_core::CompletionBadgeItem;
 #[cfg(test)]
 pub(super) type NativeStatusQueueSyncResult = crate::native_panel_core::StatusQueueSyncResult;
-pub(super) type NativePanelHitAction = crate::native_panel_core::PanelHitAction;
-
-#[derive(Clone)]
-pub(super) struct NativeCardHitTarget {
-    pub(super) action: NativePanelHitAction,
-    pub(super) value: String,
-    pub(super) frame: NSRect,
-}
 
 pub(super) type NativeExpandedSurface = crate::native_panel_core::ExpandedSurface;
 pub(super) type NativeHoverTransition = crate::native_panel_core::HoverTransition;
@@ -104,6 +100,7 @@ pub(super) struct NativePanelState {
     pub(super) skip_next_close_card_exit: bool,
     pub(super) last_raw_snapshot: Option<RuntimeSnapshot>,
     pub(super) last_snapshot: Option<RuntimeSnapshot>,
+    pub(super) scene_cache: NativePanelRuntimeSceneCache,
     pub(super) status_queue: Vec<NativeStatusQueueItem>,
     pub(super) completion_badge_items: Vec<NativeCompletionBadgeItem>,
     pub(super) pending_permission_card: Option<NativePendingPermissionCard>,
@@ -111,11 +108,12 @@ pub(super) struct NativePanelState {
     pub(super) status_auto_expanded: bool,
     pub(super) surface_mode: NativeExpandedSurface,
     pub(super) shared_body_height: Option<f64>,
+    pub(super) host_window_descriptor: NativePanelHostWindowDescriptor,
     pub(super) pointer_inside_since: Option<Instant>,
     pub(super) pointer_outside_since: Option<Instant>,
     pub(super) primary_mouse_down: bool,
     pub(super) last_focus_click: Option<(String, Instant)>,
-    pub(super) card_hit_targets: Vec<NativeCardHitTarget>,
+    pub(super) pointer_regions: Vec<NativePanelPointerRegion>,
     pub(super) mascot_runtime: NativeMascotRuntime,
 }
 

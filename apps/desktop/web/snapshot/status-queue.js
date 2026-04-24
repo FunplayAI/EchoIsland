@@ -3,31 +3,20 @@ import {
   setStatusQueueKeys,
   setStatusQueueItems,
 } from "../state-helpers.js";
-import { buildStatusSurfaceCardKey, getStatusSurfaceCardsByMode } from "../renderers/status-surface-scene.js";
+import { buildStatusQueueSceneKeyItem, getStatusQueueSceneCards } from "../renderers/status-surface-scene.js";
+import { buildStatusQueueSyncResult } from "./status-queue-sync-result.js";
 import { syncLegacyStatusQueue } from "./status-queue-legacy.js";
 
-function buildQueueKeyFromSceneCard(card, index = 0) {
-  return {
-    key: buildStatusSurfaceCardKey(card, index),
-    kind: card?.kind === "approval" ? "approval" : "completion",
-    sessionId: card?.sessionId ?? null,
-    requestId: card?.requestId ?? null,
-    isLive: card?.isLive !== false,
-    isRemoving: card?.isRemoving === true,
-    sortOrder: index,
-  };
-}
-
 function syncStatusQueueFromScene(statusSurfaceScene, uiState, timings) {
-  const sceneCards = getStatusSurfaceCardsByMode(statusSurfaceScene, "queue");
+  const sceneCards = getStatusQueueSceneCards(statusSurfaceScene);
   const previousKeys = new Set(getStatusQueueKeys(uiState).filter((item) => item?.isLive !== false).map((item) => item.key));
-  const nextKeys = sceneCards.map((card, index) => buildQueueKeyFromSceneCard(card, index));
+  const nextKeys = sceneCards.map((card, index) => buildStatusQueueSceneKeyItem(card, index));
   const addedItems = nextKeys.filter((item) => item.isLive && !previousKeys.has(item.key));
 
   setStatusQueueKeys(uiState, nextKeys);
   setStatusQueueItems(uiState, []);
 
-  return {
+  return buildStatusQueueSyncResult({
     addedCount: addedItems.length,
     addedApprovalCount: addedItems.filter((item) => item.kind === "approval").length,
     addedCompletionCount: addedItems.filter((item) => item.kind === "completion").length,
@@ -39,7 +28,7 @@ function syncStatusQueueFromScene(statusSurfaceScene, uiState, timings) {
             statusSurfaceScene.queueState.nextTransitionInMs + timings.statusQueue.refreshLeadMs
           )
         : null,
-  };
+  });
 }
 
 export function syncStatusQueue(

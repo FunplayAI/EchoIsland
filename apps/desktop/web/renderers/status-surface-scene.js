@@ -63,6 +63,10 @@ export function getPromptAssistSceneCards(statusSurfaceScene) {
   );
 }
 
+export function getStatusQueueSceneCards(statusSurfaceScene) {
+  return getStatusSurfaceCardsByMode(statusSurfaceScene, "queue");
+}
+
 export function getStatusSurfaceSessionIdsByKinds(statusSurfaceScene, displayMode, kinds = []) {
   const kindSet = new Set(kinds);
   return getStatusSurfaceCardsByMode(statusSurfaceScene, displayMode)
@@ -81,6 +85,14 @@ export function getDefaultPendingSceneSessionIds(statusSurfaceScene) {
 
 export function getCompletionSceneSessionIds(statusSurfaceScene) {
   return getStatusSurfaceSessionIdsByKinds(statusSurfaceScene, "queue", ["completion"]);
+}
+
+export function getStatusQueueTotalCountFromScene(statusSurfaceScene) {
+  return Number(statusSurfaceScene?.queueState?.totalCount ?? 0);
+}
+
+export function getStatusQueueApprovalCountFromScene(statusSurfaceScene) {
+  return getStatusQueueSceneCards(statusSurfaceScene).filter((card) => card?.kind === "approval").length;
 }
 
 export function getPrimaryDefaultStatusSessionId(statusSurfaceScene) {
@@ -139,6 +151,22 @@ export function summarizeDefaultStatusSurfaceWithFallback(statusSurfaceScene, sn
   };
 }
 
+export function summarizeSnapshotHeadline(snapshot) {
+  const summary = summarizeDefaultStatusSurfaceWithFallback(null, snapshot);
+  if (summary.approvalCount > 0) {
+    return summary.approvalCount > 1 ? "Approvals needed" : "Approval needed";
+  }
+  if (summary.questionCount > 0) {
+    return summary.questionCount > 1 ? "Questions waiting" : "Question waiting";
+  }
+
+  const activeSessionCount = Number(snapshot?.active_session_count ?? 0);
+  if (activeSessionCount > 0) {
+    return `${activeSessionCount} active task${activeSessionCount > 1 ? "s" : ""}`;
+  }
+  return "No active tasks";
+}
+
 export function hasDefaultPendingStatus(statusSurfaceScene) {
   const summary = summarizeDefaultStatusSurface(statusSurfaceScene);
   return summary.approvalCount > 0 || summary.questionCount > 0;
@@ -182,6 +210,18 @@ export function buildStatusSurfaceCardKey(card, index = 0) {
     default:
       return `unknown:${index}`;
   }
+}
+
+export function buildStatusQueueSceneKeyItem(card, index = 0) {
+  return {
+    key: buildStatusSurfaceCardKey(card, index),
+    kind: card?.kind === "approval" ? "approval" : "completion",
+    sessionId: card?.sessionId ?? null,
+    requestId: card?.requestId ?? null,
+    isLive: card?.isLive !== false,
+    isRemoving: card?.isRemoving === true,
+    sortOrder: index,
+  };
 }
 
 export function buildStatusSurfaceEntry(card, { canFocusTerminal = false, index = 0 } = {}) {

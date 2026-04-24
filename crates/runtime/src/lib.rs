@@ -20,7 +20,7 @@ use tracing::{info, warn};
 const SESSION_EXPIRY_MINUTES: i64 = 30;
 const PERSIST_DEBOUNCE_MS: u64 = 350;
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct ToolHistoryEntryView {
     pub tool: String,
     pub description: Option<String>,
@@ -28,7 +28,7 @@ pub struct ToolHistoryEntryView {
     pub timestamp: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct SessionSnapshotView {
     pub session_id: String,
     pub source: String,
@@ -57,7 +57,7 @@ pub struct SessionSnapshotView {
     pub last_activity: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct RuntimeSnapshot {
     pub status: String,
     pub primary_source: String,
@@ -72,7 +72,7 @@ pub struct RuntimeSnapshot {
     pub sessions: Vec<SessionSnapshotView>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct PendingPermissionView {
     pub request_id: String,
     pub session_id: String,
@@ -82,7 +82,7 @@ pub struct PendingPermissionView {
     pub requested_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct PendingQuestionView {
     pub request_id: String,
     pub session_id: String,

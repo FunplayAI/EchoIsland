@@ -1,7 +1,11 @@
 use tauri::{AppHandle, Manager};
 
 #[cfg(target_os = "macos")]
-use crate::{app_runtime::AppRuntime, terminal_focus_service::TerminalFocusService};
+use crate::{
+    app_runtime::AppRuntime,
+    native_panel_renderer::{NativePanelRuntimeBackend, current_native_panel_runtime_backend},
+    terminal_focus_service::TerminalFocusService,
+};
 #[cfg(target_os = "macos")]
 use tokio::time::{Duration, MissedTickBehavior};
 #[cfg(target_os = "macos")]
@@ -52,9 +56,8 @@ async fn sync_native_snapshot_once<R: tauri::Runtime>(app: &AppHandle<R>, runtim
         }
     }
 
-    if let Err(error) =
-        crate::macos_native_test_panel::update_native_island_snapshot(app, &raw_snapshot)
-    {
+    let native_panel_backend = current_native_panel_runtime_backend();
+    if let Err(error) = native_panel_backend.update_snapshot(app, &raw_snapshot) {
         warn!(error = %error, "failed to update native macOS island panel");
     }
 }

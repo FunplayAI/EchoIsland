@@ -12,12 +12,12 @@ use super::{
     CompletionBadgeItem, ExpandedSurface, PanelMascotBaseState, PanelSnapshotSyncResult,
     PanelState, PendingPermissionCardState, PendingQuestionCardState, StatusQueueItem,
     StatusQueuePayload, StatusQueueSyncResult, StatusSurfaceTransition,
+    constants::PANEL_CARD_EXIT_MS,
 };
 
 pub(crate) const STATUS_COMPLETION_VISIBLE_SECONDS: u64 = 10;
 pub(crate) const STATUS_APPROVAL_VISIBLE_SECONDS: u64 = 30;
 pub(crate) const STATUS_QUEUE_EXIT_EXTRA_MS: u64 = 80;
-pub(crate) const PANEL_CARD_EXIT_MS: u64 = 220;
 pub(crate) const PENDING_CARD_MIN_VISIBLE_MS: u64 = 2200;
 pub(crate) const PENDING_CARD_RELEASE_GRACE_MS: u64 = 1600;
 pub(crate) const MAX_VISIBLE_SESSIONS: usize = 5;

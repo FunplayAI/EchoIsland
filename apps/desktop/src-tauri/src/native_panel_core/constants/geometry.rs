@@ -1,0 +1,20 @@
+pub(crate) const DEFAULT_PANEL_CANVAS_WIDTH: f64 = 420.0;
+pub(crate) const COLLAPSED_PANEL_HEIGHT: f64 = 80.0;
+pub(crate) const DEFAULT_COMPACT_PILL_WIDTH: f64 = 253.0;
+pub(crate) const EXPANDED_PILL_WIDTH_DELTA: f64 = 30.0;
+pub(crate) const DEFAULT_EXPANDED_PILL_WIDTH: f64 =
+    DEFAULT_COMPACT_PILL_WIDTH + EXPANDED_PILL_WIDTH_DELTA;
+pub(crate) const DEFAULT_COMPACT_PILL_HEIGHT: f64 = 37.0;
+pub(crate) const COMPACT_SHOULDER_SIZE: f64 = 6.0;
+pub(crate) const COMPACT_PILL_RADIUS: f64 = 12.5;
+pub(crate) const EXPANDED_PANEL_RADIUS: f64 = 12.0;
+pub(crate) const CARD_RADIUS: f64 = 9.0;
+pub(crate) const EXPANDED_MAX_BODY_HEIGHT: f64 = 420.0;
+pub(crate) const EXPANDED_CARD_GAP: f64 = 12.0;
+pub(crate) const EXPANDED_CONTENT_TOP_GAP: f64 = 9.0;
+pub(crate) const EXPANDED_CONTENT_BOTTOM_INSET: f64 = 10.0;
+pub(crate) const EXPANDED_CARDS_SIDE_INSET: f64 = 10.0;
+pub(crate) const EXPANDED_CARD_OVERHANG: f64 = 0.0;
+pub(crate) const EXPANDED_SEPARATOR_SIDE_INSET: f64 = 14.0;
+pub(crate) const PANEL_DROP_DISTANCE: f64 = 4.5;
+pub(crate) const PANEL_MORPH_PILL_RADIUS: f64 = 14.0;

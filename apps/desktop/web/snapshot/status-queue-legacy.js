@@ -1,15 +1,23 @@
 import { getStatusQueueItems, setStatusQueueItems } from "../state-helpers.js";
-import { getPendingPermissionPayloads } from "../renderers/pending-snapshot-fallback.js";
+import {
+  getPendingPermissionPayloads,
+  getPendingRequestId,
+  getPendingSessionId,
+} from "../renderers/pending-snapshot-fallback.js";
+import { getSessionId } from "../renderers/session-snapshot-fallback.js";
+import { findSnapshotSessionById } from "../renderers/snapshot-sessions.js";
+import { buildStatusQueueSyncResult } from "./status-queue-sync-result.js";
 
 function getPendingPermissionIds(snapshot) {
-  return new Set(getPendingPermissionPayloads(snapshot).map((item) => item?.request_id).filter(Boolean));
+  return new Set(getPendingPermissionPayloads(snapshot).map((item) => getPendingRequestId(item)).filter(Boolean));
 }
 
 function buildCompletionItem(session, nowMs, timings, previousItem = null) {
+  const sessionId = getSessionId(session);
   return {
-    key: `completion:${session.session_id}`,
+    key: `completion:${sessionId}`,
     kind: "completion",
-    sessionId: session.session_id,
+    sessionId,
     payload: session,
     createdAt: previousItem?.createdAt ?? nowMs,
     expiresAt: previousItem?.expiresAt ?? nowMs + timings.statusQueue.completionMs,
@@ -20,11 +28,13 @@ function buildCompletionItem(session, nowMs, timings, previousItem = null) {
 }
 
 function buildApprovalItem(permission, nowMs, timings, previousItem = null) {
+  const requestId = getPendingRequestId(permission);
+  const sessionId = getPendingSessionId(permission);
   return {
-    key: `approval:${permission.request_id}`,
+    key: `approval:${requestId}`,
     kind: "approval",
-    sessionId: permission.session_id,
-    requestId: permission.request_id,
+    sessionId,
+    requestId,
     payload: permission,
     createdAt: previousItem?.createdAt ?? nowMs,
     expiresAt: previousItem?.expiresAt ?? nowMs + timings.statusQueue.approvalMs,
@@ -73,9 +83,10 @@ export function syncLegacyStatusQueue(
   let addedCompletionCount = 0;
 
   for (const permission of getPendingPermissionPayloads(snapshot)) {
-    const key = `approval:${permission.request_id}`;
+    const requestId = getPendingRequestId(permission);
+    const key = `approval:${requestId}`;
     const previousItem = previousByKey.get(key) ?? null;
-    const isNewLivePermission = !previousLivePermissionIds.has(permission.request_id);
+    const isNewLivePermission = !previousLivePermissionIds.has(requestId);
     if (!previousItem && !isNewLivePermission) {
       continue;
     }
@@ -88,9 +99,9 @@ export function syncLegacyStatusQueue(
   }
 
   for (const sessionId of completedSessionIds) {
-    const session = snapshot.sessions.find((item) => item.session_id === sessionId);
+    const session = findSnapshotSessionById(snapshot, sessionId);
     if (!session) continue;
-    const key = `completion:${session.session_id}`;
+    const key = `completion:${getSessionId(session)}`;
     const previousItem = previousByKey.get(key) ?? null;
     if (!previousItem) {
       addedCount += 1;
@@ -119,8 +130,7 @@ export function syncLegacyStatusQueue(
     }
 
     if (leftover.kind === "completion") {
-      const latestSession =
-        snapshot.sessions.find((session) => session.session_id === leftover.sessionId) ?? leftover.payload;
+      const latestSession = findSnapshotSessionById(snapshot, leftover.sessionId) ?? leftover.payload;
       nextItems.push({
         ...leftover,
         payload: latestSession,
@@ -149,7 +159,7 @@ export function syncLegacyStatusQueue(
   }, null);
   setStatusQueueItems(uiState, prunedItems);
 
-  return {
+  return buildStatusQueueSyncResult({
     addedCount,
     addedApprovalCount,
     addedCompletionCount,
@@ -157,5 +167,5 @@ export function syncLegacyStatusQueue(
     nextRefreshDelayMs: nextRefreshAt
       ? Math.max(timings.statusQueue.refreshMinDelayMs, nextRefreshAt - nowMs + timings.statusQueue.refreshLeadMs)
       : null,
-  };
+  });
 }

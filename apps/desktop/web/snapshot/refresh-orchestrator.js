@@ -1,4 +1,5 @@
 import {
+  getStatusSurfaceScene,
   getTimer,
   getLastRawSnapshot,
   getSurfaceMode,
@@ -8,24 +9,21 @@ import {
   setInteraction,
   setLastRawSnapshot,
   setLastSnapshot,
-  setSessionSurfaceScene,
-  setSettingsSurfaceScene,
-  setSurfaceScene,
-  setStatusSurfaceScene,
   setStatusAutoExpanded,
   setSurfaceMode,
   setTimer,
 } from "../state-helpers.js";
 import { hasStatusQueueDisplayItems } from "../renderers/surface-state.js";
-import { formatSource, formatStatus } from "../utils.js";
+import { buildSnapshotSummary } from "../renderers/snapshot-summary.js";
 import { detectCompletedSessions, syncCompletionBadges } from "./completion-tracker.js";
 import { applyModeHint } from "./fallback-hints.js";
 import { playNotificationSound } from "../notification-sound.js";
 import { applyPendingCardsToSnapshot, syncPendingCardVisibility } from "./pending-card-visibility.js";
 import { hasQueueInteraction, resolveSurfaceMode, shouldAutoPopupStatusQueue } from "./queue-mode.js";
+import { applySnapshotSurfaceScenes, unpackSnapshotStatusSurfaceBundle } from "./snapshot-bundle.js";
 import { applyCompletionAttention, applyStatusTone, presentSnapshot } from "./snapshot-presenter.js";
+import { getStatusQueueRefreshDelay, hasAddedStatusQueueItems } from "./status-queue-sync-result.js";
 import { syncStatusQueue } from "./status-queue.js";
-import { summarizeDefaultStatusSurfaceWithFallback } from "../renderers/status-surface-scene.js";
 
 function updateSummaryFields(snapshot, deps) {
   const {
@@ -41,38 +39,38 @@ function updateSummaryFields(snapshot, deps) {
     permissionCount,
     questionCount,
   } = deps;
-  const statusSurfaceScene = uiState?.snapshot?.statusSurfaceScene ?? null;
-  const defaultStatusSummary = summarizeDefaultStatusSurfaceWithFallback(statusSurfaceScene, snapshot);
+  const statusSurfaceScene = getStatusSurfaceScene(uiState);
+  const summary = buildSnapshotSummary(snapshot, statusSurfaceScene);
 
   if (primaryStatus) {
-    primaryStatus.textContent = formatStatus(snapshot.status);
+    primaryStatus.textContent = summary.statusText;
   }
   if (primarySource) {
-    primarySource.textContent = formatSource(snapshot.primary_source);
+    primarySource.textContent = summary.sourceText;
   }
   if (activeCount) {
-    activeCount.textContent = String(snapshot.active_session_count);
+    activeCount.textContent = summary.activeCountText;
   }
   if (activeCountExpanded) {
-    activeCountExpanded.textContent = String(snapshot.active_session_count);
+    activeCountExpanded.textContent = summary.activeCountText;
   }
   if (totalCountCompact) {
-    totalCountCompact.textContent = String(snapshot.total_session_count);
+    totalCountCompact.textContent = summary.totalCountText;
   }
   if (totalCountExpanded) {
-    totalCountExpanded.textContent = String(snapshot.total_session_count);
+    totalCountExpanded.textContent = summary.totalCountText;
   }
   if (totalCount) {
-    totalCount.textContent = `${snapshot.total_session_count} total`;
+    totalCount.textContent = summary.totalLabelText;
   }
   if (totalCountLabel) {
-    totalCountLabel.textContent = `${snapshot.total_session_count} total`;
+    totalCountLabel.textContent = summary.totalLabelText;
   }
   if (permissionCount) {
-    permissionCount.textContent = String(defaultStatusSummary.approvalCount || snapshot.pending_permission_count);
+    permissionCount.textContent = summary.approvalCountText;
   }
   if (questionCount) {
-    questionCount.textContent = String(defaultStatusSummary.questionCount || snapshot.pending_question_count);
+    questionCount.textContent = summary.questionCountText;
   }
 }
 
@@ -108,17 +106,13 @@ export async function refreshSnapshot(api, deps) {
   } = deps;
 
   const previousRawSnapshot = getLastRawSnapshot(uiState);
-  const bundle = await api.getSnapshotStatusSurfaceBundle();
-  const rawSnapshot = bundle?.snapshot ?? null;
-  const surfaceScene = bundle?.surfaceScene ?? null;
-  const statusSurfaceScene = bundle?.statusSurfaceScene ?? null;
-  const sessionSurfaceScene = bundle?.sessionSurfaceScene ?? null;
-  const settingsSurfaceScene = bundle?.settingsSurfaceScene ?? null;
+  const bundleState = unpackSnapshotStatusSurfaceBundle(await api.getSnapshotStatusSurfaceBundle());
+  const rawSnapshot = bundleState.rawSnapshot;
   const completedSessionIds = detectCompletedSessions(previousRawSnapshot, rawSnapshot);
-  syncPendingCardVisibility(rawSnapshot, statusSurfaceScene, uiState, timings);
+  syncPendingCardVisibility(rawSnapshot, bundleState.statusSurfaceScene, uiState, timings);
   const snapshot = applyPendingCardsToSnapshot(rawSnapshot, uiState);
   const statusQueueSync = syncStatusQueue(
-    statusSurfaceScene,
+    bundleState.statusSurfaceScene,
     snapshot,
     previousRawSnapshot,
     completedSessionIds,
@@ -126,20 +120,18 @@ export async function refreshSnapshot(api, deps) {
     timings
   );
   syncCompletionBadges(rawSnapshot, completedSessionIds, uiState);
-  scheduleStatusQueueRefresh(uiState, requestRefresh, statusQueueSync.nextRefreshDelayMs);
+  scheduleStatusQueueRefresh(uiState, requestRefresh, getStatusQueueRefreshDelay(statusQueueSync));
   setLastRawSnapshot(uiState, rawSnapshot);
   setLastSnapshot(uiState, snapshot);
-  setSurfaceScene(uiState, surfaceScene);
-  setStatusSurfaceScene(uiState, statusSurfaceScene);
-  setSessionSurfaceScene(uiState, sessionSurfaceScene);
-  setSettingsSurfaceScene(uiState, settingsSurfaceScene);
+  applySnapshotSurfaceScenes(uiState, bundleState);
 
   updateSummaryFields(snapshot, deps);
   const currentSurfaceMode = getSurfaceMode(uiState);
   const hasStatusItems = hasStatusQueueDisplayItems(uiState);
   const queueInteractionActive = hasQueueInteraction(uiState);
+  const queueAddedItems = hasAddedStatusQueueItems(statusQueueSync);
 
-  if (statusQueueSync.addedCount > 0 && isCompletionSoundEnabled(uiState)) {
+  if (queueAddedItems && isCompletionSoundEnabled(uiState)) {
     void playNotificationSound();
   }
 
@@ -161,12 +153,12 @@ export async function refreshSnapshot(api, deps) {
 
   const shouldAutoPopup = shouldAutoPopupStatusQueue(uiState);
 
-  if (shouldAutoPopup && statusQueueSync.addedCount > 0 && !isExpanded(uiState) && !isTransitioning(uiState)) {
+  if (shouldAutoPopup && queueAddedItems && !isExpanded(uiState) && !isTransitioning(uiState)) {
     await setIslandMode?.(true, true, { autoStatus: true });
     return;
   }
 
-  if (shouldAutoPopup && statusQueueSync.addedCount > 0 && isExpanded(uiState) && !isTransitioning(uiState)) {
+  if (shouldAutoPopup && queueAddedItems && isExpanded(uiState) && !isTransitioning(uiState)) {
     setStatusAutoExpanded(uiState, true);
   }
 

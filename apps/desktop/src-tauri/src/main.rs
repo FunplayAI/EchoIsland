@@ -28,8 +28,10 @@ mod macos_native_test_panel;
 mod macos_panel;
 mod macos_shared_expanded_window;
 mod native_panel_core;
+mod native_panel_renderer;
 mod native_panel_runtime;
 mod native_panel_scene;
+mod native_panel_scene_input;
 mod native_ui_refresh;
 mod notification_sound;
 mod platform;
@@ -41,6 +43,7 @@ mod terminal_focus_service;
 mod tray;
 mod web_panel_scene_service;
 mod window_surface_service;
+mod windows_native_panel;
 
 use app_runtime::{AppRuntime, spawn_ipc_server};
 use claude_scan::spawn_claude_scan_loop;
@@ -57,6 +60,7 @@ use commands::{
     set_preferred_display_index, show_main_window_interactive, skip_question,
 };
 use http_receiver::spawn_http_receiver;
+use native_panel_renderer::{NativePanelRuntimeBackend, current_native_panel_runtime_backend};
 use startup_service::AppStartupService;
 use web_panel_scene_service::WebPanelSceneState;
 
@@ -83,28 +87,26 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let app_handle = app.handle().clone();
-            #[cfg(target_os = "macos")]
-            if macos_native_test_panel::native_ui_enabled() {
-                macos_native_test_panel::create_native_island_panel()
+            let native_panel_backend = current_native_panel_runtime_backend();
+            if native_panel_backend.native_ui_enabled() {
+                native_panel_backend
+                    .create_panel()
                     .map_err(std::io::Error::other)?;
                 if macos_shared_expanded_window::shared_expanded_enabled() {
                     macos_shared_expanded_window::create_shared_expanded_window(&app_handle)
                         .map_err(std::io::Error::other)?;
                 }
-                macos_native_test_panel::hide_main_webview_window(&app_handle)
+                native_panel_backend
+                    .hide_main_webview_window(&app_handle)
                     .map_err(std::io::Error::other)?;
                 native_panel_runtime::spawn_native_snapshot_loop(
                     app_handle.clone(),
                     app_runtime.clone(),
                 );
-                macos_native_test_panel::spawn_native_hover_loop(app_handle.clone());
-                macos_native_test_panel::spawn_native_count_marquee_loop(app_handle.clone());
-                macos_native_test_panel::spawn_native_status_queue_loop(app_handle.clone());
+                native_panel_backend.spawn_platform_loops(app_handle.clone());
             } else {
                 macos_panel::create_main_panel(&app_handle).map_err(std::io::Error::other)?;
             }
-            #[cfg(not(target_os = "macos"))]
-            macos_panel::create_main_panel(&app_handle).map_err(std::io::Error::other)?;
             AppStartupService::new(app)
                 .initialize()
                 .map_err(std::io::Error::other)?;

@@ -1,3 +1,9 @@
+use super::constants::{
+    CARD_CHAT_GAP, CARD_CHAT_LINE_HEIGHT, CARD_CHAT_PREFIX_WIDTH, CARD_CONTENT_BOTTOM_INSET,
+    CARD_HEADER_HEIGHT, CARD_INSET_X, CARD_PENDING_ACTION_GAP, CARD_PENDING_ACTION_HEIGHT,
+    CARD_PENDING_ACTION_Y, CARD_TOOL_GAP,
+};
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct PanelCardMetricConstants {
     pub(crate) card_inset_x: f64,
@@ -10,6 +16,21 @@ pub(crate) struct PanelCardMetricConstants {
     pub(crate) pending_action_y: f64,
     pub(crate) pending_action_height: f64,
     pub(crate) pending_action_gap: f64,
+}
+
+pub(crate) fn default_panel_card_metric_constants() -> PanelCardMetricConstants {
+    PanelCardMetricConstants {
+        card_inset_x: CARD_INSET_X,
+        chat_prefix_width: CARD_CHAT_PREFIX_WIDTH,
+        chat_line_height: CARD_CHAT_LINE_HEIGHT,
+        header_height: CARD_HEADER_HEIGHT,
+        content_bottom_inset: CARD_CONTENT_BOTTOM_INSET,
+        chat_gap: CARD_CHAT_GAP,
+        tool_gap: CARD_TOOL_GAP,
+        pending_action_y: CARD_PENDING_ACTION_Y,
+        pending_action_height: CARD_PENDING_ACTION_HEIGHT,
+        pending_action_gap: CARD_PENDING_ACTION_GAP,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -229,10 +229,7 @@ pub(super) fn card_transition_total_ms(
     duration_ms: u64,
     stagger_ms: u64,
 ) -> u64 {
-    if card_count == 0 {
-        return 0;
-    }
-    duration_ms + card_count.saturating_sub(1) as u64 * stagger_ms
+    crate::native_panel_core::card_transition_total_ms(card_count, duration_ms, stagger_ms)
 }
 
 pub(super) fn clear_card_animation_layouts() {

@@ -6,20 +6,10 @@ import {
 } from "./surface-state.js";
 import { getStatusSurfaceScene, getSurfaceMode } from "../state-helpers.js";
 import { getSurfaceSceneHeadline } from "./surface-scene.js";
-import { summarizeDefaultStatusSurfaceWithFallback } from "./status-surface-scene.js";
-
-function summarizeHeadline(snapshot) {
-  if (snapshot.pending_permission_count > 0) {
-    return snapshot.pending_permission_count > 1 ? "Approvals needed" : "Approval needed";
-  }
-  if (snapshot.pending_question_count > 0) {
-    return snapshot.pending_question_count > 1 ? "Questions waiting" : "Question waiting";
-  }
-  if (snapshot.active_session_count > 0) {
-    return `${snapshot.active_session_count} active task${snapshot.active_session_count > 1 ? "s" : ""}`;
-  }
-  return "No active tasks";
-}
+import {
+  summarizeDefaultStatusSurfaceWithFallback,
+  summarizeSnapshotHeadline,
+} from "./status-surface-scene.js";
 
 export function updateHeadline(snapshot, { headline, uiState }) {
   if (!headline) return;
@@ -57,5 +47,5 @@ export function updateHeadline(snapshot, { headline, uiState }) {
     headline.textContent = sharedHeadline.text;
     return;
   }
-  headline.textContent = summarizeHeadline(snapshot);
+  headline.textContent = summarizeSnapshotHeadline(snapshot);
 }

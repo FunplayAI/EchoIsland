@@ -8,7 +8,7 @@ use super::panel_constants::{
     ACTIVE_COUNT_SLOT_WIDTH, ACTIVE_COUNT_TEXT_OFFSET_X, ACTIVE_COUNT_TEXT_WIDTH,
     COMPACT_HEADLINE_LABEL_HEIGHT, COMPACT_HEADLINE_VERTICAL_NUDGE_Y,
 };
-use crate::native_panel_scene::PanelScene;
+use crate::native_panel_renderer::NativePanelCompactBarCommand;
 
 pub(super) struct CompactBarViews {
     pub(super) headline: Retained<NSTextField>,
@@ -26,12 +26,10 @@ pub(super) struct NativeCompactStyle {
     pub(super) total_count_color: [f64; 4],
 }
 
-pub(super) fn compact_style_for_scene(scene: &PanelScene) -> NativeCompactStyle {
-    let active_count = scene
-        .compact_bar
-        .active_count
-        .parse::<usize>()
-        .unwrap_or_default();
+pub(super) fn compact_style_for_command(
+    command: &NativePanelCompactBarCommand,
+) -> NativeCompactStyle {
+    let active_count = command.active_count.parse::<usize>().unwrap_or_default();
 
     NativeCompactStyle {
         headline_color: if active_count > 0 {

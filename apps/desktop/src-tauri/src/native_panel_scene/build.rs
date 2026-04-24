@@ -3,9 +3,13 @@ use crate::native_panel_core::{
     StatusQueuePayload, compact_active_session_count, displayed_default_pending_permissions,
     displayed_default_pending_questions, displayed_prompt_assist_sessions, displayed_sessions,
     format_status, normalize_status, resolve_mascot_base_state, session_title,
+    sync_panel_snapshot_state,
 };
+use chrono::{DateTime, Utc};
 use echoisland_runtime::RuntimeSnapshot;
 use std::time::Instant;
+
+use super::PanelRuntimeRenderState;
 
 use super::{
     CompactBarScene, PanelScene, SceneBadge, SceneCard, SceneGlow, SceneGlowStyle, SceneHitTarget,
@@ -22,6 +26,13 @@ pub(crate) struct PanelSceneBuildInput {
     pub(crate) display_count: usize,
     pub(crate) settings: PanelSettingsState,
     pub(crate) app_version: String,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PanelRuntimeSceneBundle {
+    pub(crate) scene: PanelScene,
+    pub(crate) runtime_render_state: PanelRuntimeRenderState,
+    pub(crate) displayed_snapshot: RuntimeSnapshot,
 }
 
 impl Default for PanelSceneBuildInput {
@@ -176,6 +187,32 @@ pub(crate) fn build_panel_scene(
         hit_targets,
         nodes,
     }
+}
+
+pub(crate) fn build_panel_runtime_scene_bundle(
+    panel_state: &PanelState,
+    displayed_snapshot: &RuntimeSnapshot,
+    input: &PanelSceneBuildInput,
+) -> PanelRuntimeSceneBundle {
+    let scene = build_panel_scene(panel_state, displayed_snapshot, input);
+    let runtime_render_state =
+        resolve_panel_runtime_render_state(panel_state, Some(displayed_snapshot), input);
+
+    PanelRuntimeSceneBundle {
+        scene,
+        runtime_render_state,
+        displayed_snapshot: displayed_snapshot.clone(),
+    }
+}
+
+pub(crate) fn sync_panel_runtime_scene_bundle(
+    panel_state: &mut PanelState,
+    raw_snapshot: &RuntimeSnapshot,
+    input: &PanelSceneBuildInput,
+    now: DateTime<Utc>,
+) -> PanelRuntimeSceneBundle {
+    let sync_result = sync_panel_snapshot_state(panel_state, raw_snapshot, now);
+    build_panel_runtime_scene_bundle(panel_state, &sync_result.displayed_snapshot, input)
 }
 
 fn build_surface_scene(state: &PanelState, compact_bar: &CompactBarScene) -> SurfaceScene {

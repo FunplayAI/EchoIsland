@@ -1,6 +1,7 @@
 import { isMascotEnabled, setMascotSource, setMascotState } from "./state-helpers.js";
 import { drawNiloMascot } from "./mascot/canvas-renderer.js";
 import { inferMascotState } from "./mascot/state-machine.js";
+import { getSnapshotPrimarySourceKey } from "./renderers/snapshot-summary.js";
 
 export function applyMascot(snapshot, { mascotShell, uiState }) {
   if (!mascotShell) return;
@@ -10,7 +11,7 @@ export function applyMascot(snapshot, { mascotShell, uiState }) {
     return;
   }
   mascotShell.hidden = false;
-  const key = String(snapshot.primary_source ?? "").toLowerCase();
+  const key = getSnapshotPrimarySourceKey(snapshot);
   mascotShell.dataset.hasMascot = "true";
   setMascotSource(uiState, key || "codex");
   setMascotState(uiState, inferMascotState(snapshot, uiState));

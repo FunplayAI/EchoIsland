@@ -3,19 +3,19 @@ use objc2_app_kit::NSView;
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
 use super::card_animation::clear_card_animation_layouts;
-use super::card_metrics::{estimated_scene_card_height, estimated_scene_content_height};
+use super::card_metrics::{estimated_scene_card_height, estimated_scene_cards_content_height};
 use super::card_views::{
     apply_status_queue_item_visual_state, clear_subviews, create_empty_card,
     create_pending_permission_card, create_pending_question_card, create_prompt_assist_card,
     create_session_card, create_settings_surface_card, create_status_queue_card,
-    settings_surface_card_height, settings_surface_row_frame,
+    settings_surface_card_height,
 };
 use super::panel_constants::{EXPANDED_CARD_GAP, EXPANDED_CARD_OVERHANG};
 use super::panel_geometry::expanded_cards_width;
-use super::panel_interaction::replace_native_card_hit_targets;
 use super::panel_scene_adapter::build_native_panel_scene;
-use super::panel_types::{NativeCardHitTarget, NativePanelHitAction};
-use crate::native_panel_scene::{PanelScene, SceneCard};
+use crate::native_panel_core::PanelRect;
+use crate::native_panel_renderer::{NativePanelCardStackCommand, native_panel_card_stack_command};
+use crate::native_panel_scene::SceneCard;
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn render_expanded_cards(
@@ -26,10 +26,18 @@ pub(super) unsafe fn render_expanded_cards(
     clear_card_animation_layouts();
     clear_subviews(cards_container);
     let scene = build_native_panel_scene(snapshot);
-    let mut card_hit_targets = Vec::new();
     let cards_width = expanded_cards_width(expanded_width);
-    render_scene_cards(cards_container, cards_width, &scene, &mut card_hit_targets);
-    replace_native_card_hit_targets(card_hit_targets);
+    let command = native_panel_card_stack_command(
+        &scene,
+        PanelRect {
+            x: cards_container.frame().origin.x,
+            y: cards_container.frame().origin.y,
+            width: cards_width,
+            height: cards_container.frame().size.height,
+        },
+        true,
+    );
+    render_card_stack_command(cards_container, cards_width, &command);
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -40,53 +48,24 @@ unsafe fn render_settings_surface(cards_container: &NSView, cards_width: f64) {
     if let Some(frame) = next_expanded_card_frame(&mut cursor_y, false, body_height, cards_width) {
         let card = create_settings_surface_card(frame);
         cards_container.addSubview(&card);
-        replace_native_card_hit_targets(settings_surface_hit_targets(frame));
-        return;
     }
-    replace_native_card_hit_targets(Vec::new());
-}
-
-pub(super) fn settings_surface_hit_targets(frame: NSRect) -> Vec<NativeCardHitTarget> {
-    vec![
-        NativeCardHitTarget {
-            action: NativePanelHitAction::CycleDisplay,
-            value: String::new(),
-            frame: settings_surface_row_frame(frame, 0),
-        },
-        NativeCardHitTarget {
-            action: NativePanelHitAction::ToggleCompletionSound,
-            value: String::new(),
-            frame: settings_surface_row_frame(frame, 1),
-        },
-        NativeCardHitTarget {
-            action: NativePanelHitAction::ToggleMascot,
-            value: String::new(),
-            frame: settings_surface_row_frame(frame, 2),
-        },
-        NativeCardHitTarget {
-            action: NativePanelHitAction::OpenReleasePage,
-            value: String::new(),
-            frame: settings_surface_row_frame(frame, 3),
-        },
-    ]
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn render_status_queue_cards(
     cards_container: &NSView,
-    scene: &PanelScene,
+    command: &NativePanelCardStackCommand,
     cards_width: f64,
-    card_hit_targets: &mut Vec<NativeCardHitTarget>,
 ) {
     set_cards_container_body_height(
         cards_container,
         cards_width,
-        estimated_scene_content_height(scene),
+        estimated_scene_cards_content_height(&command.cards),
     );
 
-    let mut cursor_y = estimated_scene_content_height(scene);
+    let mut cursor_y = estimated_scene_cards_content_height(&command.cards);
     let mut rendered_count = 0usize;
-    for card in &scene.cards {
+    for card in &command.cards {
         let item = match card {
             SceneCard::StatusApproval { item } | SceneCard::StatusCompletion { item } => item,
             _ => continue,
@@ -100,11 +79,6 @@ unsafe fn render_status_queue_cards(
         let card = create_status_queue_card(frame, item);
         apply_status_queue_item_visual_state(&card, item);
         cards_container.addSubview(&card);
-        card_hit_targets.push(NativeCardHitTarget {
-            action: NativePanelHitAction::FocusSession,
-            value: item.session_id.clone(),
-            frame,
-        });
         rendered_count += 1;
     }
 }
@@ -112,17 +86,16 @@ unsafe fn render_status_queue_cards(
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn render_default_cards(
     cards_container: &NSView,
-    scene: &PanelScene,
+    command: &NativePanelCardStackCommand,
     cards_width: f64,
-    card_hit_targets: &mut Vec<NativeCardHitTarget>,
 ) {
-    let body_height = estimated_scene_content_height(scene);
+    let body_height = estimated_scene_cards_content_height(&command.cards);
     set_cards_container_body_height(cards_container, cards_width, body_height);
 
     let mut cursor_y = body_height;
     let mut rendered_count = 0usize;
 
-    for card in &scene.cards {
+    for card in &command.cards {
         let card_height = estimated_scene_card_height(card);
         let Some(frame) =
             next_expanded_card_frame(&mut cursor_y, rendered_count > 0, card_height, cards_width)
@@ -133,38 +106,18 @@ unsafe fn render_default_cards(
             SceneCard::PendingPermission { pending, count } => {
                 let view = create_pending_permission_card(frame, pending, *count);
                 cards_container.addSubview(&view);
-                card_hit_targets.push(NativeCardHitTarget {
-                    action: NativePanelHitAction::FocusSession,
-                    value: pending.session_id.clone(),
-                    frame,
-                });
             }
             SceneCard::PendingQuestion { pending, count } => {
                 let view = create_pending_question_card(frame, pending, *count);
                 cards_container.addSubview(&view);
-                card_hit_targets.push(NativeCardHitTarget {
-                    action: NativePanelHitAction::FocusSession,
-                    value: pending.session_id.clone(),
-                    frame,
-                });
             }
             SceneCard::PromptAssist { session } => {
                 let view = create_prompt_assist_card(frame, session);
                 cards_container.addSubview(&view);
-                card_hit_targets.push(NativeCardHitTarget {
-                    action: NativePanelHitAction::FocusSession,
-                    value: session.session_id.clone(),
-                    frame,
-                });
             }
             SceneCard::Session { session, .. } => {
                 let view = create_session_card(frame, session, false);
                 cards_container.addSubview(&view);
-                card_hit_targets.push(NativeCardHitTarget {
-                    action: NativePanelHitAction::FocusSession,
-                    value: session.session_id.clone(),
-                    frame,
-                });
             }
             SceneCard::Empty => {
                 let empty = create_empty_card(frame);
@@ -179,28 +132,27 @@ unsafe fn render_default_cards(
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn render_scene_cards(
+unsafe fn render_card_stack_command(
     cards_container: &NSView,
     cards_width: f64,
-    scene: &PanelScene,
-    card_hit_targets: &mut Vec<NativeCardHitTarget>,
+    command: &NativePanelCardStackCommand,
 ) {
-    if matches!(scene.cards.first(), Some(SceneCard::Settings { .. })) {
+    if matches!(command.cards.first(), Some(SceneCard::Settings { .. })) {
         render_settings_surface(cards_container, cards_width);
         return;
     }
 
-    if scene.cards.iter().any(|card| {
+    if command.cards.iter().any(|card| {
         matches!(
             card,
             SceneCard::StatusApproval { .. } | SceneCard::StatusCompletion { .. }
         )
     }) {
-        render_status_queue_cards(cards_container, scene, cards_width, card_hit_targets);
+        render_status_queue_cards(cards_container, command, cards_width);
         return;
     }
 
-    render_default_cards(cards_container, scene, cards_width, card_hit_targets);
+    render_default_cards(cards_container, command, cards_width);
 }
 
 fn set_cards_container_body_height(cards_container: &NSView, cards_width: f64, body_height: f64) {

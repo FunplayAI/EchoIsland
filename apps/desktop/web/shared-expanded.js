@@ -1,6 +1,7 @@
 import { desktopApi } from "./api.js";
 import { applyPlatformTheme } from "./platform-theme.js";
 import { renderExpandedPanelHtml } from "./renderers/expanded-panel-renderer.js";
+import { buildSnapshotSummary, getSnapshotStatusKey } from "./renderers/snapshot-summary.js";
 import { getPlatformCapabilities, setLastSnapshot, setPlatformCapabilities } from "./state-helpers.js";
 import { uiState } from "./ui-context.js";
 
@@ -11,8 +12,8 @@ let lastReportedHeight = -1;
 
 function setHostState(snapshot) {
   if (!host) return;
-  host.dataset.empty = snapshot?.active_session_count > 0 ? "false" : "true";
-  host.dataset.status = String(snapshot?.status ?? "idle").toLowerCase();
+  host.dataset.empty = buildSnapshotSummary(snapshot).emptyState;
+  host.dataset.status = getSnapshotStatusKey(snapshot);
 }
 
 function measureHeight() {

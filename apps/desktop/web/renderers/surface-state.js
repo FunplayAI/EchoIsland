@@ -5,26 +5,27 @@ import {
   getSurfaceMode,
 } from "../state-helpers.js";
 import { getSessionSurfaceSessionIds } from "./session-surface-scene.js";
-import { getCompletionSceneSessionIds, getStatusSurfaceCardsByMode } from "./status-surface-scene.js";
+import {
+  getCompletionSceneSessionIds,
+  getStatusQueueApprovalCountFromScene,
+  getStatusQueueTotalCountFromScene,
+} from "./status-surface-scene.js";
+import { getSnapshotSessions, indexSnapshotSessions } from "./snapshot-sessions.js";
+export {
+  findSnapshotSessionById,
+  getSnapshotSessions,
+  hasSnapshotSessionSource,
+  indexSnapshotSessions,
+} from "./snapshot-sessions.js";
 
 export function isCompletionSurfaceActive(uiState) {
   return getSurfaceMode(uiState) === "status" && getCompletionDisplaySessionIds(null, uiState).length > 0;
 }
 
-export function indexSnapshotSessions(snapshot) {
-  const sessions = Array.isArray(snapshot?.sessions) ? snapshot.sessions : [];
-  return new Map(sessions.map((session) => [session?.session_id, session]));
-}
-
-export function findSnapshotSessionById(snapshot, sessionId) {
-  if (!sessionId) return null;
-  return indexSnapshotSessions(snapshot).get(sessionId) ?? null;
-}
-
 export function getDisplayedSessions(snapshot, uiState) {
   const sceneIds = getSessionSurfaceSessionIds(getSessionSurfaceScene(uiState));
   if (!sceneIds.length) {
-    return Array.isArray(snapshot?.sessions) ? snapshot.sessions : [];
+    return getSnapshotSessions(snapshot);
   }
 
   const sessionsById = indexSnapshotSessions(snapshot);
@@ -46,7 +47,7 @@ export function getCompletionDisplaySessionIds(snapshot, uiState) {
 
 export function getStatusQueueItemCount(uiState) {
   const statusSurfaceScene = getStatusSurfaceScene(uiState);
-  const sceneCount = Number(statusSurfaceScene?.queueState?.totalCount ?? 0);
+  const sceneCount = getStatusQueueTotalCountFromScene(statusSurfaceScene);
   if (sceneCount > 0) {
     return sceneCount;
   }
@@ -59,9 +60,7 @@ export function hasStatusQueueDisplayItems(uiState) {
 
 export function getStatusQueueApprovalCount(uiState) {
   const statusSurfaceScene = getStatusSurfaceScene(uiState);
-  const sceneApprovalCount = getStatusSurfaceCardsByMode(statusSurfaceScene, "queue").filter(
-    (card) => card?.kind === "approval"
-  ).length;
+  const sceneApprovalCount = getStatusQueueApprovalCountFromScene(statusSurfaceScene);
   if (sceneApprovalCount > 0) {
     return sceneApprovalCount;
   }

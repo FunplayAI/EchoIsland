@@ -1,12 +1,15 @@
 use std::time::{Duration, Instant};
 
+use crate::native_panel_renderer::{
+    NativePanelHostWindowDescriptor, NativePanelPointerRegionKind,
+    NativePanelRuntimeInputDescriptor, NativePanelRuntimeSceneCache,
+    resolve_native_panel_pointer_regions,
+};
 use chrono::Utc;
 use echoisland_runtime::{PendingPermissionView, RuntimeSnapshot, SessionSnapshotView};
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
 use super::card_animation::card_content_visibility_phase;
-use super::card_stack::settings_surface_hit_targets;
-use super::card_views::settings_surface_row_frame;
 use super::mascot::NativeMascotRuntime;
 use super::panel_constants::{
     DEFAULT_COMPACT_PILL_HEIGHT, DEFAULT_COMPACT_PILL_WIDTH, DEFAULT_EXPANDED_PILL_WIDTH,
@@ -18,11 +21,12 @@ use super::panel_constants::{
     STATUS_COMPLETION_VISIBLE_SECONDS,
 };
 use super::panel_geometry::{
-    centered_top_frame, island_bar_frame, panel_transition_canvas_height,
-    resolve_native_panel_layout, shared_expanded_content_state,
+    centered_top_frame, island_bar_frame, native_panel_core_layout, panel_transition_canvas_height,
+    resolve_native_panel_host_frame, resolve_native_panel_layout, shared_expanded_content_state,
 };
 use super::panel_hit_testing::native_hover_pill_rect;
 use super::panel_interaction::{sync_native_hover_expansion_state, toggle_native_settings_surface};
+use super::panel_scene_adapter::build_native_panel_scene_for_core_state_with_input;
 use super::panel_screen_geometry::{
     expanded_width_for_camera_housing_screen, expanded_width_for_non_camera_housing_screen,
     shell_width_for_non_camera_housing_screen,
@@ -31,7 +35,7 @@ use super::panel_snapshot::native_panel_render_payload;
 use super::panel_snapshot::sync_native_status_surface_policy;
 use super::panel_types::{
     NativeCompletionBadgeItem, NativeExpandedSurface, NativeHoverTransition,
-    NativePanelGeometryMetrics, NativePanelHitAction, NativePanelState, NativePanelTransitionFrame,
+    NativePanelGeometryMetrics, NativePanelState, NativePanelTransitionFrame,
     NativePendingPermissionCard, NativeStatusQueueItem, NativeStatusQueuePayload,
     NativeStatusQueueSyncResult,
 };
@@ -41,9 +45,11 @@ use super::queue_logic::{
     sync_native_pending_card_visibility, sync_native_status_queue,
 };
 use super::transition_logic::{
-    resolve_close_transition_frame, resolve_open_transition_frame,
-    resolve_surface_switch_transition_frame, surface_switch_card_progress,
+    resolve_close_transition_frame, resolve_open_transition_descriptor,
+    resolve_open_transition_frame, resolve_surface_switch_transition_frame,
+    surface_switch_card_progress,
 };
+use crate::native_panel_scene::PanelSceneBuildInput;
 
 fn snapshot(active: usize, total: usize) -> RuntimeSnapshot {
     RuntimeSnapshot {
@@ -121,6 +127,7 @@ fn panel_state() -> NativePanelState {
         skip_next_close_card_exit: false,
         last_raw_snapshot: None,
         last_snapshot: None,
+        scene_cache: NativePanelRuntimeSceneCache::default(),
         status_queue: Vec::new(),
         completion_badge_items: Vec::new(),
         pending_permission_card: None,
@@ -128,20 +135,14 @@ fn panel_state() -> NativePanelState {
         status_auto_expanded: false,
         surface_mode: NativeExpandedSurface::Default,
         shared_body_height: None,
+        host_window_descriptor: NativePanelHostWindowDescriptor::default(),
         pointer_inside_since: None,
         pointer_outside_since: None,
         primary_mouse_down: false,
         last_focus_click: None,
-        card_hit_targets: Vec::new(),
+        pointer_regions: Vec::new(),
         mascot_runtime: NativeMascotRuntime::new(Instant::now()),
     }
-}
-
-fn assert_rect_eq(actual: NSRect, expected: NSRect) {
-    assert_eq!(actual.origin.x, expected.origin.x);
-    assert_eq!(actual.origin.y, expected.origin.y);
-    assert_eq!(actual.size.width, expected.size.width);
-    assert_eq!(actual.size.height, expected.size.height);
 }
 
 #[test]
@@ -378,25 +379,6 @@ fn settings_surface_toggle_overrides_status_surface() {
     assert!(toggle_native_settings_surface(&mut state));
     assert_eq!(state.surface_mode, NativeExpandedSurface::Settings);
     assert!(!state.status_auto_expanded);
-}
-
-#[test]
-fn settings_surface_hit_targets_preserve_row_action_semantics() {
-    let frame = NSRect::new(NSPoint::new(-12.0, 0.0), NSSize::new(380.0, 206.0));
-    let targets = settings_surface_hit_targets(frame);
-
-    assert_eq!(targets.len(), 4);
-    assert_eq!(targets[0].action, NativePanelHitAction::CycleDisplay);
-    assert_eq!(
-        targets[1].action,
-        NativePanelHitAction::ToggleCompletionSound
-    );
-    assert_eq!(targets[2].action, NativePanelHitAction::ToggleMascot);
-    assert_eq!(targets[3].action, NativePanelHitAction::OpenReleasePage);
-    assert_rect_eq(targets[0].frame, settings_surface_row_frame(frame, 0));
-    assert_rect_eq(targets[1].frame, settings_surface_row_frame(frame, 1));
-    assert_rect_eq(targets[2].frame, settings_surface_row_frame(frame, 2));
-    assert_rect_eq(targets[3].frame, settings_surface_row_frame(frame, 3));
 }
 
 #[test]
@@ -678,6 +660,81 @@ fn native_panel_layout_clamps_visible_height_to_canvas() {
 }
 
 #[test]
+fn macos_layout_feeds_shared_pointer_regions() {
+    let layout = resolve_native_panel_layout(
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1440.0, 900.0)),
+        NativePanelGeometryMetrics {
+            compact_height: 38.0,
+            compact_width: 253.0,
+            expanded_width: 283.0,
+            panel_width: 420.0,
+        },
+        180.0,
+        180.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+    );
+    let mut core_state = crate::native_panel_core::PanelState::default();
+    core_state.expanded = true;
+    core_state.surface_mode = crate::native_panel_core::ExpandedSurface::Settings;
+    let input = NativePanelRuntimeInputDescriptor {
+        scene_input: PanelSceneBuildInput::default(),
+        screen_frame: None,
+    };
+    let scene =
+        build_native_panel_scene_for_core_state_with_input(&snapshot(0, 0), &core_state, &input);
+
+    let regions =
+        resolve_native_panel_pointer_regions(native_panel_core_layout(&layout), &scene, None);
+
+    assert!(
+        regions
+            .iter()
+            .any(|region| matches!(region.kind, NativePanelPointerRegionKind::CompactBar))
+    );
+    assert!(
+        regions
+            .iter()
+            .any(|region| matches!(region.kind, NativePanelPointerRegionKind::CardsContainer))
+    );
+    assert!(
+        regions
+            .iter()
+            .any(|region| matches!(region.kind, NativePanelPointerRegionKind::HitTarget(_)))
+    );
+}
+
+#[test]
+fn macos_host_frame_adapter_uses_shared_animation_descriptor() {
+    let frame = resolve_native_panel_host_frame(
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1440.0, 900.0)),
+        NativePanelGeometryMetrics {
+            compact_height: 38.0,
+            compact_width: 400.0,
+            expanded_width: 700.0,
+            panel_width: 700.0,
+        },
+        crate::native_panel_core::PanelAnimationDescriptor {
+            kind: crate::native_panel_core::PanelAnimationKind::Open,
+            canvas_height: 180.2,
+            visible_height: 140.0,
+            width_progress: 0.5,
+            height_progress: 0.0,
+            shoulder_progress: 0.0,
+            drop_progress: 0.0,
+            cards_progress: 0.0,
+        },
+    );
+
+    assert_eq!(frame.origin.x, 445.0);
+    assert_eq!(frame.origin.y, 720.0);
+    assert_eq!(frame.size.width, 550.0);
+    assert_eq!(frame.size.height, 180.0);
+}
+
+#[test]
 fn open_transition_sampler_starts_collapsed_and_reveals_cards_later() {
     let frame = resolve_open_transition_frame(0, 164.0, 164.0, 220);
 
@@ -724,6 +781,27 @@ fn open_transition_expands_width_before_dropping_downward() {
     assert_eq!(height_growing.bar_progress, 1.0);
     assert!(height_growing.height_progress > 0.0);
     assert!(height_growing.drop_progress > 0.0);
+}
+
+#[test]
+fn open_transition_descriptor_maps_existing_frame_fields() {
+    let descriptor = resolve_open_transition_descriptor(
+        PANEL_MORPH_DELAY_MS + (PANEL_MORPH_MS / 2),
+        164.0,
+        164.0,
+        220,
+    );
+
+    assert_eq!(
+        descriptor.kind,
+        crate::native_panel_core::PanelAnimationKind::Open
+    );
+    assert_eq!(descriptor.canvas_height, 164.0);
+    assert_eq!(descriptor.visible_height, 80.0);
+    assert!(descriptor.width_progress > 0.0);
+    assert!(descriptor.width_progress < 1.0);
+    assert_eq!(descriptor.height_progress, 0.0);
+    assert_eq!(descriptor.drop_progress, 0.0);
 }
 
 #[test]

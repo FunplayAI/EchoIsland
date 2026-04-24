@@ -45,6 +45,12 @@ mod panel_helpers;
 #[cfg(target_os = "macos")]
 mod panel_hit_testing;
 #[cfg(target_os = "macos")]
+mod panel_host_adapter;
+#[cfg(target_os = "macos")]
+mod panel_host_descriptor;
+#[cfg(target_os = "macos")]
+mod panel_host_runtime;
+#[cfg(target_os = "macos")]
 mod panel_interaction;
 #[cfg(target_os = "macos")]
 mod panel_interaction_effects;
@@ -54,6 +60,10 @@ mod panel_loops;
 mod panel_refs;
 #[cfg(target_os = "macos")]
 mod panel_render;
+#[cfg(target_os = "macos")]
+mod panel_runtime_backend;
+#[cfg(target_os = "macos")]
+mod panel_runtime_input;
 #[cfg(target_os = "macos")]
 mod panel_scene_adapter;
 #[cfg(target_os = "macos")]
@@ -90,17 +100,8 @@ mod transition_runner;
 mod transition_ui;
 
 #[cfg(target_os = "macos")]
-pub(crate) use panel_entry::{create_native_island_panel, native_ui_enabled};
-#[cfg(target_os = "macos")]
-pub(crate) use panel_loops::{
-    spawn_native_count_marquee_loop, spawn_native_hover_loop, spawn_native_status_queue_loop,
-};
-#[cfg(target_os = "macos")]
-pub(crate) use panel_snapshot::{set_shared_expanded_body_height, update_native_island_snapshot};
-#[cfg(target_os = "macos")]
-pub(crate) use panel_window_control::{
-    hide_main_webview_window, hide_native_island_panel, refresh_native_panel_from_last_snapshot,
-    reposition_native_panel_to_selected_display,
+pub(crate) use panel_runtime_backend::{
+    MacosNativePanelRuntimeBackendFacade, current_macos_native_panel_runtime_backend,
 };
 
 #[cfg(all(test, target_os = "macos"))]

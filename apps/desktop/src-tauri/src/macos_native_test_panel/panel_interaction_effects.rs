@@ -2,10 +2,12 @@ use tauri::AppHandle;
 use tracing::warn;
 
 use crate::native_panel_core::PanelInteractionCommand;
+use crate::native_panel_renderer::{
+    NativePanelPlatformEventHandler, dispatch_native_panel_platform_event,
+    native_panel_platform_event_for_interaction_command,
+};
 
-use super::panel_refs::{native_panel_handles, native_panel_state};
-use super::panel_snapshot::{apply_native_panel_render_payload, native_panel_render_payload};
-use super::panel_types::NativePanelHitAction;
+use super::panel_host_runtime::rerender_runtime_panel_from_last_snapshot;
 use super::panel_window_control::{
     refresh_native_panel_from_last_snapshot, reposition_native_panel_to_selected_display,
 };
@@ -14,27 +16,54 @@ pub(super) fn handle_native_click_command<R: tauri::Runtime + 'static>(
     app: AppHandle<R>,
     click_command: PanelInteractionCommand,
 ) {
-    match click_command {
-        PanelInteractionCommand::HitTarget(target) => match target.action {
-            NativePanelHitAction::FocusSession => {
-                spawn_native_focus_session(app, target.value);
-            }
-            NativePanelHitAction::CycleDisplay => {
-                spawn_native_cycle_display(app);
-            }
-            NativePanelHitAction::ToggleCompletionSound => {
-                spawn_native_toggle_completion_sound(app);
-            }
-            NativePanelHitAction::ToggleMascot => {
-                spawn_native_toggle_mascot(app);
-            }
-            NativePanelHitAction::OpenReleasePage => {
-                spawn_native_open_release_page();
-            }
-        },
-        PanelInteractionCommand::ToggleSettingsSurface => {}
-        PanelInteractionCommand::QuitApplication => app.exit(0),
-        PanelInteractionCommand::None => {}
+    let Some(event) = native_panel_platform_event_for_interaction_command(&click_command) else {
+        return;
+    };
+    let mut handler = MacosNativePanelPlatformEventHandler { app };
+    let _ = dispatch_native_panel_platform_event(&mut handler, event);
+}
+
+struct MacosNativePanelPlatformEventHandler<R: tauri::Runtime + 'static> {
+    app: AppHandle<R>,
+}
+
+impl<R: tauri::Runtime + 'static> NativePanelPlatformEventHandler
+    for MacosNativePanelPlatformEventHandler<R>
+{
+    type Error = ();
+
+    fn focus_session(&mut self, session_id: String) -> Result<(), Self::Error> {
+        spawn_native_focus_session(self.app.clone(), session_id);
+        Ok(())
+    }
+
+    fn toggle_settings_surface(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn quit_application(&mut self) -> Result<(), Self::Error> {
+        self.app.exit(0);
+        Ok(())
+    }
+
+    fn cycle_display(&mut self) -> Result<(), Self::Error> {
+        spawn_native_cycle_display(self.app.clone());
+        Ok(())
+    }
+
+    fn toggle_completion_sound(&mut self) -> Result<(), Self::Error> {
+        spawn_native_toggle_completion_sound(self.app.clone());
+        Ok(())
+    }
+
+    fn toggle_mascot(&mut self) -> Result<(), Self::Error> {
+        spawn_native_toggle_mascot(self.app.clone());
+        Ok(())
+    }
+
+    fn open_release_page(&mut self) -> Result<(), Self::Error> {
+        spawn_native_open_release_page();
+        Ok(())
     }
 }
 
@@ -58,21 +87,7 @@ fn spawn_native_toggle_completion_sound<R: tauri::Runtime + 'static>(app: AppHan
             return;
         }
 
-        let Some(handles) = native_panel_handles() else {
-            return;
-        };
-        let rerender = native_panel_state().and_then(|state| {
-            state
-                .lock()
-                .ok()
-                .and_then(|guard| native_panel_render_payload(&guard))
-        });
-
-        if let Some(payload) = rerender {
-            let _ = app.run_on_main_thread(move || unsafe {
-                apply_native_panel_render_payload(handles, payload);
-            });
-        }
+        let _ = rerender_runtime_panel_from_last_snapshot(&app);
     });
 }
 

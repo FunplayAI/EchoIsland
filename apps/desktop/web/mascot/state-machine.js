@@ -3,6 +3,7 @@ import {
   isExpanded,
   getStatusSurfaceScene,
 } from "../state-helpers.js";
+import { buildSnapshotSummary } from "../renderers/snapshot-summary.js";
 import { isCompletionSurfaceActive } from "../renderers/surface-state.js";
 import {
   getCompletionBadgeCountWithFallback,
@@ -49,8 +50,7 @@ export function inferMascotState(snapshot, uiState) {
     return "complete";
   }
 
-  const hasActiveSession = Number(snapshot.active_session_count ?? 0) > 0;
-  if (hasActiveSession) {
+  if (buildSnapshotSummary(snapshot, statusSurfaceScene).hasActiveSessions) {
     return "bouncing";
   }
   return "idle";

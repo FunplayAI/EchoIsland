@@ -5,9 +5,10 @@ use objc2::MainThreadMarker;
 
 use super::panel_entry::native_ui_enabled;
 use super::panel_geometry::centered_top_frame;
-use super::panel_refs::{native_panel_handles, native_panel_state, panel_from_ptr};
+use super::panel_host_runtime::{
+    MacosNativePanelRuntimeHost, rerender_runtime_panel_from_last_snapshot,
+};
 use super::panel_setup::resolve_preferred_native_screen;
-use super::panel_snapshot::{apply_native_panel_render_payload, native_panel_render_payload};
 
 pub(crate) fn hide_native_island_panel<R: tauri::Runtime>(
     app: &AppHandle<R>,
@@ -18,12 +19,8 @@ pub(crate) fn hide_native_island_panel<R: tauri::Runtime>(
 
     let _ = macos_shared_expanded_window::hide_shared_expanded_window(app);
 
-    app.run_on_main_thread(move || {
-        if let Some(handles) = native_panel_handles() {
-            unsafe {
-                panel_from_ptr(handles.panel).orderOut(None);
-            }
-        }
+    app.run_on_main_thread(move || unsafe {
+        let _ = MacosNativePanelRuntimeHost::order_out();
     })
     .map_err(|error| error.to_string())
 }
@@ -50,31 +47,27 @@ pub(crate) fn reposition_native_panel_to_selected_display<R: tauri::Runtime>(
     }
 
     app.run_on_main_thread(move || unsafe {
-        let Some(handles) = native_panel_handles() else {
-            return;
-        };
         let Some(mtm) = MainThreadMarker::new() else {
             return;
         };
         let Some(screen) = resolve_preferred_native_screen(mtm) else {
             return;
         };
-        let panel = panel_from_ptr(handles.panel);
-        let frame = centered_top_frame(screen.frame(), panel.frame().size);
-        panel.setFrame_display(frame, true);
-
-        if let Some(payload) = native_panel_state().and_then(|state| {
-            state
-                .lock()
-                .ok()
-                .and_then(|guard| native_panel_render_payload(&guard))
-        }) {
-            apply_native_panel_render_payload(handles, payload);
-        } else {
-            panel.displayIfNeeded();
-        }
+        let Some(panel_frame) = MacosNativePanelRuntimeHost::current_window_frame() else {
+            return;
+        };
+        let preferred_display_index =
+            crate::app_settings::current_app_settings().preferred_display_index;
+        let frame = centered_top_frame(screen.frame(), panel_frame.size);
+        let _ = MacosNativePanelRuntimeHost::reposition_to_screen(
+            preferred_display_index,
+            screen.frame(),
+            frame,
+        );
     })
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?;
+
+    rerender_runtime_panel_from_last_snapshot(app)
 }
 
 pub(crate) fn refresh_native_panel_from_last_snapshot<R: tauri::Runtime>(
@@ -84,18 +77,5 @@ pub(crate) fn refresh_native_panel_from_last_snapshot<R: tauri::Runtime>(
         return Ok(());
     }
 
-    app.run_on_main_thread(move || unsafe {
-        let Some(handles) = native_panel_handles() else {
-            return;
-        };
-        if let Some(payload) = native_panel_state().and_then(|state| {
-            state
-                .lock()
-                .ok()
-                .and_then(|guard| native_panel_render_payload(&guard))
-        }) {
-            apply_native_panel_render_payload(handles, payload);
-        }
-    })
-    .map_err(|error| error.to_string())
+    rerender_runtime_panel_from_last_snapshot(app)
 }

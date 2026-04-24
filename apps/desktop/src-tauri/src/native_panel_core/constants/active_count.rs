@@ -1,0 +1,11 @@
+pub(crate) const ACTIVE_COUNT_SLOT_WIDTH: f64 = 11.0;
+pub(crate) const ACTIVE_COUNT_SLOT_NUDGE_X: f64 = 2.0;
+pub(crate) const ACTIVE_COUNT_SCROLL_TRAVEL: f64 = 10.0;
+pub(crate) const ACTIVE_COUNT_TEXT_WIDTH: f64 = 22.0;
+pub(crate) const ACTIVE_COUNT_TEXT_OFFSET_X: f64 =
+    ACTIVE_COUNT_SLOT_WIDTH - ACTIVE_COUNT_TEXT_WIDTH;
+pub(crate) const ACTIVE_COUNT_LABEL_HEIGHT: f64 = 24.0;
+pub(crate) const ACTIVE_COUNT_SCROLL_STEP_MS: u128 = 2300;
+pub(crate) const ACTIVE_COUNT_SCROLL_HOLD_MS: u128 = 1000;
+pub(crate) const ACTIVE_COUNT_SCROLL_MOVE_MS: u128 = 300;
+pub(crate) const ACTIVE_COUNT_SCROLL_REFRESH_MS: u64 = 33;

@@ -9,13 +9,14 @@ use super::card_animation::apply_card_stack_transition;
 use super::panel_constants::COLLAPSED_PANEL_HEIGHT;
 use super::panel_entry::native_ui_enabled;
 use super::panel_geometry::expanded_total_height;
-use super::panel_interaction::{native_settings_surface_active, native_status_surface_active};
-use super::panel_refs::{native_panel_handles, native_panel_state};
-use super::panel_render::apply_panel_geometry;
-use super::panel_screen_geometry::compact_pill_height_for_screen_rect;
-use super::panel_transition_entry::{
-    begin_native_panel_surface_transition, begin_native_panel_transition,
+use super::panel_host_runtime::{
+    MacosNativePanelRuntimeHost, sync_runtime_host_shared_body_height_in_state,
 };
+use super::panel_interaction::{native_settings_surface_active, native_status_surface_active};
+use super::panel_refs::native_panel_state;
+use super::panel_render::apply_panel_geometry;
+use super::panel_runtime_input::native_panel_runtime_input_descriptor;
+use super::panel_screen_geometry::compact_pill_height_for_screen_rect;
 use super::panel_types::{
     NativePanelHandles, NativePanelRenderPayload, NativePanelState, NativePanelTransitionFrame,
 };
@@ -56,16 +57,12 @@ pub(crate) fn update_native_island_snapshot<R: tauri::Runtime>(
         return Ok(());
     }
 
-    let Some(handles) = native_panel_handles() else {
-        return Ok(());
-    };
-
     let Some(update) = sync_native_snapshot_update(snapshot)? else {
         return Ok(());
     };
     sync_shared_expanded_snapshot_if_needed(app, &update.snapshot);
     play_message_sound_if_needed(update.play_message_sound);
-    dispatch_snapshot_update(app, handles, update)
+    dispatch_snapshot_update(app, update)
 }
 
 pub(crate) fn set_shared_expanded_body_height<R: tauri::Runtime>(
@@ -76,14 +73,10 @@ pub(crate) fn set_shared_expanded_body_height<R: tauri::Runtime>(
         return Ok(());
     }
 
-    let Some(handles) = native_panel_handles() else {
-        return Ok(());
-    };
-
     let Some(update) = sync_shared_expanded_body_height_update(body_height)? else {
         return Ok(());
     };
-    dispatch_shared_expanded_body_height_update(app, handles, update)
+    dispatch_shared_expanded_body_height_update(app, update)
 }
 
 pub(super) fn native_panel_render_payload(
@@ -139,7 +132,9 @@ fn sync_shared_expanded_body_height_update(
         return Ok(None);
     }
 
-    state.shared_body_height = Some(decision.next_height);
+    let next_height = Some(decision.next_height);
+    state.shared_body_height = next_height;
+    sync_runtime_host_shared_body_height_in_state(&mut state, next_height);
     Ok(Some(NativeSharedBodyHeightUpdate {
         rerender_payload: decision
             .should_rerender
@@ -150,14 +145,10 @@ fn sync_shared_expanded_body_height_update(
 
 fn dispatch_shared_expanded_body_height_update<R: tauri::Runtime>(
     app: &AppHandle<R>,
-    handles: NativePanelHandles,
     update: NativeSharedBodyHeightUpdate,
 ) -> Result<(), String> {
     if let Some(payload) = update.rerender_payload {
-        app.run_on_main_thread(move || unsafe {
-            apply_native_panel_render_payload(handles, payload);
-        })
-        .map_err(|error| error.to_string())?;
+        MacosNativePanelRuntimeHost::apply_render_payload(app, payload)?;
     }
 
     Ok(())
@@ -188,17 +179,25 @@ fn sync_native_snapshot_update(
         .lock()
         .map_err(|_| "native panel state poisoned".to_string())?;
     let mut core = state.to_core_panel_state();
-    let sync_result =
-        crate::native_panel_core::sync_panel_snapshot_state(&mut core, snapshot, Utc::now());
+    let input = native_panel_runtime_input_descriptor();
+    let sync_result = crate::native_panel_renderer::sync_runtime_scene_bundle_from_input_descriptor(
+        &mut core,
+        snapshot,
+        &input,
+        Utc::now(),
+    );
+    let snapshot = sync_result.snapshot_sync.displayed_snapshot.clone();
     state.apply_core_panel_state(core);
-
-    let snapshot = sync_result.displayed_snapshot.clone();
     let update = NativeSnapshotUpdate {
         transition_snapshot: sync_result
+            .snapshot_sync
             .panel_transition
             .map(|expanded| (snapshot.clone(), expanded)),
-        surface_transition_snapshot: sync_result.surface_transition.then(|| snapshot.clone()),
-        play_message_sound: sync_result.play_message_card_sound,
+        surface_transition_snapshot: sync_result
+            .snapshot_sync
+            .surface_transition
+            .then(|| snapshot.clone()),
+        play_message_sound: sync_result.snapshot_sync.play_message_card_sound,
         apply_state: NativeSnapshotApplyState {
             expanded: state.expanded,
             shared_body_height: state.shared_body_height,
@@ -209,6 +208,10 @@ fn sync_native_snapshot_update(
         snapshot: snapshot.clone(),
     };
     state.last_snapshot = Some(snapshot);
+    crate::native_panel_renderer::cache_runtime_scene_sync_result(
+        &mut state.scene_cache,
+        sync_result,
+    );
     Ok(Some(update))
 }
 
@@ -232,41 +235,29 @@ fn play_message_sound_if_needed(enabled: bool) {
 
 fn dispatch_snapshot_update<R: tauri::Runtime>(
     app: &AppHandle<R>,
-    handles: NativePanelHandles,
     update: NativeSnapshotUpdate,
 ) -> Result<(), String> {
     if let Some((snapshot, expanded)) = update.transition_snapshot {
-        let app_for_transition = app.clone();
-        return app
-            .run_on_main_thread(move || unsafe {
-                begin_native_panel_transition(app_for_transition, handles, snapshot, expanded);
-            })
-            .map_err(|error| error.to_string());
+        return MacosNativePanelRuntimeHost::begin_transition(app, snapshot, expanded);
     }
 
     if let Some(snapshot) = update.surface_transition_snapshot {
-        let app_for_transition = app.clone();
-        return app
-            .run_on_main_thread(move || unsafe {
-                begin_native_panel_surface_transition(app_for_transition, handles, snapshot);
-            })
-            .map_err(|error| error.to_string());
+        return MacosNativePanelRuntimeHost::begin_surface_transition(app, snapshot);
     }
 
     let apply_state = update.apply_state;
     let snapshot = update.snapshot;
-    app.run_on_main_thread(move || unsafe {
-        apply_snapshot_to_panel(
-            handles,
-            &snapshot,
-            apply_state.expanded,
-            apply_state.shared_body_height,
-            apply_state.transitioning,
-            apply_state.transition_cards_progress,
-            apply_state.transition_cards_entering,
-        );
-    })
-    .map_err(|error| error.to_string())
+    MacosNativePanelRuntimeHost::apply_render_payload(
+        app,
+        NativePanelRenderPayload {
+            snapshot,
+            expanded: apply_state.expanded,
+            shared_body_height: apply_state.shared_body_height,
+            transitioning: apply_state.transitioning,
+            transition_cards_progress: apply_state.transition_cards_progress,
+            transition_cards_entering: apply_state.transition_cards_entering,
+        },
+    )
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]

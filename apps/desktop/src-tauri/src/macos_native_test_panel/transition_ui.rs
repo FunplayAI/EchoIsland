@@ -15,7 +15,9 @@ use super::panel_screen_geometry::{
     compact_pill_height_for_screen_rect, expanded_panel_width_for_screen_rect,
     resolve_screen_frame_for_panel,
 };
-use super::panel_types::{NativePanelHandles, NativePanelTransitionFrame};
+use super::panel_types::{
+    NativePanelAnimationDescriptor, NativePanelHandles, NativePanelTransitionFrame,
+};
 use crate::macos_shared_expanded_window;
 
 #[derive(Clone, Copy)]
@@ -204,4 +206,22 @@ pub(super) unsafe fn apply_transition_timeline_frame(
         cards_entering,
     );
     context.refs.panel.displayIfNeeded();
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+pub(super) unsafe fn apply_transition_timeline_descriptor(
+    handles: NativePanelHandles,
+    descriptor: NativePanelAnimationDescriptor,
+    cards_entering: bool,
+) {
+    let frame = NativePanelTransitionFrame {
+        canvas_height: descriptor.canvas_height,
+        visible_height: descriptor.visible_height,
+        bar_progress: descriptor.width_progress,
+        height_progress: descriptor.height_progress,
+        shoulder_progress: descriptor.shoulder_progress,
+        drop_progress: descriptor.drop_progress,
+        cards_progress: descriptor.cards_progress,
+    };
+    apply_transition_timeline_frame(handles, frame, cards_entering);
 }

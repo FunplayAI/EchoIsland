@@ -1,0 +1,7 @@
+pub(crate) const PANEL_HIGHLIGHT_MAX_ALPHA: f64 = 0.12;
+pub(crate) const PANEL_VISIBILITY_EPSILON: f64 = 0.02;
+pub(crate) const PANEL_COMPACT_CORNER_MASK_MAX_PROGRESS: f64 = 0.01;
+pub(crate) const PANEL_EDGE_ACTIONS_REVEAL_START_PROGRESS: f64 = 0.48;
+pub(crate) const PANEL_EDGE_ACTIONS_REVEAL_SPAN: f64 = 0.52;
+pub(crate) const PANEL_EDGE_ACTIONS_MIN_SCALE: f64 = 0.82;
+pub(crate) const PANEL_PILL_BORDER_MAX_WIDTH: f64 = 1.0;
