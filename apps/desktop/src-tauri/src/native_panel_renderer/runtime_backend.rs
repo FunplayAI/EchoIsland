@@ -7,14 +7,16 @@ use crate::{
 };
 
 use super::{
-    NativePanelRuntimeInputDescriptor, NativePanelRuntimeSceneCache, NativePanelSceneHost,
-    apply_runtime_scene_bundle_to_host, cache_runtime_scene,
+    NativePanelRuntimeInputDescriptor, NativePanelRuntimeSceneCache,
+    NativePanelRuntimeSceneCacheKey, NativePanelSceneHost, cache_runtime_scene_with_key,
+    native_panel_runtime_scene_cache_key,
 };
 
 #[derive(Clone, Debug)]
 pub(crate) struct NativePanelRuntimeSceneSyncResult {
     pub(crate) snapshot_sync: PanelSnapshotSyncResult,
     pub(crate) bundle: PanelRuntimeSceneBundle,
+    pub(crate) cache_key: NativePanelRuntimeSceneCacheKey,
 }
 
 pub(crate) fn sync_runtime_scene_bundle_from_input_descriptor(
@@ -30,10 +32,12 @@ pub(crate) fn sync_runtime_scene_bundle_from_input_descriptor(
         &snapshot_sync.displayed_snapshot,
         &input.scene_input,
     );
+    let cache_key = native_panel_runtime_scene_cache_key(panel_state, input);
 
     NativePanelRuntimeSceneSyncResult {
         snapshot_sync,
         bundle,
+        cache_key,
     }
 }
 
@@ -41,13 +45,44 @@ pub(crate) fn cache_runtime_scene_sync_result(
     cache: &mut NativePanelRuntimeSceneCache,
     sync_result: NativePanelRuntimeSceneSyncResult,
 ) -> PanelSnapshotSyncResult {
-    cache_runtime_scene(
+    cache_runtime_scene_with_key(
         cache,
         sync_result.bundle.displayed_snapshot,
+        Some(sync_result.cache_key),
         sync_result.bundle.scene,
         sync_result.bundle.runtime_render_state,
     );
     sync_result.snapshot_sync
+}
+
+pub(crate) fn apply_runtime_scene_sync_result_to_host<H>(
+    host: &mut H,
+    cache: &mut NativePanelRuntimeSceneCache,
+    sync_result: NativePanelRuntimeSceneSyncResult,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> Result<PanelSnapshotSyncResult, H::Error>
+where
+    H: NativePanelSceneHost,
+{
+    let NativePanelRuntimeSceneSyncResult {
+        snapshot_sync,
+        bundle,
+        cache_key,
+    } = sync_result;
+    host.sync_scene(
+        &bundle.scene,
+        bundle.runtime_render_state,
+        input.selected_display_index(),
+        input.screen_frame,
+    )?;
+    cache_runtime_scene_with_key(
+        cache,
+        bundle.displayed_snapshot,
+        Some(cache_key),
+        bundle.scene,
+        bundle.runtime_render_state,
+    );
+    Ok(snapshot_sync)
 }
 
 pub(crate) fn sync_and_apply_runtime_scene_from_input_descriptor<H>(
@@ -63,15 +98,45 @@ where
 {
     let sync_result =
         sync_runtime_scene_bundle_from_input_descriptor(panel_state, raw_snapshot, input, now);
-    let snapshot_sync = sync_result.snapshot_sync;
-    apply_runtime_scene_bundle_to_host(
-        host,
-        cache,
-        sync_result.bundle,
-        input.selected_display_index(),
-        input.screen_frame,
-    )?;
-    Ok(snapshot_sync)
+    apply_runtime_scene_sync_result_to_host(host, cache, sync_result, input)
+}
+
+pub(crate) fn rerender_runtime_scene_sync_result_to_host_with_input_descriptor<H>(
+    host: &mut H,
+    cache: &mut NativePanelRuntimeSceneCache,
+    input: &NativePanelRuntimeInputDescriptor,
+    rebuild_sync_result: impl FnOnce(&RuntimeSnapshot) -> NativePanelRuntimeSceneSyncResult,
+) -> Result<bool, H::Error>
+where
+    H: NativePanelSceneHost,
+{
+    let Some(snapshot) = cache.last_snapshot.clone() else {
+        return Ok(false);
+    };
+    let sync_result = rebuild_sync_result(&snapshot);
+    apply_runtime_scene_sync_result_to_host(host, cache, sync_result, input)?;
+    Ok(true)
+}
+
+pub(crate) fn rerender_runtime_scene_sync_result_to_host_on_transition_with_input_descriptor<H, T>(
+    host: &mut H,
+    cache: &mut NativePanelRuntimeSceneCache,
+    transition: Option<T>,
+    input: &NativePanelRuntimeInputDescriptor,
+    rebuild_sync_result: impl FnOnce(&RuntimeSnapshot) -> NativePanelRuntimeSceneSyncResult,
+) -> Result<Option<T>, H::Error>
+where
+    H: NativePanelSceneHost,
+{
+    if transition.is_some() {
+        rerender_runtime_scene_sync_result_to_host_with_input_descriptor(
+            host,
+            cache,
+            input,
+            rebuild_sync_result,
+        )?;
+    }
+    Ok(transition)
 }
 
 pub(crate) trait NativePanelPlatformRuntimeBackend {
@@ -282,15 +347,17 @@ pub(crate) fn current_native_panel_runtime_backend() -> CurrentNativePanelRuntim
 #[cfg(test)]
 mod tests {
     use super::{
-        cache_runtime_scene_sync_result, sync_and_apply_runtime_scene_from_input_descriptor,
+        cache_runtime_scene_sync_result,
+        rerender_runtime_scene_sync_result_to_host_with_input_descriptor,
+        sync_and_apply_runtime_scene_from_input_descriptor,
         sync_runtime_scene_bundle_from_input_descriptor,
     };
     use crate::{
-        native_panel_core::{PanelRect, PanelState},
+        native_panel_core::{ExpandedSurface, PanelRect, PanelState},
         native_panel_renderer::{
             NativePanelHost, NativePanelHostWindowDescriptor, NativePanelHostWindowState,
             NativePanelRenderer, NativePanelRuntimeInputDescriptor, NativePanelRuntimeSceneCache,
-            NativePanelSceneHost,
+            NativePanelSceneHost, native_panel_runtime_scene_cache_key,
         },
         native_panel_scene::{PanelRuntimeRenderState, PanelScene, PanelSceneBuildInput},
     };
@@ -528,5 +595,63 @@ mod tests {
         assert!(cache.last_snapshot.is_some());
         assert!(cache.last_scene.is_some());
         assert!(cache.last_runtime_render_state.is_some());
+        assert_eq!(
+            cache.last_cache_key,
+            Some(native_panel_runtime_scene_cache_key(
+                &panel_state,
+                &descriptor
+            ))
+        );
+    }
+
+    #[test]
+    fn rerender_scene_sync_result_updates_cache_key_for_surface_change() {
+        let mut panel_state = PanelState::default();
+        let mut host = TestHost::default();
+        let mut cache = NativePanelRuntimeSceneCache::default();
+        let descriptor = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        sync_and_apply_runtime_scene_from_input_descriptor(
+            &mut host,
+            &mut cache,
+            &mut panel_state,
+            &runtime_snapshot("idle", "Running"),
+            &descriptor,
+            Utc::now(),
+        )
+        .expect("seed sync and apply runtime scene");
+
+        panel_state.expanded = true;
+        panel_state.surface_mode = ExpandedSurface::Settings;
+
+        let updated = rerender_runtime_scene_sync_result_to_host_with_input_descriptor(
+            &mut host,
+            &mut cache,
+            &descriptor,
+            |snapshot| {
+                sync_runtime_scene_bundle_from_input_descriptor(
+                    &mut panel_state,
+                    snapshot,
+                    &descriptor,
+                    Utc::now(),
+                )
+            },
+        )
+        .expect("rerender keyed sync result");
+
+        assert!(updated);
+        assert_eq!(
+            cache.last_cache_key,
+            Some(native_panel_runtime_scene_cache_key(
+                &panel_state,
+                &descriptor
+            ))
+        );
+        assert_eq!(
+            host.synced_scene.as_ref().map(|scene| scene.surface),
+            Some(ExpandedSurface::Settings)
+        );
     }
 }

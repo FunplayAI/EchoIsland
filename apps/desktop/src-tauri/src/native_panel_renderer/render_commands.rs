@@ -6,7 +6,7 @@ use crate::{
 };
 
 use super::{
-    NativePanelEdgeAction, NativePanelPointerRegion, NativePanelPointerRegionFrameOverrides,
+    NativePanelEdgeAction, NativePanelPointerRegion, NativePanelPointerRegionInput,
     NativePanelPointerRegionKind, resolve_native_panel_pointer_regions,
 };
 
@@ -74,10 +74,9 @@ pub(crate) fn resolve_native_panel_render_command_bundle(
     scene: &PanelScene,
     runtime: PanelRuntimeRenderState,
     render_state: PanelRenderState,
-    pointer_frame_overrides: Option<NativePanelPointerRegionFrameOverrides>,
+    pointer_region_input: Option<NativePanelPointerRegionInput>,
 ) -> NativePanelRenderCommandBundle {
-    let pointer_regions =
-        resolve_native_panel_pointer_regions(layout, scene, pointer_frame_overrides);
+    let pointer_regions = resolve_native_panel_pointer_regions(layout, scene, pointer_region_input);
 
     NativePanelRenderCommandBundle {
         scene: scene.clone(),
@@ -175,7 +174,7 @@ mod tests {
             resolve_panel_layout,
         },
         native_panel_renderer::{
-            NativePanelEdgeAction, NativePanelPointerRegionFrameOverrides,
+            NativePanelEdgeAction, NativePanelEdgeActionFrames, NativePanelPointerRegionInput,
             NativePanelPointerRegionKind,
         },
         native_panel_scene::{PanelSceneBuildInput, build_panel_scene},
@@ -249,14 +248,16 @@ mod tests {
                 edge_actions_visible: true,
             },
         };
-        let overrides = NativePanelPointerRegionFrameOverrides {
-            settings_action: Some(PanelRect {
-                x: 10.0,
-                y: 20.0,
-                width: 24.0,
-                height: 24.0,
-            }),
-            quit_action: None,
+        let input = NativePanelPointerRegionInput {
+            edge_action_frames: NativePanelEdgeActionFrames {
+                settings_action: Some(PanelRect {
+                    x: 10.0,
+                    y: 20.0,
+                    width: 24.0,
+                    height: 24.0,
+                }),
+                quit_action: None,
+            },
         };
 
         let bundle = resolve_native_panel_render_command_bundle(
@@ -264,7 +265,7 @@ mod tests {
             &scene,
             PanelRuntimeRenderState::default(),
             render_state,
-            Some(overrides),
+            Some(input),
         );
 
         assert_eq!(bundle.layout, layout);
@@ -284,10 +285,10 @@ mod tests {
             region.kind,
             NativePanelPointerRegionKind::EdgeAction(NativePanelEdgeAction::Settings)
         ) && region.frame
-            == overrides.settings_action.unwrap()));
+            == input.edge_action_frames.settings_action.unwrap()));
         assert!(bundle.action_buttons.iter().any(|button| {
             button.action == NativePanelEdgeAction::Settings
-                && button.frame == overrides.settings_action.unwrap()
+                && button.frame == input.edge_action_frames.settings_action.unwrap()
                 && button.visible
         }));
     }

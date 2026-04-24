@@ -5,9 +5,10 @@ use crate::{
 
 use super::{
     NativePanelHostWindowDescriptor, NativePanelHostWindowState, NativePanelPlatformEvent,
-    NativePanelPointerRegion, NativePanelRenderCommandBundle, NativePanelTimelineDescriptor,
-    sync_native_panel_host_window_screen_frame, sync_native_panel_host_window_shared_body_height,
-    sync_native_panel_host_window_timeline,
+    NativePanelPlatformEventHandler, NativePanelPointerRegion, NativePanelRenderCommandBundle,
+    NativePanelTimelineDescriptor, dispatch_native_panel_platform_events,
+    native_panel_timeline_descriptor_for_animation, sync_native_panel_host_window_screen_frame,
+    sync_native_panel_host_window_shared_body_height, sync_native_panel_host_window_timeline,
 };
 
 pub(crate) trait NativePanelRenderer {
@@ -80,11 +81,19 @@ pub(crate) trait NativePanelRenderer {
         Ok(())
     }
 
+    fn record_render_command_bundle(
+        &mut self,
+        _bundle: &NativePanelRenderCommandBundle,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     fn apply_render_command_bundle(
         &mut self,
         bundle: &NativePanelRenderCommandBundle,
     ) -> Result<(), Self::Error> {
         self.render_scene(&bundle.scene, bundle.runtime)?;
+        self.record_render_command_bundle(bundle)?;
         self.sync_pointer_regions(&bundle.pointer_regions)
     }
 
@@ -174,8 +183,22 @@ pub(crate) trait NativePanelHost {
         })
     }
 
+    fn apply_animation_descriptor(
+        &mut self,
+        descriptor: PanelAnimationDescriptor,
+    ) -> Result<(), Self::Error> {
+        self.apply_timeline_descriptor(native_panel_timeline_descriptor_for_animation(descriptor))
+    }
+
     fn take_platform_events(&mut self) -> Vec<NativePanelPlatformEvent> {
         Vec::new()
+    }
+
+    fn dispatch_platform_events<H>(&mut self, handler: &mut H) -> Result<(), H::Error>
+    where
+        H: NativePanelPlatformEventHandler,
+    {
+        dispatch_native_panel_platform_events(handler, self.take_platform_events())
     }
 }
 
@@ -221,7 +244,8 @@ pub(crate) trait NativePanelSceneHost: NativePanelHost {
 mod tests {
     use super::{
         NativePanelHost, NativePanelHostWindowDescriptor, NativePanelHostWindowState,
-        NativePanelRenderer, NativePanelSceneHost,
+        NativePanelPlatformEvent, NativePanelPlatformEventHandler, NativePanelRenderer,
+        NativePanelSceneHost,
     };
     use crate::{
         native_panel_core::PanelRect,
@@ -263,6 +287,7 @@ mod tests {
         renderer: TestRenderer,
         descriptor: NativePanelHostWindowDescriptor,
         create_calls: usize,
+        pending_events: Vec<NativePanelPlatformEvent>,
     }
 
     impl NativePanelHost for TestHost {
@@ -297,9 +322,60 @@ mod tests {
             self.create_calls += 1;
             Ok(())
         }
+
+        fn take_platform_events(&mut self) -> Vec<NativePanelPlatformEvent> {
+            std::mem::take(&mut self.pending_events)
+        }
     }
 
     impl NativePanelSceneHost for TestHost {}
+
+    #[derive(Default)]
+    struct RecordingEventHandler {
+        handled: Vec<NativePanelPlatformEvent>,
+    }
+
+    impl NativePanelPlatformEventHandler for RecordingEventHandler {
+        type Error = String;
+
+        fn focus_session(&mut self, session_id: String) -> Result<(), Self::Error> {
+            self.handled
+                .push(NativePanelPlatformEvent::FocusSession(session_id));
+            Ok(())
+        }
+
+        fn toggle_settings_surface(&mut self) -> Result<(), Self::Error> {
+            self.handled
+                .push(NativePanelPlatformEvent::ToggleSettingsSurface);
+            Ok(())
+        }
+
+        fn quit_application(&mut self) -> Result<(), Self::Error> {
+            self.handled.push(NativePanelPlatformEvent::QuitApplication);
+            Ok(())
+        }
+
+        fn cycle_display(&mut self) -> Result<(), Self::Error> {
+            self.handled.push(NativePanelPlatformEvent::CycleDisplay);
+            Ok(())
+        }
+
+        fn toggle_completion_sound(&mut self) -> Result<(), Self::Error> {
+            self.handled
+                .push(NativePanelPlatformEvent::ToggleCompletionSound);
+            Ok(())
+        }
+
+        fn toggle_mascot(&mut self) -> Result<(), Self::Error> {
+            self.handled.push(NativePanelPlatformEvent::ToggleMascot);
+            Ok(())
+        }
+
+        fn open_release_page(&mut self) -> Result<(), Self::Error> {
+            self.handled.push(NativePanelPlatformEvent::OpenReleasePage);
+            Ok(())
+        }
+    }
 
     #[test]
     fn sync_scene_window_descriptor_updates_screen_frame() {
@@ -348,6 +424,30 @@ mod tests {
         );
         assert_eq!(host.renderer.rendered_runtime, Some(runtime));
         assert_eq!(host.descriptor.preferred_display_index, 1);
+    }
+
+    #[test]
+    fn host_dispatch_platform_events_drains_pending_queue() {
+        let mut host = TestHost {
+            pending_events: vec![
+                NativePanelPlatformEvent::ToggleCompletionSound,
+                NativePanelPlatformEvent::ToggleMascot,
+            ],
+            ..Default::default()
+        };
+        let mut handler = RecordingEventHandler::default();
+
+        host.dispatch_platform_events(&mut handler)
+            .expect("dispatch platform events");
+
+        assert_eq!(
+            handler.handled,
+            vec![
+                NativePanelPlatformEvent::ToggleCompletionSound,
+                NativePanelPlatformEvent::ToggleMascot,
+            ]
+        );
+        assert!(host.pending_events.is_empty());
     }
 
     fn test_scene() -> PanelScene {

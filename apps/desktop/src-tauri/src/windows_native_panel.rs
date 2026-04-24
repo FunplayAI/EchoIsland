@@ -20,17 +20,18 @@ use crate::{
         NativePanelPlatformEvent, NativePanelPlatformEventHandler, NativePanelPointerInput,
         NativePanelPointerInputOutcome, NativePanelPointerRegion, NativePanelRenderCommandBundle,
         NativePanelRenderer, NativePanelRuntimeInputDescriptor, NativePanelRuntimeSceneCache,
-        NativePanelSceneHost, NativePanelTimelineDescriptor, dispatch_native_panel_platform_events,
-        native_panel_platform_event_for_pointer_input,
+        NativePanelRuntimeSceneSyncResult, NativePanelSceneHost, NativePanelTimelineDescriptor,
+        cache_render_command_bundle, cache_scene_runtime, cached_runtime_render_state,
+        cached_scene, native_panel_platform_event_for_pointer_input,
         native_panel_platform_event_for_pointer_region, native_panel_pointer_inside_for_input,
-        native_panel_pointer_state_at_point, native_panel_timeline_descriptor_for_animation,
-        rerender_runtime_scene_cache_to_host_on_transition_with_input_descriptor,
-        rerender_runtime_scene_cache_to_host_with_input_descriptor,
+        native_panel_pointer_state_at_point,
+        rerender_runtime_scene_sync_result_to_host_on_transition_with_input_descriptor,
+        rerender_runtime_scene_sync_result_to_host_with_input_descriptor,
         resolve_native_panel_render_command_bundle,
         sync_and_apply_runtime_scene_from_input_descriptor,
         sync_runtime_scene_bundle_from_input_descriptor,
     },
-    native_panel_scene::{PanelRuntimeRenderState, PanelRuntimeSceneBundle, PanelScene},
+    native_panel_scene::{PanelRuntimeRenderState, PanelScene},
 };
 
 mod host_window;
@@ -49,15 +50,13 @@ const WINDOWS_FALLBACK_PANEL_SCREEN_FRAME: PanelRect = PanelRect {
 
 #[derive(Default)]
 pub(crate) struct WindowsNativePanelRenderer {
-    last_scene: Option<PanelScene>,
-    last_runtime_render_state: Option<PanelRuntimeRenderState>,
+    scene_cache: NativePanelRuntimeSceneCache,
     last_screen_frame: Option<PanelRect>,
     last_animation_descriptor: Option<PanelAnimationDescriptor>,
     last_timeline_descriptor: Option<NativePanelTimelineDescriptor>,
     last_host_window_descriptor: Option<NativePanelHostWindowDescriptor>,
     last_layout: Option<PanelLayout>,
     last_render_state: Option<PanelRenderState>,
-    last_render_command_bundle: Option<NativePanelRenderCommandBundle>,
     last_window_state: Option<NativePanelHostWindowState>,
     last_pointer_regions: Vec<NativePanelPointerRegion>,
 }
@@ -70,8 +69,7 @@ impl NativePanelRenderer for WindowsNativePanelRenderer {
         scene: &PanelScene,
         runtime: PanelRuntimeRenderState,
     ) -> Result<(), Self::Error> {
-        self.last_scene = Some(scene.clone());
-        self.last_runtime_render_state = Some(runtime);
+        cache_scene_runtime(&mut self.scene_cache, scene.clone(), runtime);
         self.refresh_cached_render_inputs();
         Ok(())
     }
@@ -135,12 +133,10 @@ impl NativePanelRenderer for WindowsNativePanelRenderer {
         &mut self,
         bundle: &NativePanelRenderCommandBundle,
     ) -> Result<(), Self::Error> {
-        self.last_scene = Some(bundle.scene.clone());
-        self.last_runtime_render_state = Some(bundle.runtime);
+        cache_render_command_bundle(&mut self.scene_cache, bundle);
         self.last_layout = Some(bundle.layout);
         self.last_render_state = Some(bundle.render_state);
         self.last_pointer_regions = bundle.pointer_regions.clone();
-        self.last_render_command_bundle = Some(bundle.clone());
         Ok(())
     }
 
@@ -184,9 +180,8 @@ impl WindowsNativePanelRenderer {
             shoulder_size: crate::native_panel_core::COMPACT_SHOULDER_SIZE,
             separator_side_inset: crate::native_panel_core::EXPANDED_SEPARATOR_SIDE_INSET,
         });
-        let runtime = self.last_runtime_render_state.unwrap_or_default();
-        let status_surface_active = self
-            .last_scene
+        let runtime = cached_runtime_render_state(&self.scene_cache).unwrap_or_default();
+        let status_surface_active = cached_scene(&self.scene_cache)
             .as_ref()
             .is_some_and(|scene| scene.surface == ExpandedSurface::Status);
         let render_state = resolve_panel_render_state(PanelRenderStateInput {
@@ -203,11 +198,11 @@ impl WindowsNativePanelRenderer {
             edge_actions_visible: runtime.shell_scene.edge_actions_visible,
         });
 
-        let Some(scene) = self.last_scene.clone() else {
+        let Some(scene) = cached_scene(&self.scene_cache) else {
             self.last_layout = Some(layout);
             self.last_render_state = Some(render_state);
             self.last_pointer_regions = Vec::new();
-            self.last_render_command_bundle = None;
+            self.scene_cache.last_render_command_bundle = None;
             return;
         };
         let bundle =
@@ -270,37 +265,6 @@ impl NativePanelHost for WindowsNativePanelHost {
 }
 
 impl WindowsNativePanelHost {
-    fn create(&mut self) -> Result<(), String> {
-        NativePanelHost::create(self)
-    }
-
-    fn update_window_descriptor_with(
-        &mut self,
-        update: impl FnOnce(&mut NativePanelHostWindowDescriptor),
-    ) -> Result<(), String> {
-        self.update_host_window_descriptor(update)
-    }
-
-    fn reposition_to_display(
-        &mut self,
-        preferred_display_index: usize,
-        screen_frame: Option<PanelRect>,
-    ) -> Result<(), String> {
-        NativePanelHost::reposition_to_display(self, preferred_display_index, screen_frame)
-    }
-
-    fn set_shared_body_height(&mut self, body_height: f64) -> Result<(), String> {
-        NativePanelHost::set_shared_body_height(self, body_height)
-    }
-
-    fn apply_animation_descriptor(
-        &mut self,
-        descriptor: PanelAnimationDescriptor,
-    ) -> Result<(), String> {
-        let timeline = native_panel_timeline_descriptor_for_animation(descriptor);
-        NativePanelHost::apply_timeline_descriptor(self, timeline)
-    }
-
     fn queue_platform_event_for_pointer_region(&mut self, region: &NativePanelPointerRegion) {
         if let Some(event) = native_panel_platform_event_for_pointer_region(region) {
             self.pending_events.push(event);
@@ -348,7 +312,7 @@ impl WindowsNativePanelHost {
     where
         H: NativePanelPlatformEventHandler,
     {
-        dispatch_native_panel_platform_events(handler, self.take_platform_events())
+        self.dispatch_platform_events(handler)
     }
 }
 
@@ -395,30 +359,29 @@ impl WindowsNativePanelRuntime {
         Ok(())
     }
 
-    fn rebuild_scene_bundle_from_cached_snapshot_input(
+    fn rebuild_scene_sync_result_from_cached_snapshot_input(
         panel_state: &mut PanelState,
         snapshot: &RuntimeSnapshot,
         input: &NativePanelRuntimeInputDescriptor,
-    ) -> PanelRuntimeSceneBundle {
+    ) -> NativePanelRuntimeSceneSyncResult {
         sync_runtime_scene_bundle_from_input_descriptor(
             panel_state,
             snapshot,
             input,
             chrono::Utc::now(),
         )
-        .bundle
     }
 
     fn rerender_from_last_snapshot_with_input(
         &mut self,
         input: &NativePanelRuntimeInputDescriptor,
     ) -> Result<bool, String> {
-        rerender_runtime_scene_cache_to_host_with_input_descriptor(
+        rerender_runtime_scene_sync_result_to_host_with_input_descriptor(
             &mut self.host,
             &mut self.scene_cache,
             input,
             |snapshot| {
-                Self::rebuild_scene_bundle_from_cached_snapshot_input(
+                Self::rebuild_scene_sync_result_from_cached_snapshot_input(
                     &mut self.panel_state,
                     snapshot,
                     input,
@@ -435,6 +398,18 @@ impl WindowsNativePanelRuntime {
         self.rerender_from_last_snapshot_with_input(&input)
     }
 
+    fn toggle_settings_surface_with_input(
+        &mut self,
+        input: &NativePanelRuntimeInputDescriptor,
+    ) -> Result<bool, String> {
+        let changed = crate::native_panel_core::toggle_settings_surface(&mut self.panel_state);
+        if !changed {
+            return Ok(false);
+        }
+        let _ = self.rerender_from_last_snapshot_with_input(input)?;
+        Ok(true)
+    }
+
     fn sync_hover_and_refresh_at_point_with_input(
         &mut self,
         point: PanelPoint,
@@ -442,13 +417,13 @@ impl WindowsNativePanelRuntime {
         input: &NativePanelRuntimeInputDescriptor,
     ) -> Result<Option<HoverTransition>, String> {
         let transition = self.sync_hover_at_point(point, now);
-        rerender_runtime_scene_cache_to_host_on_transition_with_input_descriptor(
+        rerender_runtime_scene_sync_result_to_host_on_transition_with_input_descriptor(
             &mut self.host,
             &mut self.scene_cache,
             transition,
             input,
             |snapshot| {
-                Self::rebuild_scene_bundle_from_cached_snapshot_input(
+                Self::rebuild_scene_sync_result_from_cached_snapshot_input(
                     &mut self.panel_state,
                     snapshot,
                     input,
@@ -464,13 +439,13 @@ impl WindowsNativePanelRuntime {
         input: &NativePanelRuntimeInputDescriptor,
     ) -> Result<Option<HoverTransition>, String> {
         let transition = self.sync_hover_inside(inside, now);
-        rerender_runtime_scene_cache_to_host_on_transition_with_input_descriptor(
+        rerender_runtime_scene_sync_result_to_host_on_transition_with_input_descriptor(
             &mut self.host,
             &mut self.scene_cache,
             transition,
             input,
             |snapshot| {
-                Self::rebuild_scene_bundle_from_cached_snapshot_input(
+                Self::rebuild_scene_sync_result_from_cached_snapshot_input(
                     &mut self.panel_state,
                     snapshot,
                     input,
@@ -486,13 +461,13 @@ impl WindowsNativePanelRuntime {
         input: &NativePanelRuntimeInputDescriptor,
     ) -> Result<Option<HoverTransition>, String> {
         let transition = self.sync_hover_for_pointer_input(input_event, now);
-        rerender_runtime_scene_cache_to_host_on_transition_with_input_descriptor(
+        rerender_runtime_scene_sync_result_to_host_on_transition_with_input_descriptor(
             &mut self.host,
             &mut self.scene_cache,
             transition,
             input,
             |snapshot| {
-                Self::rebuild_scene_bundle_from_cached_snapshot_input(
+                Self::rebuild_scene_sync_result_from_cached_snapshot_input(
                     &mut self.panel_state,
                     snapshot,
                     input,
@@ -601,7 +576,7 @@ impl<R: tauri::Runtime + 'static> NativePanelPlatformEventHandler
     }
 
     fn toggle_settings_surface(&mut self) -> Result<(), Self::Error> {
-        Ok(())
+        toggle_native_panel_settings_surface(&self.app)
     }
 
     fn quit_application(&mut self) -> Result<(), Self::Error> {
@@ -661,11 +636,7 @@ pub(crate) fn native_ui_enabled() -> bool {
 }
 
 pub(crate) fn create_native_panel() -> Result<(), String> {
-    windows_native_panel_runtime()
-        .lock()
-        .map_err(|_| "windows native panel runtime poisoned".to_string())?
-        .host
-        .create()
+    with_windows_native_panel_runtime(|runtime| runtime.host.create())
 }
 
 pub(crate) fn hide_main_webview_window<R: tauri::Runtime>(_: &AppHandle<R>) -> Result<(), String> {
@@ -677,41 +648,39 @@ pub(crate) fn spawn_platform_loops<R: tauri::Runtime + 'static>(_: AppHandle<R>)
 pub(crate) fn dispatch_queued_native_panel_platform_events<R: tauri::Runtime + 'static>(
     app: AppHandle<R>,
 ) -> Result<(), String> {
-    let events = windows_native_panel_runtime()
-        .lock()
-        .map_err(|_| "windows native panel runtime poisoned".to_string())?
-        .host
-        .take_platform_events();
     let mut handler = WindowsNativePanelPlatformEventHandler { app };
-    dispatch_native_panel_platform_events(&mut handler, events)
+    with_windows_native_panel_runtime(|runtime| runtime.host.dispatch_platform_events(&mut handler))
 }
 
 pub(crate) fn update_native_panel_snapshot<R: tauri::Runtime>(
     app: &AppHandle<R>,
     snapshot: &RuntimeSnapshot,
 ) -> Result<(), String> {
-    let mut runtime = windows_native_panel_runtime()
-        .lock()
-        .map_err(|_| "windows native panel runtime poisoned".to_string())?;
     let input = windows_runtime_input_descriptor(app);
-    runtime.sync_snapshot_bundle(snapshot, &input)
+    with_windows_native_panel_runtime(|runtime| runtime.sync_snapshot_bundle(snapshot, &input))
 }
 
 pub(crate) fn hide_native_panel<R: tauri::Runtime>(_: &AppHandle<R>) -> Result<(), String> {
-    let mut runtime = windows_native_panel_runtime()
-        .lock()
-        .map_err(|_| "windows native panel runtime poisoned".to_string())?;
-    runtime.host.hide()
+    with_windows_native_panel_runtime(|runtime| runtime.host.hide())
+}
+
+fn toggle_native_panel_settings_surface<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+) -> Result<(), String> {
+    let input = windows_runtime_input_descriptor(app);
+    with_windows_native_panel_runtime(|runtime| {
+        runtime
+            .toggle_settings_surface_with_input(&input)
+            .map(|_| ())
+    })
 }
 
 pub(crate) fn refresh_native_panel_from_last_snapshot<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<(), String> {
-    windows_native_panel_runtime()
-        .lock()
-        .map_err(|_| "windows native panel runtime poisoned".to_string())?
-        .rerender_from_last_snapshot(app)
-        .map(|_| ())
+    with_windows_native_panel_runtime(|runtime| {
+        runtime.rerender_from_last_snapshot(app).map(|_| ())
+    })
 }
 
 pub(crate) fn handle_native_panel_pointer_move<R: tauri::Runtime>(
@@ -719,30 +688,27 @@ pub(crate) fn handle_native_panel_pointer_move<R: tauri::Runtime>(
     point: PanelPoint,
     now: Instant,
 ) -> Result<Option<HoverTransition>, String> {
-    windows_native_panel_runtime()
-        .lock()
-        .map_err(|_| "windows native panel runtime poisoned".to_string())?
-        .sync_hover_and_refresh_at_point(app, point, now)
+    with_windows_native_panel_runtime(|runtime| {
+        runtime.sync_hover_and_refresh_at_point(app, point, now)
+    })
 }
 
 pub(crate) fn handle_native_panel_pointer_leave<R: tauri::Runtime>(
     app: &AppHandle<R>,
     now: Instant,
 ) -> Result<Option<HoverTransition>, String> {
-    windows_native_panel_runtime()
-        .lock()
-        .map_err(|_| "windows native panel runtime poisoned".to_string())?
-        .sync_hover_and_refresh_inside(app, false, now)
+    with_windows_native_panel_runtime(|runtime| {
+        runtime.sync_hover_and_refresh_inside(app, false, now)
+    })
 }
 
 pub(crate) fn handle_native_panel_pointer_click<R: tauri::Runtime + 'static>(
     app: &AppHandle<R>,
     point: PanelPoint,
 ) -> Result<Option<NativePanelPlatformEvent>, String> {
-    windows_native_panel_runtime()
-        .lock()
-        .map_err(|_| "windows native panel runtime poisoned".to_string())?
-        .dispatch_platform_event_at_point(app, point)
+    with_windows_native_panel_runtime(|runtime| {
+        runtime.dispatch_platform_event_at_point(app, point)
+    })
 }
 
 pub(crate) fn handle_native_panel_window_message<R: tauri::Runtime + 'static>(
@@ -756,56 +722,60 @@ pub(crate) fn handle_native_panel_window_message<R: tauri::Runtime + 'static>(
     };
     let runtime_input = windows_runtime_input_descriptor(app);
     let mut handler = WindowsNativePanelPlatformEventHandler { app: app.clone() };
-    windows_native_panel_runtime()
-        .lock()
-        .map_err(|_| "windows native panel runtime poisoned".to_string())?
-        .handle_pointer_input_with_handler(message, now, &runtime_input, &mut handler)
-        .map(Some)
+    with_windows_native_panel_runtime(|runtime| {
+        runtime
+            .handle_pointer_input_with_handler(message, now, &runtime_input, &mut handler)
+            .map(Some)
+    })
 }
 
 pub(crate) fn reposition_native_panel_to_selected_display<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<(), String> {
     let input = windows_runtime_input_descriptor(app);
-    windows_native_panel_runtime()
-        .lock()
-        .map_err(|_| "windows native panel runtime poisoned".to_string())?
-        .host
-        .reposition_to_display(input.selected_display_index(), input.screen_frame)
+    with_windows_native_panel_runtime(|runtime| {
+        runtime
+            .host
+            .reposition_to_display(input.selected_display_index(), input.screen_frame)
+    })
 }
 
 pub(crate) fn set_shared_expanded_body_height<R: tauri::Runtime>(
     _: &AppHandle<R>,
     body_height: f64,
 ) -> Result<(), String> {
-    windows_native_panel_runtime()
-        .lock()
-        .map_err(|_| "windows native panel runtime poisoned".to_string())?
-        .host
-        .set_shared_body_height(body_height)
+    with_windows_native_panel_runtime(|runtime| runtime.host.set_shared_body_height(body_height))
 }
 
 pub(crate) fn apply_native_panel_animation_descriptor(
     descriptor: PanelAnimationDescriptor,
 ) -> Result<(), String> {
-    let mut runtime = windows_native_panel_runtime()
-        .lock()
-        .map_err(|_| "windows native panel runtime poisoned".to_string())?;
-    runtime.host.apply_animation_descriptor(descriptor)?;
-    runtime.last_animation_descriptor = Some(descriptor);
-    Ok(())
+    with_windows_native_panel_runtime(|runtime| {
+        runtime.host.apply_animation_descriptor(descriptor)?;
+        runtime.last_animation_descriptor = Some(descriptor);
+        Ok(())
+    })
 }
 
 fn windows_native_panel_runtime() -> &'static Mutex<WindowsNativePanelRuntime> {
     WINDOWS_NATIVE_PANEL_RUNTIME.get_or_init(|| Mutex::new(WindowsNativePanelRuntime::default()))
 }
 
+fn with_windows_native_panel_runtime<T>(
+    f: impl FnOnce(&mut WindowsNativePanelRuntime) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut runtime = windows_native_panel_runtime()
+        .lock()
+        .map_err(|_| "windows native panel runtime poisoned".to_string())?;
+    f(&mut runtime)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
         native_panel_core::{
-            CompletionBadgeItem, HoverTransition, PanelAnimationDescriptor, PanelAnimationKind,
-            PanelHitAction, PanelHitTarget, PanelPoint, PanelRect, PanelState,
+            CompletionBadgeItem, ExpandedSurface, HoverTransition, PanelAnimationDescriptor,
+            PanelAnimationKind, PanelHitAction, PanelHitTarget, PanelPoint, PanelRect, PanelState,
         },
         native_panel_renderer::{
             NativePanelEdgeAction, NativePanelHost, NativePanelHostWindowState,
@@ -1222,8 +1192,15 @@ mod tests {
         assert!(runtime.panel_state.expanded);
         assert!(runtime.scene_cache.last_scene.is_some());
         assert!(runtime.scene_cache.last_runtime_render_state.is_some());
-        assert!(runtime.host.renderer.last_scene.is_some());
-        assert!(runtime.host.renderer.last_runtime_render_state.is_some());
+        assert!(runtime.host.renderer.scene_cache.last_scene.is_some());
+        assert!(
+            runtime
+                .host
+                .renderer
+                .scene_cache
+                .last_runtime_render_state
+                .is_some()
+        );
         assert!(
             runtime
                 .scene_cache
@@ -1279,7 +1256,7 @@ mod tests {
         assert_eq!(transition, Some(HoverTransition::Collapse));
         assert!(!runtime.panel_state.expanded);
         assert!(runtime.scene_cache.last_scene.is_some());
-        assert!(runtime.host.renderer.last_scene.is_some());
+        assert!(runtime.host.renderer.scene_cache.last_scene.is_some());
         assert!(
             runtime
                 .scene_cache
@@ -1316,7 +1293,88 @@ mod tests {
         assert_eq!(transition, Some(HoverTransition::Expand));
         assert!(runtime.panel_state.expanded);
         assert!(runtime.scene_cache.last_scene.is_none());
-        assert!(runtime.host.renderer.last_scene.is_none());
+        assert!(runtime.host.renderer.scene_cache.last_scene.is_none());
+    }
+
+    #[test]
+    fn windows_runtime_toggle_settings_surface_updates_cached_scene() {
+        let mut runtime = super::WindowsNativePanelRuntime::default();
+        runtime.scene_cache.last_snapshot = Some(snapshot());
+        runtime.panel_state.expanded = true;
+        runtime
+            .host
+            .apply_animation_descriptor(PanelAnimationDescriptor {
+                kind: PanelAnimationKind::Open,
+                canvas_height: 180.0,
+                visible_height: 180.0,
+                width_progress: 1.0,
+                height_progress: 1.0,
+                shoulder_progress: 1.0,
+                drop_progress: 1.0,
+                cards_progress: 1.0,
+            })
+            .expect("seed animation descriptor");
+
+        let changed = runtime
+            .toggle_settings_surface_with_input(&runtime_input_descriptor())
+            .expect("toggle settings surface");
+
+        assert!(changed);
+        assert_eq!(runtime.panel_state.surface_mode, ExpandedSurface::Settings);
+        assert_eq!(
+            runtime
+                .scene_cache
+                .last_scene
+                .as_ref()
+                .map(|scene| scene.surface),
+            Some(ExpandedSurface::Settings)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .renderer
+                .scene_cache
+                .last_scene
+                .as_ref()
+                .map(|scene| scene.surface),
+            Some(ExpandedSurface::Settings)
+        );
+    }
+
+    #[test]
+    fn windows_runtime_toggle_settings_surface_cycles_back_to_default() {
+        let mut runtime = super::WindowsNativePanelRuntime::default();
+        runtime.scene_cache.last_snapshot = Some(snapshot());
+        runtime.panel_state.expanded = true;
+        runtime.panel_state.surface_mode = ExpandedSurface::Settings;
+        runtime
+            .host
+            .apply_animation_descriptor(PanelAnimationDescriptor {
+                kind: PanelAnimationKind::Open,
+                canvas_height: 180.0,
+                visible_height: 180.0,
+                width_progress: 1.0,
+                height_progress: 1.0,
+                shoulder_progress: 1.0,
+                drop_progress: 1.0,
+                cards_progress: 1.0,
+            })
+            .expect("seed animation descriptor");
+
+        let changed = runtime
+            .toggle_settings_surface_with_input(&runtime_input_descriptor())
+            .expect("toggle settings surface");
+
+        assert!(changed);
+        assert_eq!(runtime.panel_state.surface_mode, ExpandedSurface::Default);
+        assert_eq!(
+            runtime
+                .scene_cache
+                .last_scene
+                .as_ref()
+                .map(|scene| scene.surface),
+            Some(ExpandedSurface::Default)
+        );
     }
 
     #[test]
@@ -1433,7 +1491,7 @@ mod tests {
         );
         assert!(!runtime.panel_state.expanded);
         assert!(runtime.scene_cache.last_scene.is_some());
-        assert!(runtime.host.renderer.last_scene.is_some());
+        assert!(runtime.host.renderer.scene_cache.last_scene.is_some());
         assert!(handler.handled.is_empty());
     }
 
@@ -1588,11 +1646,15 @@ mod tests {
             .expect("apply descriptor");
 
         assert_eq!(
-            renderer.last_scene.as_ref().map(|cached| cached.surface),
+            renderer
+                .scene_cache
+                .last_scene
+                .as_ref()
+                .map(|cached| cached.surface),
             Some(scene.surface)
         );
         assert_eq!(
-            renderer.last_runtime_render_state,
+            renderer.scene_cache.last_runtime_render_state,
             Some(runtime_render_state)
         );
         assert_eq!(
@@ -1675,6 +1737,7 @@ mod tests {
                 .any(|region| matches!(region.kind, NativePanelPointerRegionKind::CardsContainer))
         );
         let command_bundle = renderer
+            .scene_cache
             .last_render_command_bundle
             .as_ref()
             .expect("cached render command bundle");
@@ -1777,6 +1840,7 @@ mod tests {
             .expect("apply expanded descriptor");
 
         let expanded_command = renderer
+            .scene_cache
             .last_render_command_bundle
             .as_ref()
             .expect("expanded render command");
@@ -1823,6 +1887,7 @@ mod tests {
             .expect("apply completion descriptor");
 
         let completion_command = renderer
+            .scene_cache
             .last_render_command_bundle
             .as_ref()
             .expect("completion render command");

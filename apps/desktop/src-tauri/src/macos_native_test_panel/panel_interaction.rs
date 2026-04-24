@@ -11,13 +11,13 @@ use super::panel_constants::{
 };
 use super::panel_geometry::{absolute_rect, point_in_rect};
 use super::panel_hit_testing::native_hover_pill_rect;
+use super::panel_host_runtime::{
+    dispatch_runtime_panel_surface_transition, dispatch_runtime_panel_transition,
+};
 use super::panel_interaction_effects::handle_native_click_command;
 use super::panel_refs::{
     native_panel_handles, native_panel_state, panel_from_ptr, resolve_native_panel_refs,
     view_from_ptr,
-};
-use super::panel_transition_entry::{
-    begin_native_panel_surface_transition, begin_native_panel_transition,
 };
 use super::panel_types::{NativeExpandedSurface, NativeHoverTransition, NativePanelState};
 
@@ -181,9 +181,9 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
     panel.setIgnoresMouseEvents(!interactive_inside);
 
     if let Some((snapshot, expanded)) = transition_snapshot {
-        begin_native_panel_transition(app.clone(), handles, snapshot, expanded);
+        dispatch_runtime_panel_transition(app.clone(), snapshot, expanded);
     } else if let Some(snapshot) = surface_transition_snapshot {
-        begin_native_panel_surface_transition(app.clone(), handles, snapshot);
+        dispatch_runtime_panel_surface_transition(app.clone(), snapshot);
     }
 
     handle_native_click_command(app, click_command);

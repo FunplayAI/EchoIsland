@@ -73,12 +73,11 @@ impl NativePanelRenderer for MacosNativePanelRendererAdapter {
         Ok(())
     }
 
-    fn apply_render_command_bundle(
+    fn record_render_command_bundle(
         &mut self,
         bundle: &NativePanelRenderCommandBundle,
     ) -> Result<(), Self::Error> {
         cache_render_command_bundle(&mut self.scene_cache, bundle);
-        self.last_pointer_regions = bundle.pointer_regions.clone();
         Ok(())
     }
 

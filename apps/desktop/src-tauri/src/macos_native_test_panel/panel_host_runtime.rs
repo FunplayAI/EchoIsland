@@ -154,12 +154,9 @@ impl MacosNativePanelRuntimeHost {
         snapshot: RuntimeSnapshot,
         expanded: bool,
     ) -> Result<(), String> {
-        let Some(handles) = current_runtime_panel_handles() else {
-            return Ok(());
-        };
         let app_for_transition = app.clone();
         app.run_on_main_thread(move || unsafe {
-            begin_native_panel_transition(app_for_transition, handles, snapshot, expanded);
+            dispatch_runtime_panel_transition(app_for_transition, snapshot, expanded);
         })
         .map_err(|error| error.to_string())
     }
@@ -168,15 +165,35 @@ impl MacosNativePanelRuntimeHost {
         app: &AppHandle<R>,
         snapshot: RuntimeSnapshot,
     ) -> Result<(), String> {
-        let Some(handles) = current_runtime_panel_handles() else {
-            return Ok(());
-        };
         let app_for_transition = app.clone();
         app.run_on_main_thread(move || unsafe {
-            begin_native_panel_surface_transition(app_for_transition, handles, snapshot);
+            dispatch_runtime_panel_surface_transition(app_for_transition, snapshot);
         })
         .map_err(|error| error.to_string())
     }
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+pub(super) unsafe fn dispatch_runtime_panel_transition<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    snapshot: RuntimeSnapshot,
+    expanded: bool,
+) {
+    let Some(handles) = current_runtime_panel_handles() else {
+        return;
+    };
+    begin_native_panel_transition(app, handles, snapshot, expanded);
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+pub(super) unsafe fn dispatch_runtime_panel_surface_transition<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    snapshot: RuntimeSnapshot,
+) {
+    let Some(handles) = current_runtime_panel_handles() else {
+        return;
+    };
+    begin_native_panel_surface_transition(app, handles, snapshot);
 }
 
 pub(super) fn with_native_runtime_panel_state_mut<T>(

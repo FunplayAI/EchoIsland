@@ -232,18 +232,23 @@ pub(crate) struct NativePanelPointerPointState {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct NativePanelPointerRegionFrameOverrides {
+pub(crate) struct NativePanelEdgeActionFrames {
     pub(crate) settings_action: Option<PanelRect>,
     pub(crate) quit_action: Option<PanelRect>,
 }
 
-impl NativePanelPointerRegionFrameOverrides {
+impl NativePanelEdgeActionFrames {
     fn edge_action_frame(self, action: NativePanelEdgeAction) -> Option<PanelRect> {
         match action {
             NativePanelEdgeAction::Settings => self.settings_action,
             NativePanelEdgeAction::Quit => self.quit_action,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct NativePanelPointerRegionInput {
+    pub(crate) edge_action_frames: NativePanelEdgeActionFrames,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -482,7 +487,7 @@ pub(crate) fn native_panel_platform_event_for_interaction_command(
 pub(crate) fn resolve_native_panel_pointer_regions(
     layout: PanelLayout,
     scene: &PanelScene,
-    frame_overrides: Option<NativePanelPointerRegionFrameOverrides>,
+    input: Option<NativePanelPointerRegionInput>,
 ) -> Vec<NativePanelPointerRegion> {
     let mut regions = Vec::new();
 
@@ -504,7 +509,11 @@ pub(crate) fn resolve_native_panel_pointer_regions(
             NativePanelPointerRegionKind::CardsContainer,
         );
         if scene.compact_bar.actions_visible {
-            push_edge_action_regions(&mut regions, layout, frame_overrides.unwrap_or_default());
+            push_edge_action_regions(
+                &mut regions,
+                layout,
+                input.unwrap_or_default().edge_action_frames,
+            );
         }
         push_scene_hit_target_regions(&mut regions, layout, scene);
     }
@@ -515,11 +524,11 @@ pub(crate) fn resolve_native_panel_pointer_regions(
 fn push_edge_action_regions(
     regions: &mut Vec<NativePanelPointerRegion>,
     layout: PanelLayout,
-    frame_overrides: NativePanelPointerRegionFrameOverrides,
+    edge_action_frames: NativePanelEdgeActionFrames,
 ) {
     let pill = absolute_panel_rect(layout, layout.pill_frame);
     let action_width = (pill.width * 0.18).clamp(36.0, 58.0);
-    let settings_frame = frame_overrides
+    let settings_frame = edge_action_frames
         .edge_action_frame(NativePanelEdgeAction::Settings)
         .unwrap_or(PanelRect {
             x: pill.x,
@@ -527,7 +536,7 @@ fn push_edge_action_regions(
             width: action_width,
             height: pill.height,
         });
-    let quit_frame = frame_overrides
+    let quit_frame = edge_action_frames
         .edge_action_frame(NativePanelEdgeAction::Quit)
         .unwrap_or(PanelRect {
             x: pill.x + pill.width - action_width,
@@ -600,8 +609,8 @@ mod tests {
     use crate::native_panel_scene::{PanelSceneBuildInput, build_panel_scene};
 
     use super::{
-        NativePanelEdgeAction, NativePanelPointerRegion, NativePanelPointerRegionFrameOverrides,
-        NativePanelPointerRegionKind,
+        NativePanelEdgeAction, NativePanelEdgeActionFrames, NativePanelPointerRegion,
+        NativePanelPointerRegionInput, NativePanelPointerRegionKind,
     };
     use super::{
         NativePanelHostWindowDescriptor, NativePanelHostWindowDescriptorPatch,
@@ -895,7 +904,7 @@ mod tests {
     }
 
     #[test]
-    fn pointer_regions_use_default_edge_action_frames_without_platform_overrides() {
+    fn pointer_regions_use_default_edge_action_frames_without_platform_input() {
         let layout = pointer_test_layout();
         let scene = pointer_test_scene();
 
@@ -924,25 +933,27 @@ mod tests {
     }
 
     #[test]
-    fn pointer_regions_accept_platform_edge_action_frame_overrides() {
+    fn pointer_regions_accept_platform_edge_action_frame_input() {
         let layout = pointer_test_layout();
         let scene = pointer_test_scene();
-        let overrides = NativePanelPointerRegionFrameOverrides {
-            settings_action: Some(PanelRect {
-                x: 640.5,
-                y: 824.0,
-                width: 26.0,
-                height: 26.0,
-            }),
-            quit_action: Some(PanelRect {
-                x: 774.0,
-                y: 824.0,
-                width: 22.0,
-                height: 22.0,
-            }),
+        let input = NativePanelPointerRegionInput {
+            edge_action_frames: NativePanelEdgeActionFrames {
+                settings_action: Some(PanelRect {
+                    x: 640.5,
+                    y: 824.0,
+                    width: 26.0,
+                    height: 26.0,
+                }),
+                quit_action: Some(PanelRect {
+                    x: 774.0,
+                    y: 824.0,
+                    width: 22.0,
+                    height: 22.0,
+                }),
+            },
         };
 
-        let regions = resolve_native_panel_pointer_regions(layout, &scene, Some(overrides));
+        let regions = resolve_native_panel_pointer_regions(layout, &scene, Some(input));
 
         assert_eq!(
             native_panel_platform_event_at_point(&regions, PanelPoint { x: 645.0, y: 830.0 }),

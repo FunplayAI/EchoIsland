@@ -109,7 +109,7 @@ fn sync_native_panel_pointer_regions(
         &scene,
         runtime_state,
         render_state,
-        Some(edge_action_pointer_region_overrides(layout, refs)),
+        Some(edge_action_pointer_region_input(layout, refs)),
     );
     apply_edge_action_button_commands(refs, layout, &bundle.action_buttons);
     if let Some(state) = native_panel_state() {
@@ -150,19 +150,21 @@ fn edge_action_command_local_frame(
     )
 }
 
-fn edge_action_pointer_region_overrides(
+fn edge_action_pointer_region_input(
     layout: &NativePanelLayout,
     refs: &NativePanelRefs,
-) -> crate::native_panel_renderer::NativePanelPointerRegionFrameOverrides {
-    crate::native_panel_renderer::NativePanelPointerRegionFrameOverrides {
-        settings_action: Some(edge_action_button_pointer_frame(
-            layout,
-            refs.settings_button.frame(),
-        )),
-        quit_action: Some(edge_action_button_pointer_frame(
-            layout,
-            refs.quit_button.frame(),
-        )),
+) -> crate::native_panel_renderer::NativePanelPointerRegionInput {
+    crate::native_panel_renderer::NativePanelPointerRegionInput {
+        edge_action_frames: crate::native_panel_renderer::NativePanelEdgeActionFrames {
+            settings_action: Some(edge_action_button_pointer_frame(
+                layout,
+                refs.settings_button.frame(),
+            )),
+            quit_action: Some(edge_action_button_pointer_frame(
+                layout,
+                refs.quit_button.frame(),
+            )),
+        },
     }
 }
 

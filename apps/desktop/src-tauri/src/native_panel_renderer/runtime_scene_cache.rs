@@ -1,20 +1,43 @@
 use echoisland_runtime::RuntimeSnapshot;
 
 use crate::{
-    native_panel_core::PanelRect,
-    native_panel_scene::{PanelRuntimeRenderState, PanelRuntimeSceneBundle, PanelScene},
+    native_panel_core::{ExpandedSurface, PanelRect, PanelState},
+    native_panel_scene::{
+        PanelRuntimeRenderState, PanelRuntimeSceneBundle, PanelScene, PanelSceneBuildInput,
+    },
 };
 
 use super::{
     NativePanelRenderCommandBundle, NativePanelRuntimeInputDescriptor, NativePanelSceneHost,
 };
 
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct NativePanelRuntimeSceneCacheKey {
+    pub(crate) expanded: bool,
+    pub(crate) transitioning: bool,
+    pub(crate) surface_mode: ExpandedSurface,
+    pub(crate) scene_input: PanelSceneBuildInput,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NativePanelRuntimeSceneCache {
     pub(crate) last_snapshot: Option<RuntimeSnapshot>,
+    pub(crate) last_cache_key: Option<NativePanelRuntimeSceneCacheKey>,
     pub(crate) last_scene: Option<PanelScene>,
     pub(crate) last_runtime_render_state: Option<PanelRuntimeRenderState>,
     pub(crate) last_render_command_bundle: Option<NativePanelRenderCommandBundle>,
+}
+
+pub(crate) fn native_panel_runtime_scene_cache_key(
+    panel_state: &PanelState,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> NativePanelRuntimeSceneCacheKey {
+    NativePanelRuntimeSceneCacheKey {
+        expanded: panel_state.expanded,
+        transitioning: panel_state.transitioning,
+        surface_mode: panel_state.surface_mode,
+        scene_input: input.scene_input.clone(),
+    }
 }
 
 pub(crate) fn cache_runtime_scene(
@@ -23,8 +46,18 @@ pub(crate) fn cache_runtime_scene(
     scene: PanelScene,
     runtime_render_state: PanelRuntimeRenderState,
 ) {
+    cache_runtime_scene_with_key(cache, snapshot, None, scene, runtime_render_state);
+}
+
+pub(crate) fn cache_runtime_scene_with_key(
+    cache: &mut NativePanelRuntimeSceneCache,
+    snapshot: RuntimeSnapshot,
+    cache_key: Option<NativePanelRuntimeSceneCacheKey>,
+    scene: PanelScene,
+    runtime_render_state: PanelRuntimeRenderState,
+) {
     cache.last_snapshot = Some(snapshot);
-    cache_scene_runtime(cache, scene, runtime_render_state);
+    cache_scene_runtime_with_key(cache, cache_key, scene, runtime_render_state);
 }
 
 pub(crate) fn cache_scene_runtime(
@@ -32,6 +65,16 @@ pub(crate) fn cache_scene_runtime(
     scene: PanelScene,
     runtime_render_state: PanelRuntimeRenderState,
 ) {
+    cache_scene_runtime_with_key(cache, None, scene, runtime_render_state);
+}
+
+pub(crate) fn cache_scene_runtime_with_key(
+    cache: &mut NativePanelRuntimeSceneCache,
+    cache_key: Option<NativePanelRuntimeSceneCacheKey>,
+    scene: PanelScene,
+    runtime_render_state: PanelRuntimeRenderState,
+) {
+    cache.last_cache_key = cache_key;
     cache.last_scene = Some(scene);
     cache.last_runtime_render_state = Some(runtime_render_state);
     cache.last_render_command_bundle = None;
@@ -41,7 +84,15 @@ pub(crate) fn cache_render_command_bundle(
     cache: &mut NativePanelRuntimeSceneCache,
     bundle: &NativePanelRenderCommandBundle,
 ) {
-    cache_scene_runtime(cache, bundle.scene.clone(), bundle.runtime);
+    cache_render_command_bundle_with_key(cache, None, bundle);
+}
+
+pub(crate) fn cache_render_command_bundle_with_key(
+    cache: &mut NativePanelRuntimeSceneCache,
+    cache_key: Option<NativePanelRuntimeSceneCacheKey>,
+    bundle: &NativePanelRenderCommandBundle,
+) {
+    cache_scene_runtime_with_key(cache, cache_key, bundle.scene.clone(), bundle.runtime);
     cache.last_render_command_bundle = Some(bundle.clone());
 }
 
@@ -61,6 +112,33 @@ pub(crate) fn cached_runtime_render_state(
         .as_ref()
         .map(|bundle| bundle.runtime)
         .or(cache.last_runtime_render_state)
+}
+
+pub(crate) fn cached_scene_for_key(
+    cache: &NativePanelRuntimeSceneCache,
+    cache_key: &NativePanelRuntimeSceneCacheKey,
+) -> Option<PanelScene> {
+    (cache.last_cache_key.as_ref() == Some(cache_key))
+        .then(|| cached_scene(cache))
+        .flatten()
+}
+
+pub(crate) fn cached_runtime_render_state_for_key(
+    cache: &NativePanelRuntimeSceneCache,
+    cache_key: &NativePanelRuntimeSceneCacheKey,
+) -> Option<PanelRuntimeRenderState> {
+    (cache.last_cache_key.as_ref() == Some(cache_key))
+        .then(|| cached_runtime_render_state(cache))
+        .flatten()
+}
+
+pub(crate) fn cached_render_command_bundle_for_key(
+    cache: &NativePanelRuntimeSceneCache,
+    cache_key: &NativePanelRuntimeSceneCacheKey,
+) -> Option<NativePanelRenderCommandBundle> {
+    (cache.last_cache_key.as_ref() == Some(cache_key))
+        .then(|| cache.last_render_command_bundle.clone())
+        .flatten()
 }
 
 pub(crate) fn apply_runtime_scene_bundle_to_host<H: NativePanelSceneHost>(
@@ -164,21 +242,24 @@ where
 mod tests {
     use super::{
         NativePanelRuntimeSceneCache, apply_runtime_scene_bundle_to_host,
-        cache_render_command_bundle, cache_runtime_scene, cached_runtime_render_state,
-        cached_scene, rerender_runtime_scene_cache_to_host,
+        cache_render_command_bundle, cache_render_command_bundle_with_key, cache_runtime_scene,
+        cache_scene_runtime_with_key, cached_render_command_bundle_for_key,
+        cached_runtime_render_state, cached_scene, cached_scene_for_key,
+        native_panel_runtime_scene_cache_key, rerender_runtime_scene_cache_to_host,
         rerender_runtime_scene_cache_to_host_on_transition,
     };
     use crate::{
-        native_panel_core::{ExpandedSurface, PanelRect, PanelSettingsState},
+        native_panel_core::{ExpandedSurface, PanelRect, PanelSettingsState, PanelState},
         native_panel_renderer::{
             NativePanelHost, NativePanelHostWindowDescriptor, NativePanelHostWindowState,
-            NativePanelRenderer, NativePanelSceneHost, resolve_native_panel_render_command_bundle,
+            NativePanelRenderer, NativePanelRuntimeInputDescriptor, NativePanelSceneHost,
+            resolve_native_panel_render_command_bundle,
         },
         native_panel_scene::{
             CompactBarScene, PanelRuntimeRenderState, PanelRuntimeSceneBundle, PanelScene,
-            SceneMascotPose, SceneText, SessionSurfaceScene, StatusSurfaceDefaultState,
-            StatusSurfaceDisplayMode, StatusSurfaceQueueState, StatusSurfaceScene, SurfaceScene,
-            build_settings_surface_scene, surface_scene_mode,
+            PanelSceneBuildInput, SceneMascotPose, SceneText, SessionSurfaceScene,
+            StatusSurfaceDefaultState, StatusSurfaceDisplayMode, StatusSurfaceQueueState,
+            StatusSurfaceScene, SurfaceScene, build_settings_surface_scene, surface_scene_mode,
         },
     };
     use echoisland_runtime::RuntimeSnapshot;
@@ -479,6 +560,130 @@ mod tests {
             cached_runtime_render_state(&cache).map(|runtime| runtime.transitioning),
             Some(true)
         );
+    }
+
+    #[test]
+    fn keyed_render_command_bundle_lookup_requires_matching_state() {
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        let stale_key = native_panel_runtime_scene_cache_key(&PanelState::default(), &input);
+        let current_key = native_panel_runtime_scene_cache_key(
+            &PanelState {
+                expanded: true,
+                surface_mode: ExpandedSurface::Settings,
+                ..PanelState::default()
+            },
+            &input,
+        );
+        let mut cache = NativePanelRuntimeSceneCache::default();
+        let bundle = test_render_command_bundle("bundle", true);
+
+        cache_render_command_bundle_with_key(&mut cache, Some(stale_key.clone()), &bundle);
+
+        assert!(cached_render_command_bundle_for_key(&cache, &current_key).is_none());
+        assert!(cached_render_command_bundle_for_key(&cache, &stale_key).is_some());
+    }
+
+    #[test]
+    fn keyed_scene_lookup_requires_matching_state() {
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        let stale_key = native_panel_runtime_scene_cache_key(&PanelState::default(), &input);
+        let current_key = native_panel_runtime_scene_cache_key(
+            &PanelState {
+                expanded: true,
+                surface_mode: ExpandedSurface::Settings,
+                ..PanelState::default()
+            },
+            &input,
+        );
+        let mut cache = NativePanelRuntimeSceneCache::default();
+        let bundle = test_bundle("scene");
+
+        cache_scene_runtime_with_key(
+            &mut cache,
+            Some(stale_key.clone()),
+            bundle.scene,
+            bundle.runtime_render_state,
+        );
+
+        assert!(cached_scene_for_key(&cache, &current_key).is_none());
+        assert!(cached_scene_for_key(&cache, &stale_key).is_some());
+    }
+
+    #[test]
+    fn cache_key_distinguishes_default_and_settings_surface() {
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        let default_key = native_panel_runtime_scene_cache_key(&PanelState::default(), &input);
+        let settings_key = native_panel_runtime_scene_cache_key(
+            &PanelState {
+                expanded: true,
+                surface_mode: ExpandedSurface::Settings,
+                ..PanelState::default()
+            },
+            &input,
+        );
+
+        assert_ne!(default_key, settings_key);
+    }
+
+    #[test]
+    fn cache_key_distinguishes_status_and_settings_surface() {
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        let status_key = native_panel_runtime_scene_cache_key(
+            &PanelState {
+                expanded: true,
+                surface_mode: ExpandedSurface::Status,
+                ..PanelState::default()
+            },
+            &input,
+        );
+        let settings_key = native_panel_runtime_scene_cache_key(
+            &PanelState {
+                expanded: true,
+                surface_mode: ExpandedSurface::Settings,
+                ..PanelState::default()
+            },
+            &input,
+        );
+
+        assert_ne!(status_key, settings_key);
+    }
+
+    #[test]
+    fn cache_key_distinguishes_settings_and_default_surface() {
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        let settings_key = native_panel_runtime_scene_cache_key(
+            &PanelState {
+                expanded: true,
+                surface_mode: ExpandedSurface::Settings,
+                ..PanelState::default()
+            },
+            &input,
+        );
+        let default_key = native_panel_runtime_scene_cache_key(
+            &PanelState {
+                expanded: true,
+                surface_mode: ExpandedSurface::Default,
+                ..PanelState::default()
+            },
+            &input,
+        );
+
+        assert_ne!(settings_key, default_key);
     }
 
     fn test_bundle(status: &str) -> PanelRuntimeSceneBundle {
