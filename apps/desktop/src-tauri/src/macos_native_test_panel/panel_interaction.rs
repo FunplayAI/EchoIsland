@@ -43,14 +43,19 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
     let primary_mouse_down = (NSEvent::pressedMouseButtons() & 1) != 0;
     let panel_frame = panel.frame();
     let pill_frame = refs.pill_view.frame();
+    let interactive_pill_frame = absolute_rect(panel_frame, pill_frame);
     let hover_pill_frame = native_hover_pill_rect(panel_frame, pill_frame);
     let expanded_container = view_from_ptr(handles.expanded_container);
     let cards_container = view_from_ptr(handles.cards_container);
-    let fallback_inside = if panel_frame.size.height > COLLAPSED_PANEL_HEIGHT + 0.5 {
-        point_in_rect(
-            mouse,
-            absolute_rect(panel_frame, expanded_container.frame()),
-        ) || point_in_rect(mouse, hover_pill_frame)
+    let interactive_expanded_frame = absolute_rect(panel_frame, expanded_container.frame());
+    let fallback_interactive_inside = if panel_frame.size.height > COLLAPSED_PANEL_HEIGHT + 0.5 {
+        point_in_rect(mouse, interactive_expanded_frame)
+            || point_in_rect(mouse, interactive_pill_frame)
+    } else {
+        point_in_rect(mouse, interactive_pill_frame)
+    };
+    let fallback_hover_inside = if panel_frame.size.height > COLLAPSED_PANEL_HEIGHT + 0.5 {
+        point_in_rect(mouse, interactive_expanded_frame) || point_in_rect(mouse, hover_pill_frame)
     } else {
         point_in_rect(mouse, hover_pill_frame)
     };
@@ -59,7 +64,8 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
     let mut transition_snapshot: Option<(RuntimeSnapshot, bool)> = None;
     let mut surface_transition_snapshot: Option<RuntimeSnapshot> = None;
     let click_command;
-    let inside;
+    let interactive_inside;
+    let hover_inside;
 
     {
         let mut state = match state_mutex.lock() {
@@ -70,12 +76,14 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
             x: mouse.x,
             y: mouse.y,
         };
-        inside = native_panel_pointer_inside_for_input(
+        interactive_inside = native_panel_pointer_inside_for_input(
             &state.pointer_regions,
             NativePanelPointerInput::Move(pointer),
         )
-        .unwrap_or(fallback_inside);
-        let primary_click_started = primary_mouse_down && !state.primary_mouse_down && inside;
+        .unwrap_or(fallback_interactive_inside);
+        hover_inside = interactive_inside || fallback_hover_inside;
+        let primary_click_started =
+            primary_mouse_down && !state.primary_mouse_down && interactive_inside;
         let click_event = primary_click_started
             .then(|| {
                 native_panel_platform_event_for_pointer_input(
@@ -143,7 +151,9 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
             state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
         let was_surface_mode = state.surface_mode;
 
-        if let Some(hover_transition) = sync_native_hover_expansion_state(&mut state, inside, now) {
+        if let Some(hover_transition) =
+            sync_native_hover_expansion_state(&mut state, hover_inside, now)
+        {
             if let Some(snapshot) = state.last_snapshot.clone() {
                 transition_snapshot =
                     Some((snapshot, hover_transition == NativeHoverTransition::Expand));
@@ -175,7 +185,7 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
         }
     }
 
-    panel.setIgnoresMouseEvents(!inside);
+    panel.setIgnoresMouseEvents(!interactive_inside);
 
     if let Some((snapshot, expanded)) = transition_snapshot {
         begin_native_panel_transition(app.clone(), handles, snapshot, expanded);

@@ -10,7 +10,7 @@ use super::panel_constants::{
     PENDING_QUESTION_CARD_MIN_HEIGHT,
 };
 use super::panel_helpers::estimated_default_chat_body_width;
-use super::panel_scene_adapter::build_native_panel_scene;
+use super::panel_scene_adapter::resolve_or_build_native_panel_scene;
 use super::panel_types::{NativeStatusQueueItem, NativeStatusQueuePayload};
 use crate::native_panel_scene::{PanelScene, SceneCard};
 
@@ -19,7 +19,7 @@ pub(super) fn estimated_expanded_body_height(snapshot: &RuntimeSnapshot) -> f64 
 }
 
 pub(super) fn estimated_expanded_content_height(snapshot: &RuntimeSnapshot) -> f64 {
-    let scene = build_native_panel_scene(snapshot);
+    let scene = resolve_or_build_native_panel_scene(snapshot);
     estimated_scene_content_height(&scene)
 }
 

@@ -2,9 +2,9 @@ use crate::{
     native_panel_core::{DEFAULT_COMPACT_PILL_WIDTH, DEFAULT_EXPANDED_PILL_WIDTH, PanelRect},
     native_panel_renderer::{
         NativePanelHost, NativePanelHostWindowDescriptor, NativePanelHostWindowState,
-        NativePanelPlatformEvent, NativePanelPointerRegion, NativePanelRenderer,
-        NativePanelRuntimeSceneCache, NativePanelTimelineDescriptor,
-        native_panel_host_window_frame,
+        NativePanelPlatformEvent, NativePanelPointerRegion, NativePanelRenderCommandBundle,
+        NativePanelRenderer, NativePanelRuntimeSceneCache, NativePanelTimelineDescriptor,
+        cache_render_command_bundle, cache_scene_runtime, native_panel_host_window_frame,
     },
     native_panel_scene::{PanelRuntimeRenderState, PanelScene},
 };
@@ -30,8 +30,7 @@ impl NativePanelRenderer for MacosNativePanelRendererAdapter {
         scene: &PanelScene,
         runtime: PanelRuntimeRenderState,
     ) -> Result<(), Self::Error> {
-        self.scene_cache.last_scene = Some(scene.clone());
-        self.scene_cache.last_runtime_render_state = Some(runtime);
+        cache_scene_runtime(&mut self.scene_cache, scene.clone(), runtime);
         Ok(())
     }
 
@@ -71,6 +70,15 @@ impl NativePanelRenderer for MacosNativePanelRendererAdapter {
         regions: &[NativePanelPointerRegion],
     ) -> Result<(), Self::Error> {
         self.last_pointer_regions = regions.to_vec();
+        Ok(())
+    }
+
+    fn apply_render_command_bundle(
+        &mut self,
+        bundle: &NativePanelRenderCommandBundle,
+    ) -> Result<(), Self::Error> {
+        cache_render_command_bundle(&mut self.scene_cache, bundle);
+        self.last_pointer_regions = bundle.pointer_regions.clone();
         Ok(())
     }
 
@@ -173,7 +181,7 @@ mod tests {
         },
         native_panel_renderer::{
             NativePanelHost, NativePanelHostWindowDescriptor, NativePanelRenderer,
-            NativePanelTimelineDescriptor,
+            NativePanelTimelineDescriptor, resolve_native_panel_render_command_bundle,
         },
         native_panel_scene::{PanelRuntimeRenderState, PanelSceneBuildInput, build_panel_scene},
     };
@@ -370,5 +378,92 @@ mod tests {
             host.renderer.scene_cache.last_runtime_render_state,
             Some(runtime)
         );
+    }
+
+    #[test]
+    fn macos_renderer_adapter_stores_render_command_bundle_in_shared_cache() {
+        let mut host = MacosNativePanelHostAdapter::default();
+        let snapshot = RuntimeSnapshot {
+            status: "idle".to_string(),
+            primary_source: "codex".to_string(),
+            active_session_count: 0,
+            total_session_count: 0,
+            pending_permission_count: 0,
+            pending_question_count: 0,
+            pending_permission: None,
+            pending_question: None,
+            pending_permissions: vec![],
+            pending_questions: vec![],
+            sessions: vec![],
+        };
+        let scene = build_panel_scene(
+            &crate::native_panel_core::PanelState {
+                expanded: true,
+                ..Default::default()
+            },
+            &snapshot,
+            &PanelSceneBuildInput::default(),
+        );
+        let runtime = PanelRuntimeRenderState::default();
+        let layout = crate::native_panel_core::resolve_panel_layout(
+            crate::native_panel_core::PanelLayoutInput {
+                screen_frame: crate::native_panel_core::PanelRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1440.0,
+                    height: 900.0,
+                },
+                metrics: crate::native_panel_core::PanelGeometryMetrics {
+                    compact_height: crate::native_panel_core::DEFAULT_COMPACT_PILL_HEIGHT,
+                    compact_width: crate::native_panel_core::DEFAULT_COMPACT_PILL_WIDTH,
+                    expanded_width: crate::native_panel_core::DEFAULT_EXPANDED_PILL_WIDTH,
+                    panel_width: crate::native_panel_core::DEFAULT_PANEL_CANVAS_WIDTH,
+                },
+                canvas_height: 180.0,
+                visible_height: 180.0,
+                bar_progress: 1.0,
+                height_progress: 1.0,
+                drop_progress: 1.0,
+                content_visibility: 1.0,
+                collapsed_height: crate::native_panel_core::COLLAPSED_PANEL_HEIGHT,
+                drop_distance: crate::native_panel_core::PANEL_DROP_DISTANCE,
+                content_top_gap: crate::native_panel_core::EXPANDED_CONTENT_TOP_GAP,
+                content_bottom_inset: crate::native_panel_core::EXPANDED_CONTENT_BOTTOM_INSET,
+                cards_side_inset: crate::native_panel_core::EXPANDED_CARDS_SIDE_INSET,
+                shoulder_size: crate::native_panel_core::COMPACT_SHOULDER_SIZE,
+                separator_side_inset: crate::native_panel_core::EXPANDED_SEPARATOR_SIDE_INSET,
+            },
+        );
+        let render_state = crate::native_panel_core::resolve_panel_render_state(
+            crate::native_panel_core::PanelRenderStateInput {
+                shared_expanded_enabled: false,
+                shell_visible: layout.shell_visible,
+                separator_visibility: layout.separator_visibility,
+                bar_progress: 1.0,
+                height_progress: 1.0,
+                cards_height: layout.cards_frame.height,
+                status_surface_active: false,
+                content_visibility: 1.0,
+                transitioning: false,
+                headline_emphasized: scene.compact_bar.headline.emphasized,
+                edge_actions_visible: scene.compact_bar.actions_visible,
+            },
+        );
+        let bundle =
+            resolve_native_panel_render_command_bundle(layout, &scene, runtime, render_state, None);
+
+        host.renderer
+            .apply_render_command_bundle(&bundle)
+            .expect("cache render command bundle");
+
+        assert_eq!(
+            host.renderer
+                .scene_cache
+                .last_render_command_bundle
+                .as_ref()
+                .map(|cached| cached.compact_bar.headline.text.as_str()),
+            Some(scene.compact_bar.headline.text.as_str())
+        );
+        assert_eq!(host.renderer.last_pointer_regions, bundle.pointer_regions);
     }
 }

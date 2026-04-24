@@ -2,6 +2,7 @@ use super::mascot::NativeMascotState;
 use super::panel_runtime_input::native_panel_runtime_input_descriptor;
 use super::panel_scene_adapter::build_native_panel_scene_for_state_with_input;
 use super::panel_types::{NativeExpandedSurface, NativePanelState, NativeStatusQueuePayload};
+use crate::native_panel_renderer::{native_panel_glow_command, native_panel_mascot_command};
 
 pub(super) struct NativeMascotFrameInput {
     pub(super) base_state: NativeMascotState,
@@ -14,6 +15,7 @@ pub(super) struct NativeMascotFrameInput {
 pub(super) fn resolve_native_mascot_frame_input(
     state: &NativePanelState,
 ) -> NativeMascotFrameInput {
+    let cached_bundle = state.scene_cache.last_render_command_bundle.as_ref();
     let snapshot = state.last_snapshot.clone();
     let input = native_panel_runtime_input_descriptor();
     let scene = snapshot
@@ -32,20 +34,30 @@ pub(super) fn resolve_native_mascot_frame_input(
             has_status_completion,
             has_completion_badge,
         ));
-    let completion_count = scene
-        .as_ref()
-        .map(|scene| scene.compact_bar.completion_count)
+    let completion_count = cached_bundle
+        .map(|bundle| bundle.compact_bar.completion_count)
+        .or_else(|| {
+            scene
+                .as_ref()
+                .map(|scene| scene.compact_bar.completion_count)
+        })
         .unwrap_or_else(|| state.completion_badge_items.len());
+    let mascot_command = cached_bundle
+        .map(|bundle| bundle.mascot.clone())
+        .or_else(|| scene.as_ref().map(native_panel_mascot_command));
+    let glow_command = cached_bundle
+        .and_then(|bundle| bundle.glow.clone())
+        .or_else(|| scene.as_ref().and_then(native_panel_glow_command));
 
     NativeMascotFrameInput {
         base_state,
         expanded: state.expanded,
         completion_count,
-        mascot_hidden: scene.as_ref().is_some_and(|scene| {
-            scene.mascot_pose == crate::native_panel_scene::SceneMascotPose::Hidden
+        mascot_hidden: mascot_command.is_some_and(|command| {
+            command.pose == crate::native_panel_scene::SceneMascotPose::Hidden
         }),
-        completion_glow_opacity: scene
-            .and_then(|scene| scene.glow.map(|glow| glow.opacity))
+        completion_glow_opacity: glow_command
+            .map(|command| command.glow.opacity)
             .unwrap_or(0.0),
     }
 }

@@ -97,13 +97,8 @@ pub(crate) fn resolve_native_panel_render_command_bundle(
             layout.cards_frame,
             layout.shell_visible && !scene.cards.is_empty(),
         ),
-        mascot: NativePanelMascotCommand {
-            pose: scene.mascot_pose,
-        },
-        glow: scene
-            .glow
-            .clone()
-            .map(|glow| NativePanelGlowCommand { glow }),
+        mascot: native_panel_mascot_command(scene),
+        glow: native_panel_glow_command(scene),
         action_buttons: resolve_action_button_commands(&pointer_regions, scene),
         pointer_regions,
     }
@@ -134,6 +129,19 @@ pub(crate) fn native_panel_card_stack_command(
         cards: scene.cards.clone(),
         visible,
     }
+}
+
+pub(crate) fn native_panel_mascot_command(scene: &PanelScene) -> NativePanelMascotCommand {
+    NativePanelMascotCommand {
+        pose: scene.mascot_pose,
+    }
+}
+
+pub(crate) fn native_panel_glow_command(scene: &PanelScene) -> Option<NativePanelGlowCommand> {
+    scene
+        .glow
+        .clone()
+        .map(|glow| NativePanelGlowCommand { glow })
 }
 
 fn resolve_action_button_commands(

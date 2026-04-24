@@ -180,10 +180,8 @@ pub(crate) trait NativePanelHost {
 }
 
 pub(crate) trait NativePanelSceneHost: NativePanelHost {
-    fn sync_scene_descriptor(
+    fn sync_scene_window_descriptor(
         &mut self,
-        scene: &PanelScene,
-        runtime: PanelRuntimeRenderState,
         preferred_display_index: usize,
         screen_frame: Option<PanelRect>,
     ) -> Result<(), Self::Error> {
@@ -194,7 +192,17 @@ pub(crate) trait NativePanelSceneHost: NativePanelHost {
                 preferred_display_index,
                 screen_frame,
             );
-        })?;
+        })
+    }
+
+    fn sync_scene_descriptor(
+        &mut self,
+        scene: &PanelScene,
+        runtime: PanelRuntimeRenderState,
+        preferred_display_index: usize,
+        screen_frame: Option<PanelRect>,
+    ) -> Result<(), Self::Error> {
+        self.sync_scene_window_descriptor(preferred_display_index, screen_frame)?;
         self.renderer().render_scene(scene, runtime)
     }
 
@@ -206,5 +214,182 @@ pub(crate) trait NativePanelSceneHost: NativePanelHost {
         screen_frame: Option<PanelRect>,
     ) -> Result<(), Self::Error> {
         self.sync_scene_descriptor(scene, runtime, preferred_display_index, screen_frame)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        NativePanelHost, NativePanelHostWindowDescriptor, NativePanelHostWindowState,
+        NativePanelRenderer, NativePanelSceneHost,
+    };
+    use crate::{
+        native_panel_core::PanelRect,
+        native_panel_scene::{
+            CompactBarScene, PanelRuntimeRenderState, PanelScene, SceneMascotPose, SceneText,
+            SessionSurfaceScene, StatusSurfaceDefaultState, StatusSurfaceDisplayMode,
+            StatusSurfaceQueueState, StatusSurfaceScene, SurfaceScene,
+        },
+    };
+
+    #[derive(Default)]
+    struct TestRenderer {
+        rendered_scene: Option<PanelScene>,
+        rendered_runtime: Option<PanelRuntimeRenderState>,
+        visible: bool,
+    }
+
+    impl NativePanelRenderer for TestRenderer {
+        type Error = String;
+
+        fn render_scene(
+            &mut self,
+            scene: &PanelScene,
+            runtime: PanelRuntimeRenderState,
+        ) -> Result<(), Self::Error> {
+            self.rendered_scene = Some(scene.clone());
+            self.rendered_runtime = Some(runtime);
+            Ok(())
+        }
+
+        fn set_visible(&mut self, visible: bool) -> Result<(), Self::Error> {
+            self.visible = visible;
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct TestHost {
+        renderer: TestRenderer,
+        descriptor: NativePanelHostWindowDescriptor,
+        create_calls: usize,
+    }
+
+    impl NativePanelHost for TestHost {
+        type Error = String;
+        type Renderer = TestRenderer;
+
+        fn renderer(&mut self) -> &mut Self::Renderer {
+            &mut self.renderer
+        }
+
+        fn host_window_descriptor(&self) -> NativePanelHostWindowDescriptor {
+            self.descriptor
+        }
+
+        fn host_window_descriptor_mut(&mut self) -> &mut NativePanelHostWindowDescriptor {
+            &mut self.descriptor
+        }
+
+        fn window_state(&self) -> NativePanelHostWindowState {
+            NativePanelHostWindowState::default()
+        }
+
+        fn show(&mut self) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn hide(&mut self) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn create(&mut self) -> Result<(), Self::Error> {
+            self.create_calls += 1;
+            Ok(())
+        }
+    }
+
+    impl NativePanelSceneHost for TestHost {}
+
+    #[test]
+    fn sync_scene_window_descriptor_updates_screen_frame() {
+        let mut host = TestHost::default();
+        let screen_frame = Some(PanelRect {
+            x: 10.0,
+            y: 20.0,
+            width: 300.0,
+            height: 120.0,
+        });
+
+        host.sync_scene_window_descriptor(2, screen_frame)
+            .expect("sync scene window descriptor");
+
+        assert_eq!(host.create_calls, 1);
+        assert_eq!(host.descriptor.preferred_display_index, 2);
+        assert_eq!(host.descriptor.screen_frame, screen_frame);
+    }
+
+    #[test]
+    fn sync_scene_descriptor_updates_window_then_renders() {
+        let mut host = TestHost::default();
+        let scene = test_scene();
+        let runtime = PanelRuntimeRenderState {
+            transitioning: true,
+            ..PanelRuntimeRenderState::default()
+        };
+
+        host.sync_scene_descriptor(
+            &scene,
+            runtime,
+            1,
+            Some(PanelRect {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 900.0,
+            }),
+        )
+        .expect("sync scene descriptor");
+
+        assert_eq!(host.create_calls, 1);
+        assert_eq!(
+            host.renderer.rendered_scene.as_ref().map(|it| it.surface),
+            Some(scene.surface)
+        );
+        assert_eq!(host.renderer.rendered_runtime, Some(runtime));
+        assert_eq!(host.descriptor.preferred_display_index, 1);
+    }
+
+    fn test_scene() -> PanelScene {
+        PanelScene {
+            surface: crate::native_panel_core::ExpandedSurface::Default,
+            compact_bar: CompactBarScene {
+                headline: SceneText {
+                    text: "idle".to_string(),
+                    emphasized: false,
+                },
+                active_count: "0".to_string(),
+                total_count: "0".to_string(),
+                completion_count: 0,
+                actions_visible: false,
+            },
+            surface_scene: SurfaceScene {
+                mode: crate::native_panel_scene::surface_scene_mode(
+                    crate::native_panel_core::ExpandedSurface::Default,
+                ),
+                headline_text: "Idle".to_string(),
+                headline_emphasized: false,
+                edge_actions_visible: false,
+            },
+            status_surface: StatusSurfaceScene {
+                cards: vec![],
+                display_mode: StatusSurfaceDisplayMode::Hidden,
+                default_state: StatusSurfaceDefaultState::default(),
+                queue_state: StatusSurfaceQueueState::default(),
+                completion_badge_count: 0,
+                show_completion_glow: false,
+            },
+            session_surface: SessionSurfaceScene { cards: vec![] },
+            settings_surface: crate::native_panel_scene::build_settings_surface_scene(
+                1,
+                crate::native_panel_core::PanelSettingsState::default(),
+                "0.0.0",
+            ),
+            cards: vec![],
+            glow: None,
+            mascot_pose: SceneMascotPose::Idle,
+            hit_targets: vec![],
+            nodes: vec![],
+        }
     }
 }

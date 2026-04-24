@@ -5,13 +5,62 @@ use crate::{
     native_panel_scene::{PanelRuntimeRenderState, PanelRuntimeSceneBundle, PanelScene},
 };
 
-use super::{NativePanelRuntimeInputDescriptor, NativePanelSceneHost};
+use super::{
+    NativePanelRenderCommandBundle, NativePanelRuntimeInputDescriptor, NativePanelSceneHost,
+};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NativePanelRuntimeSceneCache {
     pub(crate) last_snapshot: Option<RuntimeSnapshot>,
     pub(crate) last_scene: Option<PanelScene>,
     pub(crate) last_runtime_render_state: Option<PanelRuntimeRenderState>,
+    pub(crate) last_render_command_bundle: Option<NativePanelRenderCommandBundle>,
+}
+
+pub(crate) fn cache_runtime_scene(
+    cache: &mut NativePanelRuntimeSceneCache,
+    snapshot: RuntimeSnapshot,
+    scene: PanelScene,
+    runtime_render_state: PanelRuntimeRenderState,
+) {
+    cache.last_snapshot = Some(snapshot);
+    cache_scene_runtime(cache, scene, runtime_render_state);
+}
+
+pub(crate) fn cache_scene_runtime(
+    cache: &mut NativePanelRuntimeSceneCache,
+    scene: PanelScene,
+    runtime_render_state: PanelRuntimeRenderState,
+) {
+    cache.last_scene = Some(scene);
+    cache.last_runtime_render_state = Some(runtime_render_state);
+    cache.last_render_command_bundle = None;
+}
+
+pub(crate) fn cache_render_command_bundle(
+    cache: &mut NativePanelRuntimeSceneCache,
+    bundle: &NativePanelRenderCommandBundle,
+) {
+    cache_scene_runtime(cache, bundle.scene.clone(), bundle.runtime);
+    cache.last_render_command_bundle = Some(bundle.clone());
+}
+
+pub(crate) fn cached_scene(cache: &NativePanelRuntimeSceneCache) -> Option<PanelScene> {
+    cache
+        .last_render_command_bundle
+        .as_ref()
+        .map(|bundle| bundle.scene.clone())
+        .or_else(|| cache.last_scene.clone())
+}
+
+pub(crate) fn cached_runtime_render_state(
+    cache: &NativePanelRuntimeSceneCache,
+) -> Option<PanelRuntimeRenderState> {
+    cache
+        .last_render_command_bundle
+        .as_ref()
+        .map(|bundle| bundle.runtime)
+        .or(cache.last_runtime_render_state)
 }
 
 pub(crate) fn apply_runtime_scene_bundle_to_host<H: NativePanelSceneHost>(
@@ -27,9 +76,12 @@ pub(crate) fn apply_runtime_scene_bundle_to_host<H: NativePanelSceneHost>(
         preferred_display_index,
         screen_frame,
     )?;
-    cache.last_snapshot = Some(bundle.displayed_snapshot);
-    cache.last_scene = Some(bundle.scene);
-    cache.last_runtime_render_state = Some(bundle.runtime_render_state);
+    cache_runtime_scene(
+        cache,
+        bundle.displayed_snapshot,
+        bundle.scene,
+        bundle.runtime_render_state,
+    );
     Ok(())
 }
 
@@ -112,13 +164,15 @@ where
 mod tests {
     use super::{
         NativePanelRuntimeSceneCache, apply_runtime_scene_bundle_to_host,
-        rerender_runtime_scene_cache_to_host, rerender_runtime_scene_cache_to_host_on_transition,
+        cache_render_command_bundle, cache_runtime_scene, cached_runtime_render_state,
+        cached_scene, rerender_runtime_scene_cache_to_host,
+        rerender_runtime_scene_cache_to_host_on_transition,
     };
     use crate::{
         native_panel_core::{ExpandedSurface, PanelRect, PanelSettingsState},
         native_panel_renderer::{
             NativePanelHost, NativePanelHostWindowDescriptor, NativePanelHostWindowState,
-            NativePanelRenderer, NativePanelSceneHost,
+            NativePanelRenderer, NativePanelSceneHost, resolve_native_panel_render_command_bundle,
         },
         native_panel_scene::{
             CompactBarScene, PanelRuntimeRenderState, PanelRuntimeSceneBundle, PanelScene,
@@ -242,6 +296,7 @@ mod tests {
                 ..PanelRuntimeRenderState::default()
             })
         );
+        assert!(cache.last_render_command_bundle.is_none());
     }
 
     #[test]
@@ -373,6 +428,59 @@ mod tests {
         assert!(cache.last_scene.is_none());
     }
 
+    #[test]
+    fn caching_runtime_scene_clears_stale_render_command_bundle() {
+        let mut cache = NativePanelRuntimeSceneCache::default();
+        let stale_bundle = test_render_command_bundle("stale", true);
+        cache_render_command_bundle(&mut cache, &stale_bundle);
+
+        cache_runtime_scene(
+            &mut cache,
+            RuntimeSnapshot {
+                status: "fresh".to_string(),
+                primary_source: "codex".to_string(),
+                active_session_count: 0,
+                total_session_count: 0,
+                pending_permission_count: 0,
+                pending_question_count: 0,
+                pending_permission: None,
+                pending_question: None,
+                pending_permissions: vec![],
+                pending_questions: vec![],
+                sessions: vec![],
+            },
+            test_bundle("fresh").scene,
+            PanelRuntimeRenderState::default(),
+        );
+
+        assert!(cache.last_render_command_bundle.is_none());
+        assert_eq!(
+            cached_scene(&cache).map(|scene| scene.compact_bar.headline.text),
+            Some("fresh".to_string())
+        );
+    }
+
+    #[test]
+    fn cached_scene_and_runtime_prefer_render_command_bundle() {
+        let mut cache = NativePanelRuntimeSceneCache {
+            last_scene: Some(test_bundle("fallback").scene),
+            last_runtime_render_state: Some(PanelRuntimeRenderState::default()),
+            ..NativePanelRuntimeSceneCache::default()
+        };
+        let bundle = test_render_command_bundle("bundle", true);
+
+        cache_render_command_bundle(&mut cache, &bundle);
+
+        assert_eq!(
+            cached_scene(&cache).map(|scene| scene.compact_bar.headline.text),
+            Some("bundle".to_string())
+        );
+        assert_eq!(
+            cached_runtime_render_state(&cache).map(|runtime| runtime.transitioning),
+            Some(true)
+        );
+    }
+
     fn test_bundle(status: &str) -> PanelRuntimeSceneBundle {
         PanelRuntimeSceneBundle {
             scene: PanelScene {
@@ -431,5 +539,62 @@ mod tests {
                 sessions: vec![],
             },
         }
+    }
+
+    fn test_render_command_bundle(
+        status: &str,
+        transitioning: bool,
+    ) -> crate::native_panel_renderer::NativePanelRenderCommandBundle {
+        let scene = test_bundle(status).scene;
+        let layout = crate::native_panel_core::resolve_panel_layout(
+            crate::native_panel_core::PanelLayoutInput {
+                screen_frame: PanelRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1440.0,
+                    height: 900.0,
+                },
+                metrics: crate::native_panel_core::PanelGeometryMetrics {
+                    compact_height: crate::native_panel_core::DEFAULT_COMPACT_PILL_HEIGHT,
+                    compact_width: crate::native_panel_core::DEFAULT_COMPACT_PILL_WIDTH,
+                    expanded_width: crate::native_panel_core::DEFAULT_EXPANDED_PILL_WIDTH,
+                    panel_width: crate::native_panel_core::DEFAULT_PANEL_CANVAS_WIDTH,
+                },
+                canvas_height: 180.0,
+                visible_height: 180.0,
+                bar_progress: 1.0,
+                height_progress: 1.0,
+                drop_progress: 1.0,
+                content_visibility: 1.0,
+                collapsed_height: crate::native_panel_core::COLLAPSED_PANEL_HEIGHT,
+                drop_distance: crate::native_panel_core::PANEL_DROP_DISTANCE,
+                content_top_gap: crate::native_panel_core::EXPANDED_CONTENT_TOP_GAP,
+                content_bottom_inset: crate::native_panel_core::EXPANDED_CONTENT_BOTTOM_INSET,
+                cards_side_inset: crate::native_panel_core::EXPANDED_CARDS_SIDE_INSET,
+                shoulder_size: crate::native_panel_core::COMPACT_SHOULDER_SIZE,
+                separator_side_inset: crate::native_panel_core::EXPANDED_SEPARATOR_SIDE_INSET,
+            },
+        );
+        let runtime = PanelRuntimeRenderState {
+            transitioning,
+            ..PanelRuntimeRenderState::default()
+        };
+        let render_state = crate::native_panel_core::resolve_panel_render_state(
+            crate::native_panel_core::PanelRenderStateInput {
+                shared_expanded_enabled: false,
+                shell_visible: layout.shell_visible,
+                separator_visibility: layout.separator_visibility,
+                bar_progress: 1.0,
+                height_progress: 1.0,
+                cards_height: layout.cards_frame.height,
+                status_surface_active: false,
+                content_visibility: 1.0,
+                transitioning,
+                headline_emphasized: scene.compact_bar.headline.emphasized,
+                edge_actions_visible: scene.compact_bar.actions_visible,
+            },
+        );
+
+        resolve_native_panel_render_command_bundle(layout, &scene, runtime, render_state, None)
     }
 }

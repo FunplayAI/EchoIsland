@@ -412,11 +412,6 @@ pub(crate) fn resolve_native_panel_pointer_regions(
 
     push_region(
         &mut regions,
-        absolute_panel_rect(layout, layout.content_frame),
-        NativePanelPointerRegionKind::Shell,
-    );
-    push_region(
-        &mut regions,
         absolute_panel_rect(layout, layout.pill_frame),
         NativePanelPointerRegionKind::CompactBar,
     );
@@ -534,7 +529,7 @@ mod tests {
     };
     use super::{
         NativePanelHostWindowDescriptor, NativePanelPlatformEvent, NativePanelPointerInput,
-        NativePanelPointerInputOutcome, NativePanelTimelineDescriptor,
+        NativePanelPointerInputOutcome, NativePanelTimelineDescriptor, absolute_panel_rect,
         native_panel_hit_target_at_point, native_panel_host_window_descriptor,
         native_panel_host_window_frame, native_panel_platform_event_at_point,
         native_panel_platform_event_for_interaction_command,
@@ -847,6 +842,33 @@ mod tests {
             native_panel_platform_event_at_point(&regions, PanelPoint { x: 780.0, y: 830.0 }),
             Some(NativePanelPlatformEvent::QuitApplication)
         );
+    }
+
+    #[test]
+    fn pointer_regions_do_not_claim_transparent_canvas_margins() {
+        let layout = pointer_test_layout();
+        let scene = pointer_test_scene();
+        let regions = resolve_native_panel_pointer_regions(layout, &scene, None);
+
+        let content_frame = absolute_panel_rect(layout, layout.content_frame);
+        assert!(!regions.iter().any(|region| {
+            matches!(region.kind, NativePanelPointerRegionKind::Shell)
+                && region.frame == content_frame
+        }));
+        assert!(!native_panel_pointer_inside_regions(
+            &regions,
+            PanelPoint {
+                x: layout.panel_frame.x + 10.0,
+                y: layout.panel_frame.y + layout.panel_frame.height - 2.0,
+            }
+        ));
+        assert!(native_panel_pointer_inside_regions(
+            &regions,
+            PanelPoint {
+                x: layout.panel_frame.x + layout.pill_frame.x + 20.0,
+                y: layout.panel_frame.y + layout.pill_frame.y + 20.0,
+            }
+        ));
     }
 
     #[test]

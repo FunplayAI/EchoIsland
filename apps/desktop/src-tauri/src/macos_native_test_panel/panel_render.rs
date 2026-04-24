@@ -18,6 +18,7 @@ use crate::native_panel_core::{
     PanelRenderProgress, PanelRenderState, PanelRenderStateInput, resolve_panel_render_progress,
     resolve_panel_render_state,
 };
+use crate::native_panel_renderer::cache_render_command_bundle;
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_panel_geometry(
@@ -114,6 +115,7 @@ fn sync_native_panel_pointer_regions(
     apply_edge_action_button_commands(refs, layout, &bundle.action_buttons);
     if let Some(state) = native_panel_state() {
         if let Ok(mut guard) = state.lock() {
+            cache_render_command_bundle(&mut guard.scene_cache, &bundle);
             guard.pointer_regions = bundle.pointer_regions;
         }
     }

@@ -8,7 +8,7 @@ use crate::{
 
 use super::{
     NativePanelRuntimeInputDescriptor, NativePanelRuntimeSceneCache, NativePanelSceneHost,
-    apply_runtime_scene_bundle_to_host,
+    apply_runtime_scene_bundle_to_host, cache_runtime_scene,
 };
 
 #[derive(Clone, Debug)]
@@ -41,9 +41,12 @@ pub(crate) fn cache_runtime_scene_sync_result(
     cache: &mut NativePanelRuntimeSceneCache,
     sync_result: NativePanelRuntimeSceneSyncResult,
 ) -> PanelSnapshotSyncResult {
-    cache.last_snapshot = Some(sync_result.bundle.displayed_snapshot);
-    cache.last_scene = Some(sync_result.bundle.scene);
-    cache.last_runtime_render_state = Some(sync_result.bundle.runtime_render_state);
+    cache_runtime_scene(
+        cache,
+        sync_result.bundle.displayed_snapshot,
+        sync_result.bundle.scene,
+        sync_result.bundle.runtime_render_state,
+    );
     sync_result.snapshot_sync
 }
 

@@ -12,7 +12,7 @@ use super::card_views::{
 };
 use super::panel_constants::{EXPANDED_CARD_GAP, EXPANDED_CARD_OVERHANG};
 use super::panel_geometry::expanded_cards_width;
-use super::panel_scene_adapter::build_native_panel_scene;
+use super::panel_scene_adapter::resolve_or_build_native_panel_scene;
 use crate::native_panel_core::PanelRect;
 use crate::native_panel_renderer::{NativePanelCardStackCommand, native_panel_card_stack_command};
 use crate::native_panel_scene::SceneCard;
@@ -25,7 +25,7 @@ pub(super) unsafe fn render_expanded_cards(
 ) {
     clear_card_animation_layouts();
     clear_subviews(cards_container);
-    let scene = build_native_panel_scene(snapshot);
+    let scene = resolve_or_build_native_panel_scene(snapshot);
     let cards_width = expanded_cards_width(expanded_width);
     let command = native_panel_card_stack_command(
         &scene,
