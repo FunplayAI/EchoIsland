@@ -1,27 +1,14 @@
 use chrono::Utc;
-use echoisland_runtime::{
-    PendingPermissionView, PendingQuestionView, RuntimeSnapshot, SessionSnapshotView,
-};
+use echoisland_runtime::{PendingPermissionView, PendingQuestionView, SessionSnapshotView};
 
 use super::card_views::settings_surface_card_height;
 use super::display_helpers::{display_snippet, normalize_status};
 use super::panel_constants::{
-    EXPANDED_CARD_GAP, EXPANDED_MAX_BODY_HEIGHT, PENDING_QUESTION_CARD_MAX_HEIGHT,
-    PENDING_QUESTION_CARD_MIN_HEIGHT,
+    EXPANDED_CARD_GAP, PENDING_QUESTION_CARD_MAX_HEIGHT, PENDING_QUESTION_CARD_MIN_HEIGHT,
 };
 use super::panel_helpers::estimated_default_chat_body_width;
-use super::panel_scene_adapter::resolve_or_build_native_panel_scene;
 use super::panel_types::{NativeStatusQueueItem, NativeStatusQueuePayload};
 use crate::native_panel_scene::{PanelScene, SceneCard};
-
-pub(super) fn estimated_expanded_body_height(snapshot: &RuntimeSnapshot) -> f64 {
-    estimated_expanded_content_height(snapshot).min(EXPANDED_MAX_BODY_HEIGHT)
-}
-
-pub(super) fn estimated_expanded_content_height(snapshot: &RuntimeSnapshot) -> f64 {
-    let scene = resolve_or_build_native_panel_scene(snapshot);
-    estimated_scene_content_height(&scene)
-}
 
 pub(super) fn estimated_scene_content_height(scene: &PanelScene) -> f64 {
     estimated_scene_cards_content_height(&scene.cards)

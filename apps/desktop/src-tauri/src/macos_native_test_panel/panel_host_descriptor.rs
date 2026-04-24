@@ -1,12 +1,11 @@
 use objc2_foundation::NSRect;
 
-use super::panel_types::{NativePanelAnimationDescriptor, NativePanelState};
+use super::panel_types::NativePanelState;
 use crate::native_panel_renderer::{
-    NativePanelHostWindowDescriptor, NativePanelTimelineDescriptor,
+    NativePanelHostWindowDescriptor, NativePanelHostWindowDescriptorPatch,
+    NativePanelTimelineDescriptor,
     native_panel_host_window_descriptor as shared_native_panel_host_window_descriptor,
-    native_panel_timeline_descriptor as shared_native_panel_timeline_descriptor,
-    sync_native_panel_host_window_screen_frame, sync_native_panel_host_window_shared_body_height,
-    sync_native_panel_host_window_timeline, sync_native_panel_host_window_visibility,
+    patch_native_panel_host_window_descriptor,
 };
 
 pub(super) fn native_panel_host_window_descriptor(
@@ -25,21 +24,16 @@ pub(super) fn native_panel_host_window_descriptor(
     )
 }
 
-pub(super) fn native_panel_timeline_descriptor(
-    animation: NativePanelAnimationDescriptor,
-    cards_entering: bool,
-) -> NativePanelTimelineDescriptor {
-    shared_native_panel_timeline_descriptor(animation, cards_entering)
-}
-
 pub(super) fn sync_native_host_window_timeline(
     state: &mut NativePanelState,
-    animation: NativePanelAnimationDescriptor,
-    cards_entering: bool,
+    descriptor: NativePanelTimelineDescriptor,
 ) {
-    sync_native_panel_host_window_timeline(
+    patch_native_panel_host_window_descriptor(
         &mut state.host_window_descriptor,
-        Some(native_panel_timeline_descriptor(animation, cards_entering)),
+        NativePanelHostWindowDescriptorPatch {
+            timeline: Some(Some(descriptor)),
+            ..NativePanelHostWindowDescriptorPatch::default()
+        },
     );
 }
 
@@ -47,14 +41,23 @@ pub(super) fn sync_native_host_window_shared_body_height(
     state: &mut NativePanelState,
     shared_body_height: Option<f64>,
 ) {
-    sync_native_panel_host_window_shared_body_height(
+    patch_native_panel_host_window_descriptor(
         &mut state.host_window_descriptor,
-        shared_body_height,
+        NativePanelHostWindowDescriptorPatch {
+            shared_body_height: Some(shared_body_height),
+            ..NativePanelHostWindowDescriptorPatch::default()
+        },
     );
 }
 
 pub(super) fn sync_native_host_window_visibility(state: &mut NativePanelState, visible: bool) {
-    sync_native_panel_host_window_visibility(&mut state.host_window_descriptor, visible);
+    patch_native_panel_host_window_descriptor(
+        &mut state.host_window_descriptor,
+        NativePanelHostWindowDescriptorPatch {
+            visible: Some(visible),
+            ..NativePanelHostWindowDescriptorPatch::default()
+        },
+    );
 }
 
 pub(super) fn sync_native_host_window_screen_frame(
@@ -62,10 +65,13 @@ pub(super) fn sync_native_host_window_screen_frame(
     preferred_display_index: usize,
     screen_frame: NSRect,
 ) {
-    sync_native_panel_host_window_screen_frame(
+    patch_native_panel_host_window_descriptor(
         &mut state.host_window_descriptor,
-        preferred_display_index,
-        Some(ns_rect_to_panel_rect(screen_frame)),
+        NativePanelHostWindowDescriptorPatch {
+            preferred_display_index: Some(preferred_display_index),
+            screen_frame: Some(Some(ns_rect_to_panel_rect(screen_frame))),
+            ..NativePanelHostWindowDescriptorPatch::default()
+        },
     );
 }
 

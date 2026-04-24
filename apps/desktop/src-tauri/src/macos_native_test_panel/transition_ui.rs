@@ -1,24 +1,23 @@
-use echoisland_runtime::RuntimeSnapshot;
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
 use super::card_animation::apply_card_stack_transition;
-use super::card_stack::render_expanded_cards;
+use super::card_stack::render_expanded_cards_with_plan;
 use super::card_views::clear_subviews;
 use super::panel_constants::{
     COLLAPSED_PANEL_HEIGHT, EXPANDED_CARDS_SIDE_INSET, PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
 };
-use super::panel_geometry::{expanded_cards_width, expanded_total_height};
+use super::panel_geometry::{expanded_cards_width, expanded_total_height_for_body_height};
 use super::panel_interaction::{native_settings_surface_active, native_status_surface_active};
 use super::panel_refs::{NativePanelRefs, native_panel_state, resolve_native_panel_refs};
 use super::panel_render::apply_panel_geometry;
+use super::panel_scene_adapter::NativePanelSnapshotRenderPlan;
 use super::panel_screen_geometry::{
     compact_pill_height_for_screen_rect, expanded_panel_width_for_screen_rect,
     resolve_screen_frame_for_panel,
 };
-use super::panel_types::{
-    NativePanelAnimationDescriptor, NativePanelHandles, NativePanelTransitionFrame,
-};
+use super::panel_types::{NativePanelHandles, NativePanelTransitionFrame};
 use crate::macos_shared_expanded_window;
+use crate::native_panel_renderer::NativePanelTimelineDescriptor;
 
 #[derive(Clone, Copy)]
 pub(super) struct NativeTransitionContext {
@@ -42,9 +41,9 @@ pub(super) unsafe fn resolve_native_transition_context(
     }
 }
 
-pub(super) fn resolved_expanded_target_height(
+pub(super) fn resolved_expanded_target_height_for_plan(
     context: NativeTransitionContext,
-    snapshot: &RuntimeSnapshot,
+    plan: &NativePanelSnapshotRenderPlan,
 ) -> f64 {
     let shared_body_height = if macos_shared_expanded_window::shared_expanded_enabled()
         && !native_status_surface_active()
@@ -55,26 +54,44 @@ pub(super) fn resolved_expanded_target_height(
     } else {
         None
     };
-    expanded_total_height(
-        snapshot,
+    resolved_snapshot_expanded_height_for_plan(context, plan, shared_body_height)
+}
+
+pub(super) fn resolved_snapshot_expanded_height_for_plan(
+    context: NativeTransitionContext,
+    plan: &NativePanelSnapshotRenderPlan,
+    shared_body_height: Option<f64>,
+) -> f64 {
+    expanded_total_height_for_body_height(
+        plan.expanded_body_height,
         compact_pill_height_for_screen_rect(
             context.refs.panel.screen().as_deref(),
             context.screen_frame,
         ),
-        shared_body_height,
+        resolve_snapshot_shared_body_height(shared_body_height),
     )
 }
 
-#[allow(unsafe_op_in_unsafe_fn)]
-pub(super) unsafe fn render_transition_cards(
+pub(super) fn resolved_snapshot_panel_height_for_plan(
     context: NativeTransitionContext,
-    snapshot: &RuntimeSnapshot,
-) {
-    render_expanded_cards(
-        context.refs.cards_container,
-        snapshot,
-        context.expanded_width,
-    );
+    plan: &NativePanelSnapshotRenderPlan,
+    expanded: bool,
+    shared_body_height: Option<f64>,
+) -> f64 {
+    if !expanded {
+        return COLLAPSED_PANEL_HEIGHT;
+    }
+
+    resolved_snapshot_expanded_height_for_plan(context, plan, shared_body_height)
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+pub(super) unsafe fn render_transition_cards_with_plan(
+    context: NativeTransitionContext,
+    plan: &NativePanelSnapshotRenderPlan,
+) -> usize {
+    render_expanded_cards_with_plan(context.refs.cards_container, plan, context.expanded_width);
+    context.refs.cards_container.subviews().len()
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -89,10 +106,9 @@ pub(super) unsafe fn reset_collapsed_cards(context: NativeTransitionContext) {
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn prepare_open_transition(
     context: NativeTransitionContext,
-    snapshot: &RuntimeSnapshot,
+    plan: &NativePanelSnapshotRenderPlan,
 ) -> usize {
-    render_transition_cards(context, snapshot);
-    let card_count = context.refs.cards_container.subviews().len();
+    let card_count = render_transition_cards_with_plan(context, plan);
     apply_card_stack_transition(context.refs.cards_container, 0.0, true);
     context.refs.cards_container.setHidden(false);
     context.refs.cards_container.setAlphaValue(1.0);
@@ -105,10 +121,10 @@ pub(super) unsafe fn prepare_open_transition(
 pub(super) unsafe fn finalize_open_transition(
     handles: NativePanelHandles,
     context: NativeTransitionContext,
-    snapshot: &RuntimeSnapshot,
+    plan: &NativePanelSnapshotRenderPlan,
     target_height: f64,
 ) {
-    render_transition_cards(context, snapshot);
+    render_transition_cards_with_plan(context, plan);
     context.refs.cards_container.setHidden(false);
     context.refs.cards_container.setAlphaValue(1.0);
     apply_card_stack_transition(context.refs.cards_container, 1.0, true);
@@ -161,10 +177,9 @@ pub(super) unsafe fn finalize_close_transition(
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn prepare_surface_switch_transition(
     context: NativeTransitionContext,
-    snapshot: &RuntimeSnapshot,
+    plan: &NativePanelSnapshotRenderPlan,
 ) -> usize {
-    render_transition_cards(context, snapshot);
-    let card_count = context.refs.cards_container.subviews().len();
+    let card_count = render_transition_cards_with_plan(context, plan);
     apply_card_stack_transition(
         context.refs.cards_container,
         PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
@@ -181,10 +196,10 @@ pub(super) unsafe fn prepare_surface_switch_transition(
 pub(super) unsafe fn finalize_surface_switch_transition(
     handles: NativePanelHandles,
     context: NativeTransitionContext,
-    snapshot: &RuntimeSnapshot,
+    plan: &NativePanelSnapshotRenderPlan,
     target_height: f64,
 ) {
-    render_transition_cards(context, snapshot);
+    render_transition_cards_with_plan(context, plan);
     context.refs.cards_container.setHidden(false);
     context.refs.cards_container.setAlphaValue(1.0);
     apply_card_stack_transition(context.refs.cards_container, 1.0, true);
@@ -211,17 +226,64 @@ pub(super) unsafe fn apply_transition_timeline_frame(
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_transition_timeline_descriptor(
     handles: NativePanelHandles,
-    descriptor: NativePanelAnimationDescriptor,
-    cards_entering: bool,
+    descriptor: NativePanelTimelineDescriptor,
 ) {
+    let animation = descriptor.animation;
     let frame = NativePanelTransitionFrame {
-        canvas_height: descriptor.canvas_height,
-        visible_height: descriptor.visible_height,
-        bar_progress: descriptor.width_progress,
-        height_progress: descriptor.height_progress,
-        shoulder_progress: descriptor.shoulder_progress,
-        drop_progress: descriptor.drop_progress,
-        cards_progress: descriptor.cards_progress,
+        canvas_height: animation.canvas_height,
+        visible_height: animation.visible_height,
+        bar_progress: animation.width_progress,
+        height_progress: animation.height_progress,
+        shoulder_progress: animation.shoulder_progress,
+        drop_progress: animation.drop_progress,
+        cards_progress: animation.cards_progress,
     };
-    apply_transition_timeline_frame(handles, frame, cards_entering);
+    apply_transition_timeline_frame(handles, frame, descriptor.cards_entering);
+}
+
+fn resolve_snapshot_shared_body_height_for_flags(
+    shared_expanded_enabled: bool,
+    status_surface_active: bool,
+    settings_surface_active: bool,
+    shared_body_height: Option<f64>,
+) -> Option<f64> {
+    if shared_expanded_enabled && !status_surface_active && !settings_surface_active {
+        shared_body_height
+    } else {
+        None
+    }
+}
+
+pub(super) fn resolve_snapshot_shared_body_height(shared_body_height: Option<f64>) -> Option<f64> {
+    resolve_snapshot_shared_body_height_for_flags(
+        macos_shared_expanded_window::shared_expanded_enabled(),
+        native_status_surface_active(),
+        native_settings_surface_active(),
+        shared_body_height,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_snapshot_shared_body_height_for_flags;
+
+    #[test]
+    fn shared_body_height_is_kept_only_for_default_shared_surface() {
+        assert_eq!(
+            resolve_snapshot_shared_body_height_for_flags(true, false, false, Some(180.0)),
+            Some(180.0)
+        );
+        assert_eq!(
+            resolve_snapshot_shared_body_height_for_flags(true, true, false, Some(180.0)),
+            None
+        );
+        assert_eq!(
+            resolve_snapshot_shared_body_height_for_flags(true, false, true, Some(180.0)),
+            None
+        );
+        assert_eq!(
+            resolve_snapshot_shared_body_height_for_flags(false, false, false, Some(180.0)),
+            None
+        );
+    }
 }

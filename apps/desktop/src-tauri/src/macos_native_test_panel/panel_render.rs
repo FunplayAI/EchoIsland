@@ -7,6 +7,7 @@ use super::panel_helpers::native_panel_content_visibility;
 use super::panel_interaction::native_status_surface_active;
 use super::panel_refs::{NativePanelRefs, native_panel_state, resolve_native_panel_refs};
 use super::panel_scene_adapter::{
+    cache_native_panel_render_command_bundle_in_state,
     resolve_current_native_panel_runtime_render_state, resolve_current_native_panel_scene,
 };
 use super::panel_screen_geometry::resolve_screen_frame_for_panel;
@@ -18,8 +19,6 @@ use crate::native_panel_core::{
     PanelRenderProgress, PanelRenderState, PanelRenderStateInput, resolve_panel_render_progress,
     resolve_panel_render_state,
 };
-use crate::native_panel_renderer::cache_render_command_bundle;
-
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_panel_geometry(
     handles: NativePanelHandles,
@@ -115,8 +114,7 @@ fn sync_native_panel_pointer_regions(
     apply_edge_action_button_commands(refs, layout, &bundle.action_buttons);
     if let Some(state) = native_panel_state() {
         if let Ok(mut guard) = state.lock() {
-            cache_render_command_bundle(&mut guard.scene_cache, &bundle);
-            guard.pointer_regions = bundle.pointer_regions;
+            cache_native_panel_render_command_bundle_in_state(&mut guard, &bundle);
         }
     }
 }

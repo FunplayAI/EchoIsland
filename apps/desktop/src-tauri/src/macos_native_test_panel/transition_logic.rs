@@ -2,8 +2,11 @@ use super::panel_host_runtime::{
     sync_runtime_host_timeline_in_state, with_native_runtime_panel_state_mut,
 };
 #[cfg(test)]
+use super::panel_types::NativePanelAnimationDescriptor;
+use super::panel_types::NativePanelState;
+#[cfg(test)]
 use super::panel_types::NativePanelTransitionFrame;
-use super::panel_types::{NativePanelAnimationDescriptor, NativePanelState};
+use crate::native_panel_renderer::NativePanelTimelineDescriptor;
 
 fn with_native_panel_state_mut<T>(f: impl FnOnce(&mut NativePanelState) -> T) -> Option<T> {
     with_native_runtime_panel_state_mut(f)
@@ -39,13 +42,12 @@ pub(super) fn finish_transition_state(progress: f64, entering: bool) {
 }
 
 pub(super) fn update_timeline_transition_state_from_descriptor(
-    descriptor: NativePanelAnimationDescriptor,
-    cards_entering: bool,
+    descriptor: NativePanelTimelineDescriptor,
 ) {
     let _ = with_native_panel_state_mut(|state| {
-        state.transition_cards_progress = descriptor.cards_progress.clamp(0.0, 1.0);
-        state.transition_cards_entering = cards_entering;
-        sync_runtime_host_timeline_in_state(state, descriptor, cards_entering);
+        state.transition_cards_progress = descriptor.animation.cards_progress.clamp(0.0, 1.0);
+        state.transition_cards_entering = descriptor.cards_entering;
+        sync_runtime_host_timeline_in_state(state, descriptor);
     });
 }
 

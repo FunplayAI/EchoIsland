@@ -1,8 +1,5 @@
 use crate::native_panel_core::{LastFocusClick, PanelClickInput, resolve_panel_click_action};
-use crate::native_panel_renderer::{
-    NativePanelPlatformEvent, NativePanelPointerInput, native_panel_hit_target_at_point,
-    native_panel_platform_event_for_pointer_input, native_panel_pointer_inside_for_input,
-};
+use crate::native_panel_renderer::{NativePanelPlatformEvent, native_panel_pointer_state_at_point};
 use echoisland_runtime::RuntimeSnapshot;
 use objc2_app_kit::NSEvent;
 use std::time::Instant;
@@ -76,21 +73,17 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
             x: mouse.x,
             y: mouse.y,
         };
-        interactive_inside = native_panel_pointer_inside_for_input(
-            &state.pointer_regions,
-            NativePanelPointerInput::Move(pointer),
-        )
-        .unwrap_or(fallback_interactive_inside);
+        let pointer_state = native_panel_pointer_state_at_point(&state.pointer_regions, pointer);
+        interactive_inside = if state.pointer_regions.is_empty() {
+            fallback_interactive_inside
+        } else {
+            pointer_state.inside
+        };
         hover_inside = interactive_inside || fallback_hover_inside;
         let primary_click_started =
             primary_mouse_down && !state.primary_mouse_down && interactive_inside;
         let click_event = primary_click_started
-            .then(|| {
-                native_panel_platform_event_for_pointer_input(
-                    &state.pointer_regions,
-                    NativePanelPointerInput::Click(pointer),
-                )
-            })
+            .then(|| pointer_state.platform_event.clone())
             .flatten();
         let settings_clicked = matches!(
             click_event,
@@ -110,7 +103,7 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
                 settings_button_hit: settings_clicked,
                 quit_button_hit: quit_clicked,
                 cards_visible: !cards_container.isHidden(),
-                card_target: native_panel_hit_target_at_point(&state.pointer_regions, pointer),
+                card_target: pointer_state.hit_target.clone(),
                 last_focus_click: state.last_focus_click.as_ref().map(
                     |(session_id, clicked_at)| LastFocusClick {
                         session_id,

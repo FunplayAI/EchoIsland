@@ -3,11 +3,9 @@ use crate::{
         PanelAnimationDescriptor, PanelPoint, PanelRect, resolve_native_panel_host_frame,
     },
     native_panel_renderer::{
-        NativePanelHostWindowDescriptor, NativePanelHostWindowState, NativePanelPointerInput,
-        NativePanelTimelineDescriptor, native_panel_host_window_frame,
-        sync_native_panel_host_window_screen_frame,
-        sync_native_panel_host_window_shared_body_height, sync_native_panel_host_window_timeline,
-        sync_native_panel_host_window_visibility,
+        NativePanelHostWindowDescriptor, NativePanelHostWindowDescriptorPatch,
+        NativePanelHostWindowState, NativePanelPointerInput, NativePanelTimelineDescriptor,
+        native_panel_host_window_frame, patch_native_panel_host_window_descriptor,
     },
 };
 
@@ -49,11 +47,23 @@ impl WindowsNativePanelHostWindow {
 
     pub(super) fn show(&mut self) {
         self.create();
-        sync_native_panel_host_window_visibility(&mut self.descriptor, true);
+        patch_native_panel_host_window_descriptor(
+            &mut self.descriptor,
+            NativePanelHostWindowDescriptorPatch {
+                visible: Some(true),
+                ..NativePanelHostWindowDescriptorPatch::default()
+            },
+        );
     }
 
     pub(super) fn hide(&mut self) {
-        sync_native_panel_host_window_visibility(&mut self.descriptor, false);
+        patch_native_panel_host_window_descriptor(
+            &mut self.descriptor,
+            NativePanelHostWindowDescriptorPatch {
+                visible: Some(false),
+                ..NativePanelHostWindowDescriptorPatch::default()
+            },
+        );
     }
 
     pub(super) fn reposition_to_display(
@@ -62,21 +72,36 @@ impl WindowsNativePanelHostWindow {
         screen_frame: Option<PanelRect>,
     ) {
         self.create();
-        sync_native_panel_host_window_screen_frame(
+        patch_native_panel_host_window_descriptor(
             &mut self.descriptor,
-            preferred_display_index,
-            screen_frame,
+            NativePanelHostWindowDescriptorPatch {
+                preferred_display_index: Some(preferred_display_index),
+                screen_frame: Some(screen_frame),
+                ..NativePanelHostWindowDescriptorPatch::default()
+            },
         );
         self.refresh_frame();
     }
 
     pub(super) fn set_shared_body_height(&mut self, body_height: f64) {
-        sync_native_panel_host_window_shared_body_height(&mut self.descriptor, Some(body_height));
+        patch_native_panel_host_window_descriptor(
+            &mut self.descriptor,
+            NativePanelHostWindowDescriptorPatch {
+                shared_body_height: Some(Some(body_height)),
+                ..NativePanelHostWindowDescriptorPatch::default()
+            },
+        );
     }
 
     pub(super) fn apply_timeline_descriptor(&mut self, descriptor: NativePanelTimelineDescriptor) {
         self.create();
-        sync_native_panel_host_window_timeline(&mut self.descriptor, Some(descriptor));
+        patch_native_panel_host_window_descriptor(
+            &mut self.descriptor,
+            NativePanelHostWindowDescriptorPatch {
+                timeline: Some(Some(descriptor)),
+                ..NativePanelHostWindowDescriptorPatch::default()
+            },
+        );
         self.refresh_frame();
     }
 

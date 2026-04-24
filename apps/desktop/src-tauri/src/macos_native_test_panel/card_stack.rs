@@ -1,4 +1,3 @@
-use echoisland_runtime::RuntimeSnapshot;
 use objc2_app_kit::NSView;
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
@@ -12,23 +11,21 @@ use super::card_views::{
 };
 use super::panel_constants::{EXPANDED_CARD_GAP, EXPANDED_CARD_OVERHANG};
 use super::panel_geometry::expanded_cards_width;
-use super::panel_scene_adapter::resolve_or_build_native_panel_scene;
+use super::panel_scene_adapter::NativePanelSnapshotRenderPlan;
 use crate::native_panel_core::PanelRect;
-use crate::native_panel_renderer::{NativePanelCardStackCommand, native_panel_card_stack_command};
+use crate::native_panel_renderer::NativePanelCardStackCommand;
 use crate::native_panel_scene::SceneCard;
 
 #[allow(unsafe_op_in_unsafe_fn)]
-pub(super) unsafe fn render_expanded_cards(
+pub(super) unsafe fn render_expanded_cards_with_plan(
     cards_container: &NSView,
-    snapshot: &RuntimeSnapshot,
+    plan: &NativePanelSnapshotRenderPlan,
     expanded_width: f64,
 ) {
     clear_card_animation_layouts();
     clear_subviews(cards_container);
-    let scene = resolve_or_build_native_panel_scene(snapshot);
     let cards_width = expanded_cards_width(expanded_width);
-    let command = native_panel_card_stack_command(
-        &scene,
+    let command = plan.card_stack_command(
         PanelRect {
             x: cards_container.frame().origin.x,
             y: cards_container.frame().origin.y,
@@ -37,7 +34,12 @@ pub(super) unsafe fn render_expanded_cards(
         },
         true,
     );
-    render_card_stack_command(cards_container, cards_width, &command);
+    render_card_stack_command(
+        cards_container,
+        cards_width,
+        &command,
+        Some(plan.expanded_content_height),
+    );
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -56,14 +58,11 @@ unsafe fn render_status_queue_cards(
     cards_container: &NSView,
     command: &NativePanelCardStackCommand,
     cards_width: f64,
+    body_height: f64,
 ) {
-    set_cards_container_body_height(
-        cards_container,
-        cards_width,
-        estimated_scene_cards_content_height(&command.cards),
-    );
+    set_cards_container_body_height(cards_container, cards_width, body_height);
 
-    let mut cursor_y = estimated_scene_cards_content_height(&command.cards);
+    let mut cursor_y = body_height;
     let mut rendered_count = 0usize;
     for card in &command.cards {
         let item = match card {
@@ -88,8 +87,8 @@ unsafe fn render_default_cards(
     cards_container: &NSView,
     command: &NativePanelCardStackCommand,
     cards_width: f64,
+    body_height: f64,
 ) {
-    let body_height = estimated_scene_cards_content_height(&command.cards);
     set_cards_container_body_height(cards_container, cards_width, body_height);
 
     let mut cursor_y = body_height;
@@ -136,11 +135,15 @@ unsafe fn render_card_stack_command(
     cards_container: &NSView,
     cards_width: f64,
     command: &NativePanelCardStackCommand,
+    body_height_override: Option<f64>,
 ) {
     if matches!(command.cards.first(), Some(SceneCard::Settings { .. })) {
         render_settings_surface(cards_container, cards_width);
         return;
     }
+
+    let body_height = body_height_override
+        .unwrap_or_else(|| estimated_scene_cards_content_height(&command.cards));
 
     if command.cards.iter().any(|card| {
         matches!(
@@ -148,11 +151,11 @@ unsafe fn render_card_stack_command(
             SceneCard::StatusApproval { .. } | SceneCard::StatusCompletion { .. }
         )
     }) {
-        render_status_queue_cards(cards_container, command, cards_width);
+        render_status_queue_cards(cards_container, command, cards_width, body_height);
         return;
     }
 
-    render_default_cards(cards_container, command, cards_width);
+    render_default_cards(cards_container, command, cards_width, body_height);
 }
 
 fn set_cards_container_body_height(cards_container: &NSView, cards_width: f64, body_height: f64) {

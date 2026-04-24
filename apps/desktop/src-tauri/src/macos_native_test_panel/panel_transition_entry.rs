@@ -5,6 +5,7 @@ use tauri::AppHandle;
 
 use super::panel_constants::{COLLAPSED_PANEL_HEIGHT, PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS};
 use super::panel_globals::NATIVE_TEST_PANEL_ANIMATION_ID;
+use super::panel_scene_adapter::resolve_snapshot_render_plan;
 use super::panel_types::NativePanelHandles;
 use super::panel_view_updates::apply_snapshot_values_to_panel;
 use super::transition_logic::{
@@ -17,7 +18,7 @@ use super::transition_runner::{
 use super::transition_ui::{
     finalize_close_transition, finalize_open_transition, finalize_surface_switch_transition,
     prepare_close_transition, prepare_open_transition, prepare_surface_switch_transition,
-    resolve_native_transition_context, resolved_expanded_target_height,
+    resolve_native_transition_context, resolved_expanded_target_height_for_plan,
 };
 
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -33,16 +34,17 @@ pub(super) unsafe fn begin_native_panel_transition<R: tauri::Runtime + 'static>(
 
     let context = resolve_native_transition_context(handles);
     let panel = context.refs.panel;
+    let render_plan = resolve_snapshot_render_plan(&snapshot);
 
     let start_height = panel.frame().size.height;
     let target_height = if expanded {
-        resolved_expanded_target_height(context, &snapshot)
+        resolved_expanded_target_height_for_plan(context, &render_plan)
     } else {
         COLLAPSED_PANEL_HEIGHT
     };
 
     if expanded {
-        let card_count = prepare_open_transition(context, &snapshot);
+        let card_count = prepare_open_transition(context, &render_plan);
         set_transition_cards_state(0.0, true);
         tauri::async_runtime::spawn(async move {
             animate_open_transition(
@@ -62,7 +64,7 @@ pub(super) unsafe fn begin_native_panel_transition<R: tauri::Runtime + 'static>(
 
                 finish_transition_state(1.0, true);
                 let context = resolve_native_transition_context(handles);
-                finalize_open_transition(handles, context, &snapshot, target_height);
+                finalize_open_transition(handles, context, &render_plan, target_height);
             });
         });
     } else {
@@ -99,10 +101,11 @@ pub(super) unsafe fn begin_native_panel_surface_transition<R: tauri::Runtime + '
 
     let context = resolve_native_transition_context(handles);
     let panel = context.refs.panel;
+    let render_plan = resolve_snapshot_render_plan(&snapshot);
     let start_height = panel.frame().size.height;
-    let target_height = resolved_expanded_target_height(context, &snapshot);
+    let target_height = resolved_expanded_target_height_for_plan(context, &render_plan);
 
-    let card_count = prepare_surface_switch_transition(context, &snapshot);
+    let card_count = prepare_surface_switch_transition(context, &render_plan);
 
     tauri::async_runtime::spawn(async move {
         animate_surface_switch_transition(
@@ -122,7 +125,7 @@ pub(super) unsafe fn begin_native_panel_surface_transition<R: tauri::Runtime + '
 
             finish_transition_state(1.0, true);
             let context = resolve_native_transition_context(handles);
-            finalize_surface_switch_transition(handles, context, &snapshot, target_height);
+            finalize_surface_switch_transition(handles, context, &render_plan, target_height);
         });
     });
 }

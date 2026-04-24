@@ -1,6 +1,9 @@
 use super::mascot::NativeMascotState;
 use super::panel_runtime_input::native_panel_runtime_input_descriptor;
-use super::panel_scene_adapter::build_native_panel_scene_for_state_with_input;
+use super::panel_scene_adapter::{
+    build_native_panel_scene_for_state_with_input,
+    resolve_current_native_panel_render_command_bundle,
+};
 use super::panel_types::{NativeExpandedSurface, NativePanelState, NativeStatusQueuePayload};
 use crate::native_panel_renderer::{native_panel_glow_command, native_panel_mascot_command};
 
@@ -15,7 +18,7 @@ pub(super) struct NativeMascotFrameInput {
 pub(super) fn resolve_native_mascot_frame_input(
     state: &NativePanelState,
 ) -> NativeMascotFrameInput {
-    let cached_bundle = state.scene_cache.last_render_command_bundle.as_ref();
+    let cached_bundle = resolve_current_native_panel_render_command_bundle(state);
     let snapshot = state.last_snapshot.clone();
     let input = native_panel_runtime_input_descriptor();
     let scene = snapshot
@@ -35,6 +38,7 @@ pub(super) fn resolve_native_mascot_frame_input(
             has_completion_badge,
         ));
     let completion_count = cached_bundle
+        .as_ref()
         .map(|bundle| bundle.compact_bar.completion_count)
         .or_else(|| {
             scene
@@ -43,9 +47,11 @@ pub(super) fn resolve_native_mascot_frame_input(
         })
         .unwrap_or_else(|| state.completion_badge_items.len());
     let mascot_command = cached_bundle
+        .as_ref()
         .map(|bundle| bundle.mascot.clone())
         .or_else(|| scene.as_ref().map(native_panel_mascot_command));
     let glow_command = cached_bundle
+        .as_ref()
         .and_then(|bundle| bundle.glow.clone())
         .or_else(|| scene.as_ref().and_then(native_panel_glow_command));
 

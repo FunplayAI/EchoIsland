@@ -1,8 +1,6 @@
-use echoisland_runtime::RuntimeSnapshot;
 use objc2_app_kit::{NSPanel, NSScreen};
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
-use super::card_metrics::estimated_expanded_body_height;
 use super::panel_constants::{
     COLLAPSED_PANEL_HEIGHT, COMPACT_SHOULDER_SIZE, EXPANDED_CARDS_SIDE_INSET,
     EXPANDED_CONTENT_BOTTOM_INSET, EXPANDED_CONTENT_TOP_GAP, EXPANDED_MAX_BODY_HEIGHT,
@@ -239,12 +237,11 @@ pub(super) fn expanded_cards_frame(container_frame: NSRect, compact_height: f64)
     ))
 }
 
-pub(super) fn expanded_total_height(
-    snapshot: &RuntimeSnapshot,
+pub(super) fn expanded_total_height_for_body_height(
+    estimated_height: f64,
     compact_height: f64,
     shared_body_height: Option<f64>,
 ) -> f64 {
-    let estimated_height = estimated_expanded_body_height(snapshot);
     crate::native_panel_core::resolve_expanded_total_height(
         estimated_height,
         shared_body_height,

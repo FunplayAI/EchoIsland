@@ -7,15 +7,10 @@ use super::compact_bar_layout::{compact_headline_should_hide, sync_active_count_
 use super::panel_globals::ACTIVE_COUNT_SCROLL_TEXT;
 use super::panel_helpers::ns_color;
 use super::panel_refs::{NativePanelRefs, resolve_native_panel_refs};
-use super::panel_scene_adapter::{
-    resolve_current_native_panel_render_command_bundle_for_snapshot,
-    resolve_or_build_native_panel_scene,
-};
+use super::panel_scene_adapter::resolve_snapshot_compact_bar_command as resolve_snapshot_compact_bar_render_command;
 use super::panel_types::NativePanelHandles;
 use crate::native_panel_core::PanelRect;
-use crate::native_panel_renderer::{
-    NativePanelCompactBarCommand, native_panel_compact_bar_command,
-};
+use crate::native_panel_renderer::NativePanelCompactBarCommand;
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_snapshot_values_to_panel(
@@ -23,11 +18,11 @@ pub(super) unsafe fn apply_snapshot_values_to_panel(
     snapshot: &RuntimeSnapshot,
 ) {
     let refs = resolve_native_panel_refs(handles);
-    let command = resolve_snapshot_compact_bar_command(snapshot, &refs);
+    let command = resolve_compact_bar_command(snapshot, &refs);
     apply_compact_bar_command_to_panel_refs(&refs, &command);
 }
 
-fn resolve_snapshot_compact_bar_command(
+fn resolve_compact_bar_command(
     snapshot: &RuntimeSnapshot,
     refs: &NativePanelRefs,
 ) -> NativePanelCompactBarCommand {
@@ -37,16 +32,7 @@ fn resolve_snapshot_compact_bar_command(
         width: refs.pill_view.frame().size.width,
         height: refs.pill_view.frame().size.height,
     };
-
-    if let Some(bundle) = resolve_current_native_panel_render_command_bundle_for_snapshot(snapshot)
-    {
-        let mut command = bundle.compact_bar;
-        command.frame = frame;
-        return command;
-    }
-
-    let scene = resolve_or_build_native_panel_scene(snapshot);
-    native_panel_compact_bar_command(&scene, frame)
+    resolve_snapshot_compact_bar_render_command(snapshot, frame)
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]

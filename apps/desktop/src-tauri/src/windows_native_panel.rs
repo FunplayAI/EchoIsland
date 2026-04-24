@@ -21,9 +21,9 @@ use crate::{
         NativePanelPointerInputOutcome, NativePanelPointerRegion, NativePanelRenderCommandBundle,
         NativePanelRenderer, NativePanelRuntimeInputDescriptor, NativePanelRuntimeSceneCache,
         NativePanelSceneHost, NativePanelTimelineDescriptor, dispatch_native_panel_platform_events,
-        native_panel_platform_event_at_point, native_panel_platform_event_for_pointer_input,
+        native_panel_platform_event_for_pointer_input,
         native_panel_platform_event_for_pointer_region, native_panel_pointer_inside_for_input,
-        native_panel_pointer_inside_regions, native_panel_timeline_descriptor_for_animation,
+        native_panel_pointer_state_at_point, native_panel_timeline_descriptor_for_animation,
         rerender_runtime_scene_cache_to_host_on_transition_with_input_descriptor,
         rerender_runtime_scene_cache_to_host_with_input_descriptor,
         resolve_native_panel_render_command_bundle,
@@ -311,8 +311,8 @@ impl WindowsNativePanelHost {
         &mut self,
         point: PanelPoint,
     ) -> Option<NativePanelPlatformEvent> {
-        let event =
-            native_panel_platform_event_at_point(&self.renderer.last_pointer_regions, point);
+        let event = native_panel_pointer_state_at_point(&self.renderer.last_pointer_regions, point)
+            .platform_event;
         if let Some(event) = event.clone() {
             self.pending_events.push(event);
         }
@@ -334,7 +334,7 @@ impl WindowsNativePanelHost {
     }
 
     fn pointer_inside_at_point(&self, point: PanelPoint) -> bool {
-        native_panel_pointer_inside_regions(&self.renderer.last_pointer_regions, point)
+        native_panel_pointer_state_at_point(&self.renderer.last_pointer_regions, point).inside
     }
 
     fn pointer_inside_for_input(&self, input: NativePanelPointerInput) -> Option<bool> {

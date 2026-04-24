@@ -41,6 +41,15 @@ pub(crate) struct NativePanelHostWindowDescriptor {
     pub(crate) timeline: Option<NativePanelTimelineDescriptor>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct NativePanelHostWindowDescriptorPatch {
+    pub(crate) visible: Option<bool>,
+    pub(crate) preferred_display_index: Option<usize>,
+    pub(crate) screen_frame: Option<Option<PanelRect>>,
+    pub(crate) shared_body_height: Option<Option<f64>>,
+    pub(crate) timeline: Option<Option<NativePanelTimelineDescriptor>>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct NativePanelTimelineDescriptor {
     pub(crate) animation: PanelAnimationDescriptor,
@@ -109,7 +118,13 @@ pub(crate) fn sync_native_panel_host_window_visibility(
     descriptor: &mut NativePanelHostWindowDescriptor,
     visible: bool,
 ) {
-    descriptor.visible = visible;
+    patch_native_panel_host_window_descriptor(
+        descriptor,
+        NativePanelHostWindowDescriptorPatch {
+            visible: Some(visible),
+            ..NativePanelHostWindowDescriptorPatch::default()
+        },
+    );
 }
 
 pub(crate) fn sync_native_panel_host_window_screen_frame(
@@ -117,22 +132,61 @@ pub(crate) fn sync_native_panel_host_window_screen_frame(
     preferred_display_index: usize,
     screen_frame: Option<PanelRect>,
 ) {
-    descriptor.preferred_display_index = preferred_display_index;
-    descriptor.screen_frame = screen_frame;
+    patch_native_panel_host_window_descriptor(
+        descriptor,
+        NativePanelHostWindowDescriptorPatch {
+            preferred_display_index: Some(preferred_display_index),
+            screen_frame: Some(screen_frame),
+            ..NativePanelHostWindowDescriptorPatch::default()
+        },
+    );
 }
 
 pub(crate) fn sync_native_panel_host_window_shared_body_height(
     descriptor: &mut NativePanelHostWindowDescriptor,
     shared_body_height: Option<f64>,
 ) {
-    descriptor.shared_body_height = shared_body_height;
+    patch_native_panel_host_window_descriptor(
+        descriptor,
+        NativePanelHostWindowDescriptorPatch {
+            shared_body_height: Some(shared_body_height),
+            ..NativePanelHostWindowDescriptorPatch::default()
+        },
+    );
 }
 
 pub(crate) fn sync_native_panel_host_window_timeline(
     descriptor: &mut NativePanelHostWindowDescriptor,
     timeline: Option<NativePanelTimelineDescriptor>,
 ) {
-    descriptor.timeline = timeline;
+    patch_native_panel_host_window_descriptor(
+        descriptor,
+        NativePanelHostWindowDescriptorPatch {
+            timeline: Some(timeline),
+            ..NativePanelHostWindowDescriptorPatch::default()
+        },
+    );
+}
+
+pub(crate) fn patch_native_panel_host_window_descriptor(
+    descriptor: &mut NativePanelHostWindowDescriptor,
+    patch: NativePanelHostWindowDescriptorPatch,
+) {
+    if let Some(visible) = patch.visible {
+        descriptor.visible = visible;
+    }
+    if let Some(preferred_display_index) = patch.preferred_display_index {
+        descriptor.preferred_display_index = preferred_display_index;
+    }
+    if let Some(screen_frame) = patch.screen_frame {
+        descriptor.screen_frame = screen_frame;
+    }
+    if let Some(shared_body_height) = patch.shared_body_height {
+        descriptor.shared_body_height = shared_body_height;
+    }
+    if let Some(timeline) = patch.timeline {
+        descriptor.timeline = timeline;
+    }
 }
 
 pub(crate) fn native_panel_host_window_frame(
@@ -168,6 +222,13 @@ pub(crate) enum NativePanelEdgeAction {
 pub(crate) struct NativePanelPointerRegion {
     pub(crate) frame: PanelRect,
     pub(crate) kind: NativePanelPointerRegionKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct NativePanelPointerPointState {
+    pub(crate) inside: bool,
+    pub(crate) platform_event: Option<NativePanelPlatformEvent>,
+    pub(crate) hit_target: Option<PanelHitTarget>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -331,6 +392,21 @@ pub(crate) fn native_panel_platform_event_at_point(
 ) -> Option<NativePanelPlatformEvent> {
     native_panel_pointer_region_at_point(regions, point)
         .and_then(native_panel_platform_event_for_pointer_region)
+}
+
+pub(crate) fn native_panel_pointer_state_at_point(
+    regions: &[NativePanelPointerRegion],
+    point: PanelPoint,
+) -> NativePanelPointerPointState {
+    let region = native_panel_pointer_region_at_point(regions, point);
+    NativePanelPointerPointState {
+        inside: region.is_some(),
+        platform_event: region.and_then(native_panel_platform_event_for_pointer_region),
+        hit_target: match region.map(|region| &region.kind) {
+            Some(NativePanelPointerRegionKind::HitTarget(target)) => Some(target.clone()),
+            _ => None,
+        },
+    }
 }
 
 pub(crate) fn native_panel_pointer_inside_for_input(
@@ -528,16 +604,17 @@ mod tests {
         NativePanelPointerRegionKind,
     };
     use super::{
-        NativePanelHostWindowDescriptor, NativePanelPlatformEvent, NativePanelPointerInput,
-        NativePanelPointerInputOutcome, NativePanelTimelineDescriptor, absolute_panel_rect,
-        native_panel_hit_target_at_point, native_panel_host_window_descriptor,
-        native_panel_host_window_frame, native_panel_platform_event_at_point,
-        native_panel_platform_event_for_interaction_command,
+        NativePanelHostWindowDescriptor, NativePanelHostWindowDescriptorPatch,
+        NativePanelPlatformEvent, NativePanelPointerInput, NativePanelPointerInputOutcome,
+        NativePanelTimelineDescriptor, absolute_panel_rect, native_panel_hit_target_at_point,
+        native_panel_host_window_descriptor, native_panel_host_window_frame,
+        native_panel_platform_event_at_point, native_panel_platform_event_for_interaction_command,
         native_panel_platform_event_for_pointer_input,
         native_panel_platform_event_for_pointer_region, native_panel_pointer_input_outcome,
         native_panel_pointer_inside_for_input, native_panel_pointer_inside_regions,
-        native_panel_pointer_region_at_point, native_panel_timeline_descriptor,
-        native_panel_timeline_descriptor_for_animation, resolve_native_panel_pointer_regions,
+        native_panel_pointer_region_at_point, native_panel_pointer_state_at_point,
+        native_panel_timeline_descriptor, native_panel_timeline_descriptor_for_animation,
+        patch_native_panel_host_window_descriptor, resolve_native_panel_pointer_regions,
         sync_native_panel_host_window_screen_frame,
         sync_native_panel_host_window_shared_body_height, sync_native_panel_host_window_timeline,
         sync_native_panel_host_window_visibility,
@@ -785,6 +862,39 @@ mod tests {
     }
 
     #[test]
+    fn pointer_state_at_point_collects_inside_event_and_hit_target() {
+        let regions = vec![NativePanelPointerRegion {
+            frame: PanelRect {
+                x: 10.0,
+                y: 10.0,
+                width: 40.0,
+                height: 40.0,
+            },
+            kind: NativePanelPointerRegionKind::HitTarget(PanelHitTarget {
+                action: PanelHitAction::FocusSession,
+                value: "session-1".to_string(),
+            }),
+        }];
+
+        let state = native_panel_pointer_state_at_point(&regions, PanelPoint { x: 20.0, y: 20.0 });
+
+        assert!(state.inside);
+        assert_eq!(
+            state.platform_event,
+            Some(NativePanelPlatformEvent::FocusSession(
+                "session-1".to_string()
+            ))
+        );
+        assert_eq!(
+            state.hit_target,
+            Some(PanelHitTarget {
+                action: PanelHitAction::FocusSession,
+                value: "session-1".to_string(),
+            })
+        );
+    }
+
+    #[test]
     fn pointer_regions_use_default_edge_action_frames_without_platform_overrides() {
         let layout = pointer_test_layout();
         let scene = pointer_test_scene();
@@ -972,6 +1082,43 @@ mod tests {
 
         assert!(descriptor.visible);
         assert_eq!(descriptor.preferred_display_index, 2);
+        assert_eq!(descriptor.shared_body_height, Some(180.0));
+        assert_eq!(descriptor.timeline, Some(timeline));
+    }
+
+    #[test]
+    fn host_window_descriptor_patch_updates_multiple_fields_together() {
+        let animation = crate::native_panel_core::PanelAnimationDescriptor {
+            kind: crate::native_panel_core::PanelAnimationKind::Open,
+            canvas_height: 140.0,
+            visible_height: 120.0,
+            width_progress: 0.5,
+            height_progress: 0.75,
+            shoulder_progress: 1.0,
+            drop_progress: 0.25,
+            cards_progress: 0.8,
+        };
+        let timeline = native_panel_timeline_descriptor(animation, true);
+        let mut descriptor = native_panel_host_window_descriptor(false, 0, None, None, None);
+
+        patch_native_panel_host_window_descriptor(
+            &mut descriptor,
+            NativePanelHostWindowDescriptorPatch {
+                visible: Some(true),
+                preferred_display_index: Some(3),
+                screen_frame: Some(Some(PanelRect {
+                    x: 10.0,
+                    y: 20.0,
+                    width: 300.0,
+                    height: 200.0,
+                })),
+                shared_body_height: Some(Some(180.0)),
+                timeline: Some(Some(timeline)),
+            },
+        );
+
+        assert!(descriptor.visible);
+        assert_eq!(descriptor.preferred_display_index, 3);
         assert_eq!(descriptor.shared_body_height, Some(180.0));
         assert_eq!(descriptor.timeline, Some(timeline));
     }

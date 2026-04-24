@@ -6,17 +6,14 @@ use tauri::AppHandle;
 use tracing::warn;
 
 use super::card_animation::apply_card_stack_transition;
-use super::panel_constants::COLLAPSED_PANEL_HEIGHT;
 use super::panel_entry::native_ui_enabled;
-use super::panel_geometry::expanded_total_height;
 use super::panel_host_runtime::{
     MacosNativePanelRuntimeHost, sync_runtime_host_shared_body_height_in_state,
 };
-use super::panel_interaction::{native_settings_surface_active, native_status_surface_active};
 use super::panel_refs::native_panel_state;
 use super::panel_render::apply_panel_geometry;
 use super::panel_runtime_input::native_panel_runtime_input_descriptor;
-use super::panel_screen_geometry::compact_pill_height_for_screen_rect;
+use super::panel_scene_adapter::resolve_snapshot_render_plan;
 use super::panel_types::{
     NativePanelHandles, NativePanelRenderPayload, NativePanelState, NativePanelTransitionFrame,
 };
@@ -25,7 +22,8 @@ use super::panel_view_updates::apply_snapshot_values_to_panel;
 #[cfg(test)]
 use super::panel_types::NativeStatusQueueSyncResult;
 use super::transition_ui::{
-    render_transition_cards, reset_collapsed_cards, resolve_native_transition_context,
+    render_transition_cards_with_plan, reset_collapsed_cards, resolve_native_transition_context,
+    resolved_snapshot_panel_height_for_plan,
 };
 
 struct NativeSnapshotUpdate {
@@ -272,10 +270,11 @@ pub(super) unsafe fn apply_snapshot_to_panel(
 ) {
     apply_snapshot_values_to_panel(handles, snapshot);
     let context = resolve_native_transition_context(handles);
+    let render_plan = resolve_snapshot_render_plan(snapshot);
 
     if apply_transitioning_snapshot_to_panel(
         context,
-        snapshot,
+        &render_plan,
         expanded,
         transitioning,
         transition_cards_progress,
@@ -284,13 +283,13 @@ pub(super) unsafe fn apply_snapshot_to_panel(
         return;
     }
 
-    apply_static_snapshot_to_panel(handles, context, snapshot, expanded, shared_body_height);
+    apply_static_snapshot_to_panel(handles, context, &render_plan, expanded, shared_body_height);
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn apply_transitioning_snapshot_to_panel(
     context: super::transition_ui::NativeTransitionContext,
-    snapshot: &RuntimeSnapshot,
+    render_plan: &super::panel_scene_adapter::NativePanelSnapshotRenderPlan,
     expanded: bool,
     transitioning: bool,
     transition_cards_progress: f64,
@@ -302,7 +301,7 @@ unsafe fn apply_transitioning_snapshot_to_panel(
 
     if expanded {
         if context.refs.cards_container.subviews().is_empty() {
-            render_transition_cards(context, snapshot);
+            render_transition_cards_with_plan(context, render_plan);
         }
         apply_card_stack_transition(
             context.refs.cards_container,
@@ -319,53 +318,21 @@ unsafe fn apply_transitioning_snapshot_to_panel(
 unsafe fn apply_static_snapshot_to_panel(
     handles: NativePanelHandles,
     context: super::transition_ui::NativeTransitionContext,
-    snapshot: &RuntimeSnapshot,
+    render_plan: &super::panel_scene_adapter::NativePanelSnapshotRenderPlan,
     expanded: bool,
     shared_body_height: Option<f64>,
 ) {
     let total_height =
-        resolved_snapshot_panel_height(context, snapshot, expanded, shared_body_height);
+        resolved_snapshot_panel_height_for_plan(context, render_plan, expanded, shared_body_height);
     apply_snapshot_panel_geometry(handles, expanded, total_height);
 
     if expanded {
-        render_transition_cards(context, snapshot);
+        render_transition_cards_with_plan(context, render_plan);
     } else {
         reset_collapsed_cards(context);
     }
 
     context.refs.panel.displayIfNeeded();
-}
-
-fn resolved_snapshot_panel_height(
-    context: super::transition_ui::NativeTransitionContext,
-    snapshot: &RuntimeSnapshot,
-    expanded: bool,
-    shared_body_height: Option<f64>,
-) -> f64 {
-    if !expanded {
-        return COLLAPSED_PANEL_HEIGHT;
-    }
-
-    let shared_body_height = shared_expanded_body_height_for_snapshot(shared_body_height);
-    expanded_total_height(
-        snapshot,
-        compact_pill_height_for_screen_rect(
-            context.refs.panel.screen().as_deref(),
-            context.screen_frame,
-        ),
-        shared_body_height,
-    )
-}
-
-fn shared_expanded_body_height_for_snapshot(shared_body_height: Option<f64>) -> Option<f64> {
-    if macos_shared_expanded_window::shared_expanded_enabled()
-        && !native_status_surface_active()
-        && !native_settings_surface_active()
-    {
-        shared_body_height
-    } else {
-        None
-    }
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]

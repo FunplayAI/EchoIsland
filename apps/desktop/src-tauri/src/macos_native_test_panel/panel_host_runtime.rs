@@ -12,11 +12,11 @@ use super::panel_refs::{native_panel_handles, native_panel_state, panel_from_ptr
 use super::panel_transition_entry::{
     begin_native_panel_surface_transition, begin_native_panel_transition,
 };
-use super::panel_types::NativePanelAnimationDescriptor;
 use super::panel_types::{NativePanelHandles, NativePanelRenderPayload};
 use crate::native_panel_renderer::{
     NativePanelHost, NativePanelHostWindowDescriptor, NativePanelHostWindowState,
     NativePanelPlatformEvent, NativePanelPointerRegion, NativePanelSceneHost,
+    NativePanelTimelineDescriptor,
 };
 
 #[allow(dead_code)]
@@ -276,21 +276,17 @@ pub(super) fn sync_runtime_host_shared_body_height_in_state(
 }
 
 #[allow(dead_code)]
-pub(super) fn sync_runtime_host_timeline(
-    animation: NativePanelAnimationDescriptor,
-    cards_entering: bool,
-) -> Option<()> {
+pub(super) fn sync_runtime_host_timeline(descriptor: NativePanelTimelineDescriptor) -> Option<()> {
     with_native_runtime_panel_state_mut(|state| {
-        sync_runtime_host_timeline_in_state(state, animation, cards_entering);
+        sync_runtime_host_timeline_in_state(state, descriptor);
     })
 }
 
 pub(super) fn sync_runtime_host_timeline_in_state(
     state: &mut super::panel_types::NativePanelState,
-    animation: NativePanelAnimationDescriptor,
-    cards_entering: bool,
+    descriptor: NativePanelTimelineDescriptor,
 ) {
-    sync_native_host_window_timeline(state, animation, cards_entering);
+    sync_native_host_window_timeline(state, descriptor);
 }
 
 fn current_native_panel_frame() -> Option<NSRect> {
@@ -515,17 +511,19 @@ mod tests {
         );
         super::sync_native_host_window_timeline(
             &mut state,
-            crate::native_panel_core::PanelAnimationDescriptor {
-                kind: crate::native_panel_core::PanelAnimationKind::Close,
-                canvas_height: 160.0,
-                visible_height: 90.0,
-                width_progress: 0.2,
-                height_progress: 0.3,
-                shoulder_progress: 0.4,
-                drop_progress: 0.1,
-                cards_progress: 0.0,
-            },
-            false,
+            crate::native_panel_renderer::native_panel_timeline_descriptor(
+                crate::native_panel_core::PanelAnimationDescriptor {
+                    kind: crate::native_panel_core::PanelAnimationKind::Close,
+                    canvas_height: 160.0,
+                    visible_height: 90.0,
+                    width_progress: 0.2,
+                    height_progress: 0.3,
+                    shoulder_progress: 0.4,
+                    drop_progress: 0.1,
+                    cards_progress: 0.0,
+                },
+                false,
+            ),
         );
 
         assert!(!state.host_window_descriptor.visible);

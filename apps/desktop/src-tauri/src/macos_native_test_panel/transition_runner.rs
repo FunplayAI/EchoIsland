@@ -6,7 +6,7 @@ use tokio::time::Duration;
 
 use crate::{
     native_panel_core::{PANEL_ANIMATION_FRAME_MS, PanelAnimationTimeline},
-    native_panel_renderer::native_panel_cards_entering_for_animation,
+    native_panel_renderer::native_panel_timeline_descriptor_for_animation,
 };
 
 use super::panel_globals::NATIVE_TEST_PANEL_ANIMATION_ID;
@@ -78,14 +78,14 @@ async fn animate_panel_timeline<R>(
         let total_ms = timeline.total_ms();
         let elapsed_ms = started.elapsed().as_millis().min(total_ms as u128) as u64;
         let frame = timeline.sample(elapsed_ms);
-        let cards_entering = native_panel_cards_entering_for_animation(frame);
+        let timeline_descriptor = native_panel_timeline_descriptor_for_animation(frame);
         let _ = app.run_on_main_thread(move || unsafe {
             if NATIVE_TEST_PANEL_ANIMATION_ID.load(Ordering::SeqCst) != animation_id {
                 return;
             }
             with_disabled_layer_actions(|| {
-                update_timeline_transition_state_from_descriptor(frame, cards_entering);
-                apply_transition_timeline_descriptor(handles, frame, cards_entering);
+                update_timeline_transition_state_from_descriptor(timeline_descriptor);
+                apply_transition_timeline_descriptor(handles, timeline_descriptor);
             });
         });
 

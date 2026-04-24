@@ -1,10 +1,54 @@
 use echoisland_runtime::RuntimeSnapshot;
 
 use super::{
+    card_metrics::estimated_scene_content_height, panel_constants::EXPANDED_MAX_BODY_HEIGHT,
     panel_refs::native_panel_state, panel_runtime_input::native_panel_runtime_input_descriptor,
     panel_types::NativePanelState,
 };
-use crate::native_panel_renderer::{NativePanelRuntimeInputDescriptor, cached_scene};
+use crate::{
+    native_panel_core::PanelRect,
+    native_panel_renderer::{
+        NativePanelCardStackCommand, NativePanelCompactBarCommand,
+        NativePanelRuntimeInputDescriptor, cached_scene, native_panel_card_stack_command,
+        native_panel_compact_bar_command,
+    },
+    native_panel_scene::PanelScene,
+};
+
+#[derive(Clone, Debug)]
+pub(super) struct NativePanelSnapshotRenderPlan {
+    pub(super) scene: PanelScene,
+    pub(super) expanded_content_height: f64,
+    pub(super) expanded_body_height: f64,
+    render_command_bundle: Option<crate::native_panel_renderer::NativePanelRenderCommandBundle>,
+}
+
+impl NativePanelSnapshotRenderPlan {
+    pub(super) fn compact_bar_command(&self, frame: PanelRect) -> NativePanelCompactBarCommand {
+        if let Some(bundle) = self.render_command_bundle.clone() {
+            let mut command = bundle.compact_bar;
+            command.frame = frame;
+            return command;
+        }
+
+        native_panel_compact_bar_command(&self.scene, frame)
+    }
+
+    pub(super) fn card_stack_command(
+        &self,
+        frame: PanelRect,
+        visible: bool,
+    ) -> NativePanelCardStackCommand {
+        if let Some(bundle) = self.render_command_bundle.clone() {
+            let mut command = bundle.card_stack;
+            command.frame = frame;
+            command.visible = visible;
+            return command;
+        }
+
+        native_panel_card_stack_command(&self.scene, frame, visible)
+    }
+}
 
 pub(super) fn build_native_panel_scene(
     snapshot: &RuntimeSnapshot,
@@ -96,6 +140,57 @@ pub(super) fn resolve_current_native_panel_render_command_bundle_for_snapshot(
         })
 }
 
+pub(super) fn resolve_current_native_panel_render_command_bundle(
+    state: &NativePanelState,
+) -> Option<crate::native_panel_renderer::NativePanelRenderCommandBundle> {
+    state.last_snapshot.as_ref().and_then(|snapshot| {
+        resolve_native_panel_render_command_bundle_for_state_and_snapshot(state, snapshot)
+    })
+}
+
+pub(super) fn cache_native_panel_render_command_bundle_in_state(
+    state: &mut NativePanelState,
+    bundle: &crate::native_panel_renderer::NativePanelRenderCommandBundle,
+) {
+    crate::native_panel_renderer::cache_render_command_bundle(&mut state.scene_cache, bundle);
+    state.pointer_regions = bundle.pointer_regions.clone();
+}
+
+pub(super) fn resolve_snapshot_render_plan(
+    snapshot: &RuntimeSnapshot,
+) -> NativePanelSnapshotRenderPlan {
+    let render_command_bundle =
+        resolve_current_native_panel_render_command_bundle_for_snapshot(snapshot);
+    let scene = render_command_bundle
+        .as_ref()
+        .map(|bundle| bundle.scene.clone())
+        .unwrap_or_else(|| resolve_or_build_native_panel_scene(snapshot));
+    let expanded_content_height = estimated_scene_content_height(&scene);
+
+    NativePanelSnapshotRenderPlan {
+        scene,
+        expanded_content_height,
+        expanded_body_height: expanded_content_height.min(EXPANDED_MAX_BODY_HEIGHT),
+        render_command_bundle,
+    }
+}
+
+pub(super) fn resolve_snapshot_compact_bar_command(
+    snapshot: &RuntimeSnapshot,
+    frame: PanelRect,
+) -> NativePanelCompactBarCommand {
+    resolve_snapshot_render_plan(snapshot).compact_bar_command(frame)
+}
+
+#[cfg(test)]
+pub(super) fn resolve_snapshot_card_stack_command(
+    snapshot: &RuntimeSnapshot,
+    frame: PanelRect,
+    visible: bool,
+) -> NativePanelCardStackCommand {
+    resolve_snapshot_render_plan(snapshot).card_stack_command(frame, visible)
+}
+
 pub(super) fn build_native_panel_runtime_render_state_for_state_with_input(
     state: &NativePanelState,
     input: &NativePanelRuntimeInputDescriptor,
@@ -183,6 +278,8 @@ mod tests {
         resolve_native_panel_runtime_render_state_for_state_with_input,
         resolve_native_panel_scene_for_state_and_snapshot,
         resolve_native_panel_scene_for_state_with_input, resolve_or_build_native_panel_scene,
+        resolve_snapshot_card_stack_command, resolve_snapshot_compact_bar_command,
+        resolve_snapshot_render_plan,
     };
     use crate::{
         macos_native_test_panel::{
@@ -512,6 +609,69 @@ mod tests {
         );
 
         assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn snapshot_compact_bar_command_reuses_cached_bundle_and_overrides_frame() {
+        let mut state = panel_state();
+        let current_snapshot = test_snapshot("idle");
+        let bundle = test_render_command_bundle("bundle", false);
+        state.last_snapshot = Some(current_snapshot.clone());
+        state.scene_cache.last_snapshot = Some(current_snapshot.clone());
+        cache_render_command_bundle(&mut state.scene_cache, &bundle);
+
+        let frame = crate::native_panel_core::PanelRect {
+            x: 11.0,
+            y: 12.0,
+            width: 13.0,
+            height: 14.0,
+        };
+
+        let resolved = resolve_snapshot_compact_bar_command(&current_snapshot, frame);
+
+        assert_eq!(resolved.headline.text, bundle.compact_bar.headline.text);
+        assert_eq!(resolved.frame, frame);
+    }
+
+    #[test]
+    fn snapshot_card_stack_command_reuses_cached_bundle_and_overrides_layout_inputs() {
+        let mut state = panel_state();
+        let current_snapshot = test_snapshot("idle");
+        let bundle = test_render_command_bundle("bundle", false);
+        state.last_snapshot = Some(current_snapshot.clone());
+        state.scene_cache.last_snapshot = Some(current_snapshot.clone());
+        cache_render_command_bundle(&mut state.scene_cache, &bundle);
+
+        let frame = crate::native_panel_core::PanelRect {
+            x: 21.0,
+            y: 22.0,
+            width: 23.0,
+            height: 24.0,
+        };
+
+        let resolved = resolve_snapshot_card_stack_command(&current_snapshot, frame, false);
+
+        assert_eq!(resolved.cards.len(), bundle.card_stack.cards.len());
+        assert_eq!(resolved.frame, frame);
+        assert!(!resolved.visible);
+    }
+
+    #[test]
+    fn snapshot_render_plan_reuses_cached_bundle_scene_and_body_height() {
+        let mut state = panel_state();
+        let current_snapshot = test_snapshot("idle");
+        let bundle = test_render_command_bundle("bundle", false);
+        state.last_snapshot = Some(current_snapshot.clone());
+        state.scene_cache.last_snapshot = Some(current_snapshot.clone());
+        cache_render_command_bundle(&mut state.scene_cache, &bundle);
+
+        let resolved = resolve_snapshot_render_plan(&current_snapshot);
+
+        assert_eq!(
+            resolved.scene.compact_bar.headline.text,
+            bundle.scene.compact_bar.headline.text
+        );
+        assert!(resolved.expanded_body_height <= resolved.expanded_content_height);
     }
 
     fn test_render_command_bundle(
