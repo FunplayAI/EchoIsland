@@ -7,10 +7,10 @@ use super::compact_bar_layout::{compact_headline_should_hide, sync_active_count_
 use super::panel_globals::ACTIVE_COUNT_SCROLL_TEXT;
 use super::panel_helpers::ns_color;
 use super::panel_refs::{NativePanelRefs, resolve_native_panel_refs};
-use super::panel_scene_adapter::resolve_snapshot_compact_bar_command as resolve_snapshot_compact_bar_render_command;
+use super::panel_scene_adapter::resolve_snapshot_render_plan;
 use super::panel_types::NativePanelHandles;
 use crate::native_panel_core::PanelRect;
-use crate::native_panel_renderer::NativePanelCompactBarCommand;
+use crate::native_panel_renderer::facade::presentation::NativePanelCompactBarCommand;
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_snapshot_values_to_panel(
@@ -32,7 +32,7 @@ fn resolve_compact_bar_command(
         width: refs.pill_view.frame().size.width,
         height: refs.pill_view.frame().size.height,
     };
-    resolve_snapshot_compact_bar_render_command(snapshot, frame)
+    resolve_snapshot_render_plan(snapshot).compact_bar_command(frame)
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]

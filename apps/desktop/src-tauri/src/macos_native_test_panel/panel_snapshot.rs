@@ -7,11 +7,12 @@ use tracing::warn;
 
 use super::card_animation::apply_card_stack_transition;
 use super::panel_entry::native_ui_enabled;
-use super::panel_host_runtime::{
-    MacosNativePanelRuntimeHost, sync_runtime_host_shared_body_height_in_state,
-};
 use super::panel_refs::native_panel_state;
 use super::panel_render::apply_panel_geometry;
+use super::panel_runtime_dispatch::{
+    dispatch_native_panel_render_payload,
+    dispatch_native_panel_transition_request_or_apply_render_payload,
+};
 use super::panel_runtime_input::native_panel_runtime_input_descriptor;
 use super::panel_scene_adapter::resolve_snapshot_render_plan;
 use super::panel_types::{
@@ -25,26 +26,35 @@ use super::transition_ui::{
     render_transition_cards_with_plan, reset_collapsed_cards, resolve_native_transition_context,
     resolved_snapshot_panel_height_for_plan,
 };
+use crate::native_panel_renderer::facade::{
+    host::sync_runtime_host_shared_body_height_in_state,
+    presentation::NativePanelSnapshotRenderPlan,
+    renderer::{cache_runtime_scene_sync_result, sync_runtime_scene_bundle_from_state_input},
+    runtime::{NativePanelRuntimeRenderPayloadState, NativePanelRuntimeRenderPayloadStateBridge},
+    transition::{NativePanelTransitionRequest, native_panel_transition_request_for_snapshot_sync},
+};
 
 struct NativeSnapshotUpdate {
     snapshot: RuntimeSnapshot,
     play_message_sound: bool,
-    transition_snapshot: Option<(RuntimeSnapshot, bool)>,
-    surface_transition_snapshot: Option<RuntimeSnapshot>,
-    apply_state: NativeSnapshotApplyState,
-}
-
-#[derive(Clone)]
-struct NativeSnapshotApplyState {
-    expanded: bool,
-    shared_body_height: Option<f64>,
-    transitioning: bool,
-    transition_cards_progress: f64,
-    transition_cards_entering: bool,
+    transition_request: Option<NativePanelTransitionRequest>,
+    apply_state: NativePanelRuntimeRenderPayloadState,
 }
 
 struct NativeSharedBodyHeightUpdate {
     rerender_payload: Option<NativePanelRenderPayload>,
+}
+
+#[derive(Clone, Copy)]
+struct NativeCardTransitionState {
+    progress: f64,
+    entering: bool,
+}
+
+enum NativeSnapshotApplyMode {
+    TransitioningExpanded(NativeCardTransitionState),
+    TransitioningCollapsed,
+    Static { expanded: bool, total_height: f64 },
 }
 
 pub(crate) fn update_native_island_snapshot<R: tauri::Runtime>(
@@ -80,17 +90,7 @@ pub(crate) fn set_shared_expanded_body_height<R: tauri::Runtime>(
 pub(super) fn native_panel_render_payload(
     state: &NativePanelState,
 ) -> Option<NativePanelRenderPayload> {
-    state
-        .last_snapshot
-        .clone()
-        .map(|snapshot| NativePanelRenderPayload {
-            snapshot,
-            expanded: state.expanded,
-            shared_body_height: state.shared_body_height,
-            transitioning: state.transitioning,
-            transition_cards_progress: state.transition_cards_progress,
-            transition_cards_entering: state.transition_cards_entering,
-        })
+    state.render_payload()
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -98,15 +98,7 @@ pub(super) unsafe fn apply_native_panel_render_payload(
     handles: NativePanelHandles,
     payload: NativePanelRenderPayload,
 ) {
-    apply_snapshot_to_panel(
-        handles,
-        &payload.snapshot,
-        payload.expanded,
-        payload.shared_body_height,
-        payload.transitioning,
-        payload.transition_cards_progress,
-        payload.transition_cards_entering,
-    );
+    apply_snapshot_to_panel(handles, &payload);
 }
 
 fn sync_shared_expanded_body_height_update(
@@ -132,7 +124,7 @@ fn sync_shared_expanded_body_height_update(
 
     let next_height = Some(decision.next_height);
     state.shared_body_height = next_height;
-    sync_runtime_host_shared_body_height_in_state(&mut state, next_height);
+    sync_runtime_host_shared_body_height_in_state(&mut *state, next_height);
     Ok(Some(NativeSharedBodyHeightUpdate {
         rerender_payload: decision
             .should_rerender
@@ -146,7 +138,7 @@ fn dispatch_shared_expanded_body_height_update<R: tauri::Runtime>(
     update: NativeSharedBodyHeightUpdate,
 ) -> Result<(), String> {
     if let Some(payload) = update.rerender_payload {
-        MacosNativePanelRuntimeHost::apply_render_payload(app, payload)?;
+        dispatch_native_panel_render_payload(app, payload)?;
     }
 
     Ok(())
@@ -176,40 +168,20 @@ fn sync_native_snapshot_update(
     let mut state = state
         .lock()
         .map_err(|_| "native panel state poisoned".to_string())?;
-    let mut core = state.to_core_panel_state();
     let input = native_panel_runtime_input_descriptor();
-    let sync_result = crate::native_panel_renderer::sync_runtime_scene_bundle_from_input_descriptor(
-        &mut core,
-        snapshot,
-        &input,
-        Utc::now(),
-    );
+    let sync_result =
+        sync_runtime_scene_bundle_from_state_input(&mut *state, snapshot, &input, Utc::now());
     let snapshot = sync_result.snapshot_sync.displayed_snapshot.clone();
-    state.apply_core_panel_state(core);
     let update = NativeSnapshotUpdate {
-        transition_snapshot: sync_result
-            .snapshot_sync
-            .panel_transition
-            .map(|expanded| (snapshot.clone(), expanded)),
-        surface_transition_snapshot: sync_result
-            .snapshot_sync
-            .surface_transition
-            .then(|| snapshot.clone()),
-        play_message_sound: sync_result.snapshot_sync.play_message_card_sound,
-        apply_state: NativeSnapshotApplyState {
-            expanded: state.expanded,
-            shared_body_height: state.shared_body_height,
-            transitioning: state.transitioning,
-            transition_cards_progress: state.transition_cards_progress,
-            transition_cards_entering: state.transition_cards_entering,
-        },
+        transition_request: native_panel_transition_request_for_snapshot_sync(
+            &sync_result.snapshot_sync,
+        ),
+        play_message_sound: sync_result.snapshot_sync.reminder.play_sound,
+        apply_state: state.runtime_render_payload_state(),
         snapshot: snapshot.clone(),
     };
     state.last_snapshot = Some(snapshot);
-    crate::native_panel_renderer::cache_runtime_scene_sync_result(
-        &mut state.scene_cache,
-        sync_result,
-    );
+    cache_runtime_scene_sync_result(&mut state.scene_cache, sync_result);
     Ok(Some(update))
 }
 
@@ -235,20 +207,13 @@ fn dispatch_snapshot_update<R: tauri::Runtime>(
     app: &AppHandle<R>,
     update: NativeSnapshotUpdate,
 ) -> Result<(), String> {
-    if let Some((snapshot, expanded)) = update.transition_snapshot {
-        return MacosNativePanelRuntimeHost::begin_transition(app, snapshot, expanded);
-    }
-
-    if let Some(snapshot) = update.surface_transition_snapshot {
-        return MacosNativePanelRuntimeHost::begin_surface_transition(app, snapshot);
-    }
-
     let apply_state = update.apply_state;
-    let snapshot = update.snapshot;
-    MacosNativePanelRuntimeHost::apply_render_payload(
+    dispatch_native_panel_transition_request_or_apply_render_payload(
         app,
+        update.transition_request,
+        Some(update.snapshot.clone()),
         NativePanelRenderPayload {
-            snapshot,
+            snapshot: update.snapshot,
             expanded: apply_state.expanded,
             shared_body_height: apply_state.shared_body_height,
             transitioning: apply_state.transitioning,
@@ -261,75 +226,82 @@ fn dispatch_snapshot_update<R: tauri::Runtime>(
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_snapshot_to_panel(
     handles: NativePanelHandles,
-    snapshot: &RuntimeSnapshot,
-    expanded: bool,
-    shared_body_height: Option<f64>,
-    transitioning: bool,
-    transition_cards_progress: f64,
-    transition_cards_entering: bool,
+    payload: &NativePanelRenderPayload,
 ) {
-    apply_snapshot_values_to_panel(handles, snapshot);
+    apply_snapshot_values_to_panel(handles, &payload.snapshot);
     let context = resolve_native_transition_context(handles);
-    let render_plan = resolve_snapshot_render_plan(snapshot);
-
-    if apply_transitioning_snapshot_to_panel(
-        context,
-        &render_plan,
-        expanded,
-        transitioning,
-        transition_cards_progress,
-        transition_cards_entering,
-    ) {
-        return;
-    }
-
-    apply_static_snapshot_to_panel(handles, context, &render_plan, expanded, shared_body_height);
+    let render_plan = resolve_snapshot_render_plan(&payload.snapshot);
+    let mode = resolve_snapshot_apply_mode(context, &render_plan, payload);
+    apply_snapshot_mode(handles, context, &render_plan, mode);
 }
 
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn apply_transitioning_snapshot_to_panel(
+fn resolve_snapshot_apply_mode(
     context: super::transition_ui::NativeTransitionContext,
-    render_plan: &super::panel_scene_adapter::NativePanelSnapshotRenderPlan,
-    expanded: bool,
-    transitioning: bool,
-    transition_cards_progress: f64,
-    transition_cards_entering: bool,
-) -> bool {
-    if !transitioning {
-        return false;
+    render_plan: &NativePanelSnapshotRenderPlan,
+    payload: &NativePanelRenderPayload,
+) -> NativeSnapshotApplyMode {
+    if let Some(mode) = resolve_transitioning_snapshot_apply_mode(payload) {
+        return mode;
     }
 
-    if expanded {
-        if context.refs.cards_container.subviews().is_empty() {
-            render_transition_cards_with_plan(context, render_plan);
-        }
-        apply_card_stack_transition(
-            context.refs.cards_container,
-            transition_cards_progress,
-            transition_cards_entering,
-        );
-        context.refs.panel.displayIfNeeded();
+    NativeSnapshotApplyMode::Static {
+        expanded: payload.expanded,
+        total_height: resolved_snapshot_panel_height_for_plan(
+            context,
+            render_plan,
+            payload.expanded,
+            payload.shared_body_height,
+        ),
+    }
+}
+
+fn resolve_transitioning_snapshot_apply_mode(
+    payload: &NativePanelRenderPayload,
+) -> Option<NativeSnapshotApplyMode> {
+    if !payload.transitioning {
+        return None;
     }
 
-    true
+    Some(if payload.expanded {
+        NativeSnapshotApplyMode::TransitioningExpanded(NativeCardTransitionState {
+            progress: payload.transition_cards_progress,
+            entering: payload.transition_cards_entering,
+        })
+    } else {
+        NativeSnapshotApplyMode::TransitioningCollapsed
+    })
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn apply_static_snapshot_to_panel(
+unsafe fn apply_snapshot_mode(
     handles: NativePanelHandles,
     context: super::transition_ui::NativeTransitionContext,
-    render_plan: &super::panel_scene_adapter::NativePanelSnapshotRenderPlan,
-    expanded: bool,
-    shared_body_height: Option<f64>,
+    render_plan: &NativePanelSnapshotRenderPlan,
+    mode: NativeSnapshotApplyMode,
 ) {
-    let total_height =
-        resolved_snapshot_panel_height_for_plan(context, render_plan, expanded, shared_body_height);
-    apply_snapshot_panel_geometry(handles, expanded, total_height);
-
-    if expanded {
-        render_transition_cards_with_plan(context, render_plan);
-    } else {
-        reset_collapsed_cards(context);
+    match mode {
+        NativeSnapshotApplyMode::TransitioningExpanded(cards) => {
+            if context.refs.cards_container.subviews().is_empty() {
+                render_transition_cards_with_plan(context, render_plan);
+            }
+            apply_card_stack_transition(
+                context.refs.cards_container,
+                cards.progress,
+                cards.entering,
+            );
+        }
+        NativeSnapshotApplyMode::TransitioningCollapsed => {}
+        NativeSnapshotApplyMode::Static {
+            expanded,
+            total_height,
+        } => {
+            apply_snapshot_panel_geometry(handles, expanded, total_height);
+            if expanded {
+                render_transition_cards_with_plan(context, render_plan);
+            } else {
+                reset_collapsed_cards(context);
+            }
+        }
     }
 
     context.refs.panel.displayIfNeeded();
@@ -345,5 +317,72 @@ unsafe fn apply_snapshot_panel_geometry(
         apply_panel_geometry(handles, NativePanelTransitionFrame::expanded(total_height));
     } else {
         apply_panel_geometry(handles, NativePanelTransitionFrame::collapsed(total_height));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NativeSnapshotApplyMode, resolve_transitioning_snapshot_apply_mode};
+    use echoisland_runtime::RuntimeSnapshot;
+
+    fn snapshot(status: &str) -> RuntimeSnapshot {
+        RuntimeSnapshot {
+            status: status.to_string(),
+            primary_source: "claude".to_string(),
+            active_session_count: 0,
+            total_session_count: 0,
+            pending_permission_count: 0,
+            pending_question_count: 0,
+            pending_permission: None,
+            pending_question: None,
+            pending_permissions: Vec::new(),
+            pending_questions: Vec::new(),
+            sessions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn transitioning_snapshot_apply_mode_expanded_carries_card_transition_state() {
+        let payload = crate::macos_native_test_panel::panel_types::NativePanelRenderPayload {
+            snapshot: snapshot("running"),
+            expanded: true,
+            shared_body_height: Some(180.0),
+            transitioning: true,
+            transition_cards_progress: 0.42,
+            transition_cards_entering: true,
+        };
+        let mode = resolve_transitioning_snapshot_apply_mode(&payload).expect("transitioning mode");
+
+        match mode {
+            NativeSnapshotApplyMode::TransitioningExpanded(cards) => {
+                assert_eq!(cards.progress, 0.42);
+                assert!(cards.entering);
+            }
+            NativeSnapshotApplyMode::TransitioningCollapsed
+            | NativeSnapshotApplyMode::Static { .. } => {
+                panic!("expected transitioning expanded mode")
+            }
+        }
+    }
+
+    #[test]
+    fn transitioning_snapshot_apply_mode_collapsed_uses_collapsing_variant() {
+        let payload = crate::macos_native_test_panel::panel_types::NativePanelRenderPayload {
+            snapshot: snapshot("idle"),
+            expanded: false,
+            shared_body_height: Some(180.0),
+            transitioning: true,
+            transition_cards_progress: 0.18,
+            transition_cards_entering: false,
+        };
+        let mode = resolve_transitioning_snapshot_apply_mode(&payload).expect("transitioning mode");
+
+        match mode {
+            NativeSnapshotApplyMode::TransitioningCollapsed => {}
+            NativeSnapshotApplyMode::TransitioningExpanded(_)
+            | NativeSnapshotApplyMode::Static { .. } => {
+                panic!("expected transitioning collapsed mode")
+            }
+        }
     }
 }

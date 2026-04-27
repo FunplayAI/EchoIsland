@@ -1,6 +1,9 @@
 use serde::Serialize;
 
-use crate::native_panel_core::{PanelHitAction, PanelSettingsState, settings_row_action};
+use crate::{
+    native_panel_core::{PanelHitAction, PanelSettingsState, settings_row_action},
+    native_panel_scene::PanelDisplayOptionState,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,11 +34,17 @@ pub(crate) enum SettingsSurfaceControlKind {
 }
 
 pub(crate) fn build_settings_surface_scene(
-    display_count: usize,
+    display_options: &[PanelDisplayOptionState],
     settings: PanelSettingsState,
     app_version: &str,
 ) -> SettingsSurfaceScene {
-    let display_count = display_count.max(1);
+    let selected_display_label = display_options
+        .iter()
+        .find(|display| display.index == settings.selected_display_index)
+        .or_else(|| display_options.get(settings.selected_display_index))
+        .or_else(|| display_options.first())
+        .map(|display| display.label.clone())
+        .unwrap_or_else(|| format!("Display {}", settings.selected_display_index + 1));
     SettingsSurfaceScene {
         title: "Settings".to_string(),
         version_text: format!("EchoIsland v{app_version}"),
@@ -44,13 +53,9 @@ pub(crate) fn build_settings_surface_scene(
                 id: "island_display".to_string(),
                 label: "Island Display".to_string(),
                 control_kind: SettingsSurfaceControlKind::Select,
-                value_text: format!(
-                    "Screen {}/{}",
-                    settings.selected_display_index + 1,
-                    display_count
-                ),
+                value_text: selected_display_label,
                 checked: None,
-                enabled: display_count > 0,
+                enabled: !display_options.is_empty(),
                 action_key: settings_action_key(0),
             },
             SettingsSurfaceRowScene {
@@ -101,6 +106,7 @@ fn settings_action_key(index: usize) -> String {
         Some(PanelHitAction::CycleDisplay) => "cycle_display",
         Some(PanelHitAction::ToggleCompletionSound) => "toggle_completion_sound",
         Some(PanelHitAction::ToggleMascot) => "toggle_mascot",
+        Some(PanelHitAction::OpenSettingsLocation) => "open_settings_location",
         Some(PanelHitAction::OpenReleasePage) => "open_release_page",
         Some(PanelHitAction::FocusSession) => "focus_session",
         None => "unknown",

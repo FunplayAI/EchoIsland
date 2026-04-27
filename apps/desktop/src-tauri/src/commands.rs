@@ -16,14 +16,19 @@ use crate::{
         update_preferred_display_selection,
     },
     command_services::{SampleIngestService, SnapshotCommandService},
-    display_settings::{DisplayOption, list_available_displays, resolve_preferred_display_index},
+    display_settings::{DisplayOption, list_available_displays},
     http_receiver::{HttpReceiverStatus, default_http_receiver_status},
-    native_panel_renderer::{NativePanelRuntimeBackend, current_native_panel_runtime_backend},
+    native_panel_renderer::facade::runtime::{
+        NativePanelRuntimeBackend, current_native_panel_runtime_backend,
+    },
     native_panel_scene::{
         PanelSceneBuildInput, SessionSurfaceScene, SettingsSurfaceScene, StatusSurfaceScene,
         SurfaceScene,
     },
-    native_panel_scene_input::panel_scene_build_input_from_app_settings,
+    native_panel_scene_input::{
+        panel_scene_build_input_from_display_options,
+        resolve_selected_display_index_from_display_options,
+    },
     native_ui_refresh::maybe_refresh_native_ui_for_event,
     platform::{
         PlatformCapabilities, PlatformPathsPayload, current_platform_capabilities,
@@ -76,10 +81,11 @@ pub async fn get_snapshot_status_surface_bundle(
 fn web_panel_scene_build_input(app: &AppHandle) -> PanelSceneBuildInput {
     let settings = current_app_settings();
     let displays = list_available_displays(app).unwrap_or_default();
-    let selected_display_index =
-        resolve_preferred_display_index(&displays, settings.preferred_display_key.as_deref());
-
-    panel_scene_build_input_from_app_settings(displays.len(), selected_display_index, &settings)
+    panel_scene_build_input_from_display_options(
+        &displays,
+        &settings,
+        Some(settings.preferred_display_index),
+    )
 }
 
 #[tauri::command]
@@ -97,8 +103,11 @@ pub async fn build_status_surface_scene(
 pub fn get_app_settings(app: AppHandle) -> AppSettings {
     let mut settings = current_app_settings();
     if let Ok(displays) = list_available_displays(&app) {
-        settings.preferred_display_index =
-            resolve_preferred_display_index(&displays, settings.preferred_display_key.as_deref());
+        settings.preferred_display_index = resolve_selected_display_index_from_display_options(
+            &displays,
+            &settings,
+            Some(settings.preferred_display_index),
+        );
     }
     settings
 }

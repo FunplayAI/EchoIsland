@@ -295,7 +295,29 @@ fn scene_builder_emits_settings_rows_and_value_badges() {
         ..PanelState::default()
     };
     let input = PanelSceneBuildInput {
-        display_count: 3,
+        display_options: vec![
+            crate::native_panel_scene::panel_display_option_state(
+                0,
+                "display-1",
+                "Built-in",
+                3024,
+                1964,
+            ),
+            crate::native_panel_scene::panel_display_option_state(
+                1,
+                "display-2",
+                "Studio Display",
+                2560,
+                1440,
+            ),
+            crate::native_panel_scene::panel_display_option_state(
+                2,
+                "display-3",
+                "Projector",
+                1920,
+                1080,
+            ),
+        ],
         settings: PanelSettingsState {
             selected_display_index: 1,
             completion_sound_enabled: false,
@@ -312,7 +334,7 @@ fn scene_builder_emits_settings_rows_and_value_badges() {
     assert!(scene.compact_bar.actions_visible);
     assert_eq!(version.text, "v0.2.0");
     assert_eq!(rows.len(), 4);
-    assert_eq!(rows[0].value.text, "Screen 2/3");
+    assert_eq!(rows[0].value.text, "Studio Display · 2560×1440");
     assert_eq!(rows[1].value.text, "Off");
     assert_eq!(rows[2].value.text, "On");
     assert_eq!(rows[3].action, PanelHitAction::OpenReleasePage);
@@ -322,6 +344,8 @@ fn scene_builder_emits_settings_rows_and_value_badges() {
     assert_eq!(scene.settings_surface.rows[1].label, "Mute Sound");
     assert_eq!(scene.settings_surface.rows[1].checked, Some(true));
     assert_eq!(scene.settings_surface.rows[2].checked, Some(false));
+    assert_eq!(scene.settings_surface.rows[3].id, "update");
+    assert_eq!(scene.settings_surface.rows[3].label, "Update & Upgrade");
 }
 
 #[test]
@@ -569,7 +593,7 @@ fn scene_card_height_input_preserves_variant_payload_semantics() {
             },
             rows: Vec::new(),
         }),
-        SceneCardHeightInput::Settings
+        SceneCardHeightInput::Settings { row_count: 0 }
     ));
     assert!(matches!(
         resolve_scene_card_height_input(&SceneCard::PendingPermission {
@@ -638,7 +662,7 @@ fn scene_cards_total_height_delegates_card_height_resolution() {
         },
         session_surface: SessionSurfaceScene { cards: Vec::new() },
         settings_surface: build_settings_surface_scene(
-            1,
+            &[crate::native_panel_scene::fallback_panel_display_option()],
             PanelSettingsState::default(),
             env!("CARGO_PKG_VERSION"),
         ),

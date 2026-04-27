@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub struct SessionFocusTarget {
     pub session_id: String,
     pub source: String,

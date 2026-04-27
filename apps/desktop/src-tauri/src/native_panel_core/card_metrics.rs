@@ -168,6 +168,10 @@ pub(crate) fn resolve_completion_card_height(
     (metrics.header_height + metrics.content_bottom_inset + body_height).max(76.0)
 }
 
+pub(crate) fn resolve_settings_surface_card_height(row_count: usize) -> f64 {
+    54.0 + (row_count.max(1) as f64 * 38.0)
+}
+
 pub(crate) fn resolve_stacked_cards_total_height(
     card_heights: &[f64],
     card_gap: f64,

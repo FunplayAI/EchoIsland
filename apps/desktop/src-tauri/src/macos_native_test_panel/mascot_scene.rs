@@ -1,11 +1,9 @@
 use super::mascot::NativeMascotState;
-use super::panel_runtime_input::native_panel_runtime_input_descriptor;
 use super::panel_scene_adapter::{
-    build_native_panel_scene_for_state_with_input,
+    resolve_current_native_panel_presentation_model,
     resolve_current_native_panel_render_command_bundle,
 };
 use super::panel_types::{NativeExpandedSurface, NativePanelState, NativeStatusQueuePayload};
-use crate::native_panel_renderer::{native_panel_glow_command, native_panel_mascot_command};
 
 pub(super) struct NativeMascotFrameInput {
     pub(super) base_state: NativeMascotState,
@@ -20,10 +18,7 @@ pub(super) fn resolve_native_mascot_frame_input(
 ) -> NativeMascotFrameInput {
     let cached_bundle = resolve_current_native_panel_render_command_bundle(state);
     let snapshot = state.last_snapshot.clone();
-    let input = native_panel_runtime_input_descriptor();
-    let scene = snapshot
-        .as_ref()
-        .map(|snapshot| build_native_panel_scene_for_state_with_input(state, snapshot, &input));
+    let presentation = resolve_current_native_panel_presentation_model(state);
     let has_status_completion = state.expanded
         && state.surface_mode == NativeExpandedSurface::Status
         && state
@@ -41,19 +36,23 @@ pub(super) fn resolve_native_mascot_frame_input(
         .as_ref()
         .map(|bundle| bundle.compact_bar.completion_count)
         .or_else(|| {
-            scene
+            presentation
                 .as_ref()
-                .map(|scene| scene.compact_bar.completion_count)
+                .map(|model| model.compact_bar.completion_count)
         })
         .unwrap_or_else(|| state.completion_badge_items.len());
     let mascot_command = cached_bundle
         .as_ref()
         .map(|bundle| bundle.mascot.clone())
-        .or_else(|| scene.as_ref().map(native_panel_mascot_command));
+        .or_else(|| presentation.as_ref().map(|model| model.mascot.command()));
     let glow_command = cached_bundle
         .as_ref()
         .and_then(|bundle| bundle.glow.clone())
-        .or_else(|| scene.as_ref().and_then(native_panel_glow_command));
+        .or_else(|| {
+            presentation
+                .as_ref()
+                .and_then(|model| model.glow.as_ref().map(|glow| glow.command()))
+        });
 
     NativeMascotFrameInput {
         base_state,

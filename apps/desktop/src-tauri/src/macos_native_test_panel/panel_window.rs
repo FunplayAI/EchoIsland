@@ -30,7 +30,7 @@ pub(super) unsafe fn configure_native_panel_window(
         panel.setReleasedWhenClosed(false);
     }
     panel.setFloatingPanel(true);
-    panel.setBecomesKeyOnlyIfNeeded(true);
+    panel.setBecomesKeyOnlyIfNeeded(false);
     panel.setWorksWhenModal(true);
     panel.setLevel(26);
     panel.setBackgroundColor(Some(&NSColor::clearColor()));

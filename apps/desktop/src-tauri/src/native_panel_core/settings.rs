@@ -1,4 +1,4 @@
-use super::{ExpandedSurface, PanelHitAction, PanelState};
+use super::{ExpandedSurface, PanelHitAction, PanelRect, PanelState};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct PanelSettingsState {
@@ -31,6 +31,11 @@ pub(crate) const SETTINGS_ROW_ACTIONS: [PanelHitAction; 4] = [
     PanelHitAction::ToggleMascot,
     PanelHitAction::OpenReleasePage,
 ];
+
+pub(crate) const SETTINGS_CARD_SIDE_INSET: f64 = 14.0;
+pub(crate) const SETTINGS_ROWS_TOP_INSET: f64 = 46.0;
+pub(crate) const SETTINGS_ROW_HEIGHT: f64 = 30.0;
+pub(crate) const SETTINGS_ROW_GAP: f64 = 8.0;
 
 pub(crate) fn panel_display_key(geometry: PanelDisplayGeometry) -> String {
     format!(
@@ -68,6 +73,18 @@ pub(crate) fn resolve_preferred_panel_display_index(
 
 pub(crate) fn settings_row_action(index: usize) -> Option<PanelHitAction> {
     SETTINGS_ROW_ACTIONS.get(index).copied()
+}
+
+pub(crate) fn settings_surface_row_frame(card_frame: PanelRect, index: usize) -> PanelRect {
+    PanelRect {
+        x: card_frame.x + SETTINGS_CARD_SIDE_INSET,
+        y: card_frame.y + card_frame.height
+            - SETTINGS_ROWS_TOP_INSET
+            - SETTINGS_ROW_HEIGHT
+            - ((SETTINGS_ROW_HEIGHT + SETTINGS_ROW_GAP) * index as f64),
+        width: (card_frame.width - SETTINGS_CARD_SIDE_INSET * 2.0).max(0.0),
+        height: SETTINGS_ROW_HEIGHT,
+    }
 }
 
 pub(crate) fn toggle_settings_surface(state: &mut PanelState) -> bool {

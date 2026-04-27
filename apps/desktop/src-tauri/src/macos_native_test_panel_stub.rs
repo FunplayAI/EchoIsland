@@ -1,4 +1,5 @@
 #![cfg(not(target_os = "macos"))]
+#![allow(dead_code)]
 
 use echoisland_runtime::RuntimeSnapshot;
 use tauri::AppHandle;

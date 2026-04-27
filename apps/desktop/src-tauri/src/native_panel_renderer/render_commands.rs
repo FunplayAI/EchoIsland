@@ -5,10 +5,11 @@ use crate::{
     },
 };
 
-use super::{
+use super::descriptors::{
     NativePanelEdgeAction, NativePanelPointerRegion, NativePanelPointerRegionInput,
     NativePanelPointerRegionKind, resolve_native_panel_pointer_regions,
 };
+use super::presentation_model::estimated_scene_content_height;
 
 #[derive(Clone, Debug)]
 pub(crate) struct NativePanelRenderCommandBundle {
@@ -48,7 +49,10 @@ pub(crate) struct NativePanelCompactBarCommand {
 #[derive(Clone, Debug)]
 pub(crate) struct NativePanelCardStackCommand {
     pub(crate) frame: PanelRect,
+    pub(crate) surface: ExpandedSurface,
     pub(crate) cards: Vec<SceneCard>,
+    pub(crate) content_height: f64,
+    pub(crate) body_height: f64,
     pub(crate) visible: bool,
 }
 
@@ -123,9 +127,13 @@ pub(crate) fn native_panel_card_stack_command(
     frame: PanelRect,
     visible: bool,
 ) -> NativePanelCardStackCommand {
+    let content_height = estimated_scene_content_height(scene);
     NativePanelCardStackCommand {
         frame,
+        surface: scene.surface,
         cards: scene.cards.clone(),
+        content_height,
+        body_height: content_height.min(crate::native_panel_core::EXPANDED_MAX_BODY_HEIGHT),
         visible,
     }
 }
@@ -173,7 +181,7 @@ mod tests {
             PanelRenderLayerStyleState, PanelRenderState, PanelState, SharedExpandedRenderState,
             resolve_panel_layout,
         },
-        native_panel_renderer::{
+        native_panel_renderer::descriptors::{
             NativePanelEdgeAction, NativePanelEdgeActionFrames, NativePanelPointerRegionInput,
             NativePanelPointerRegionKind,
         },

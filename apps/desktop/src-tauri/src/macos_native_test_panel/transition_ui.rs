@@ -7,17 +7,18 @@ use super::panel_constants::{
     COLLAPSED_PANEL_HEIGHT, EXPANDED_CARDS_SIDE_INSET, PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
 };
 use super::panel_geometry::{expanded_cards_width, expanded_total_height_for_body_height};
-use super::panel_interaction::{native_settings_surface_active, native_status_surface_active};
-use super::panel_refs::{NativePanelRefs, native_panel_state, resolve_native_panel_refs};
+use super::panel_refs::{NativePanelRefs, resolve_native_panel_refs};
 use super::panel_render::apply_panel_geometry;
-use super::panel_scene_adapter::NativePanelSnapshotRenderPlan;
 use super::panel_screen_geometry::{
     compact_pill_height_for_screen_rect, expanded_panel_width_for_screen_rect,
     resolve_screen_frame_for_panel,
 };
 use super::panel_types::{NativePanelHandles, NativePanelTransitionFrame};
 use crate::macos_shared_expanded_window;
-use crate::native_panel_renderer::NativePanelTimelineDescriptor;
+use crate::native_panel_core::ExpandedSurface;
+use crate::native_panel_renderer::facade::{
+    descriptor::NativePanelTimelineDescriptor, presentation::NativePanelSnapshotRenderPlan,
+};
 
 #[derive(Clone, Copy)]
 pub(super) struct NativeTransitionContext {
@@ -44,16 +45,8 @@ pub(super) unsafe fn resolve_native_transition_context(
 pub(super) fn resolved_expanded_target_height_for_plan(
     context: NativeTransitionContext,
     plan: &NativePanelSnapshotRenderPlan,
+    shared_body_height: Option<f64>,
 ) -> f64 {
-    let shared_body_height = if macos_shared_expanded_window::shared_expanded_enabled()
-        && !native_status_surface_active()
-        && !native_settings_surface_active()
-    {
-        native_panel_state()
-            .and_then(|state| state.lock().ok().and_then(|guard| guard.shared_body_height))
-    } else {
-        None
-    };
     resolved_snapshot_expanded_height_for_plan(context, plan, shared_body_height)
 }
 
@@ -63,12 +56,12 @@ pub(super) fn resolved_snapshot_expanded_height_for_plan(
     shared_body_height: Option<f64>,
 ) -> f64 {
     expanded_total_height_for_body_height(
-        plan.expanded_body_height,
+        plan.expanded_body_height(),
         compact_pill_height_for_screen_rect(
             context.refs.panel.screen().as_deref(),
             context.screen_frame,
         ),
-        resolve_snapshot_shared_body_height(shared_body_height),
+        resolve_snapshot_shared_body_height(plan.surface(), shared_body_height),
     )
 }
 
@@ -241,48 +234,66 @@ pub(super) unsafe fn apply_transition_timeline_descriptor(
     apply_transition_timeline_frame(handles, frame, descriptor.cards_entering);
 }
 
-fn resolve_snapshot_shared_body_height_for_flags(
+fn resolve_snapshot_shared_body_height_for_surface(
     shared_expanded_enabled: bool,
-    status_surface_active: bool,
-    settings_surface_active: bool,
+    surface: ExpandedSurface,
     shared_body_height: Option<f64>,
 ) -> Option<f64> {
-    if shared_expanded_enabled && !status_surface_active && !settings_surface_active {
+    if shared_expanded_enabled && surface == ExpandedSurface::Default {
         shared_body_height
     } else {
         None
     }
 }
 
-pub(super) fn resolve_snapshot_shared_body_height(shared_body_height: Option<f64>) -> Option<f64> {
-    resolve_snapshot_shared_body_height_for_flags(
+pub(super) fn resolve_snapshot_shared_body_height(
+    surface: ExpandedSurface,
+    shared_body_height: Option<f64>,
+) -> Option<f64> {
+    resolve_snapshot_shared_body_height_for_surface(
         macos_shared_expanded_window::shared_expanded_enabled(),
-        native_status_surface_active(),
-        native_settings_surface_active(),
+        surface,
         shared_body_height,
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_snapshot_shared_body_height_for_flags;
+    use super::resolve_snapshot_shared_body_height_for_surface;
+    use crate::native_panel_core::ExpandedSurface;
 
     #[test]
     fn shared_body_height_is_kept_only_for_default_shared_surface() {
         assert_eq!(
-            resolve_snapshot_shared_body_height_for_flags(true, false, false, Some(180.0)),
+            resolve_snapshot_shared_body_height_for_surface(
+                true,
+                ExpandedSurface::Default,
+                Some(180.0)
+            ),
             Some(180.0)
         );
         assert_eq!(
-            resolve_snapshot_shared_body_height_for_flags(true, true, false, Some(180.0)),
+            resolve_snapshot_shared_body_height_for_surface(
+                true,
+                ExpandedSurface::Status,
+                Some(180.0)
+            ),
             None
         );
         assert_eq!(
-            resolve_snapshot_shared_body_height_for_flags(true, false, true, Some(180.0)),
+            resolve_snapshot_shared_body_height_for_surface(
+                true,
+                ExpandedSurface::Settings,
+                Some(180.0)
+            ),
             None
         );
         assert_eq!(
-            resolve_snapshot_shared_body_height_for_flags(false, false, false, Some(180.0)),
+            resolve_snapshot_shared_body_height_for_surface(
+                false,
+                ExpandedSurface::Default,
+                Some(180.0)
+            ),
             None
         );
     }

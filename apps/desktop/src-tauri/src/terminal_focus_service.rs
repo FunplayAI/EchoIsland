@@ -1,7 +1,7 @@
 #[cfg(target_os = "windows")]
 use chrono::Utc;
 use echoisland_runtime::RuntimeSnapshot;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     app_runtime::AppRuntime,
@@ -49,7 +49,7 @@ impl<'a> TerminalFocusService<'a> {
             .session(session_id)
             .await
             .ok_or_else(|| format!("session not found: {session_id}"))?;
-        let mut target = SessionFocusTarget {
+        let target = SessionFocusTarget {
             session_id: session_id.to_string(),
             source: session.source,
             project_name: session.project_name,
@@ -68,42 +68,47 @@ impl<'a> TerminalFocusService<'a> {
             tmux_client_tty: session.tmux_client_tty,
         };
         #[cfg(target_os = "macos")]
-        if let Some(inferred_metadata) = crate::terminal_focus::infer_terminal_metadata(&target) {
-            if target.terminal_app.is_none() {
-                target.terminal_app = inferred_metadata.terminal_app.clone();
-            }
-            if target.terminal_bundle.is_none() {
-                target.terminal_bundle = inferred_metadata.terminal_bundle.clone();
-            }
-            if target
-                .tty
-                .as_deref()
-                .is_none_or(|value| !is_precise_terminal_tty(value))
+        let target = {
+            let mut target = target;
+            if let Some(inferred_metadata) = crate::terminal_focus::infer_terminal_metadata(&target)
             {
-                target.tty = inferred_metadata.tty.clone();
+                if target.terminal_app.is_none() {
+                    target.terminal_app = inferred_metadata.terminal_app.clone();
+                }
+                if target.terminal_bundle.is_none() {
+                    target.terminal_bundle = inferred_metadata.terminal_bundle.clone();
+                }
+                if target
+                    .tty
+                    .as_deref()
+                    .is_none_or(|value| !is_precise_terminal_tty(value))
+                {
+                    target.tty = inferred_metadata.tty.clone();
+                }
+                if target.cli_pid.is_none() {
+                    target.cli_pid = inferred_metadata.cli_pid;
+                }
+                if inferred_metadata.pid.is_some() {
+                    target.terminal_pid = inferred_metadata.pid;
+                }
+                if self
+                    .app_runtime
+                    .runtime
+                    .merge_session_terminal_metadata(session_id, inferred_metadata)
+                    .await
+                {
+                    info!(
+                        session_id = %session_id,
+                        terminal_app = ?target.terminal_app,
+                        terminal_bundle = ?target.terminal_bundle,
+                        tty = ?target.tty,
+                        cli_pid = ?target.cli_pid,
+                        "persisted inferred macOS terminal binding"
+                    );
+                }
             }
-            if target.cli_pid.is_none() {
-                target.cli_pid = inferred_metadata.cli_pid;
-            }
-            if inferred_metadata.pid.is_some() {
-                target.terminal_pid = inferred_metadata.pid;
-            }
-            if self
-                .app_runtime
-                .runtime
-                .merge_session_terminal_metadata(session_id, inferred_metadata)
-                .await
-            {
-                info!(
-                    session_id = %session_id,
-                    terminal_app = ?target.terminal_app,
-                    terminal_bundle = ?target.terminal_bundle,
-                    tty = ?target.tty,
-                    cli_pid = ?target.cli_pid,
-                    "persisted inferred macOS terminal binding"
-                );
-            }
-        }
+            target
+        };
         let cached_tab = {
             let cache = self.app_runtime.focus_cache.lock().await;
             cache.get(session_id).cloned()
@@ -193,6 +198,38 @@ impl<'a> TerminalFocusService<'a> {
             Ok(title)
         }
     }
+}
+
+pub(crate) async fn focus_runtime_session(
+    app_runtime: &AppRuntime,
+    session_id: &str,
+) -> Result<bool, String> {
+    TerminalFocusService::new(app_runtime)
+        .focus_session(session_id)
+        .await
+}
+
+pub(crate) fn spawn_runtime_focus_session(app_runtime: AppRuntime, session_id: String) {
+    tauri::async_runtime::spawn(async move {
+        match focus_runtime_session(&app_runtime, &session_id).await {
+            Ok(true) => {
+                info!(session_id = %session_id, "native panel focused terminal session");
+            }
+            Ok(false) => {
+                warn!(
+                    session_id = %session_id,
+                    "native panel did not find a focusable terminal target"
+                );
+            }
+            Err(error) => {
+                warn!(
+                    session_id = %session_id,
+                    error = %error,
+                    "native panel failed to focus terminal session"
+                );
+            }
+        }
+    });
 }
 
 #[cfg(target_os = "macos")]

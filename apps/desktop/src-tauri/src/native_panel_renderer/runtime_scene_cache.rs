@@ -1,15 +1,28 @@
 use echoisland_runtime::RuntimeSnapshot;
 
 use crate::{
-    native_panel_core::{ExpandedSurface, PanelRect, PanelState},
+    native_panel_core::{ExpandedSurface, PanelLayout, PanelRect, PanelRenderState, PanelState},
     native_panel_scene::{
         PanelRuntimeRenderState, PanelRuntimeSceneBundle, PanelScene, PanelSceneBuildInput,
+        build_panel_scene, resolve_panel_runtime_render_state,
     },
 };
 
-use super::{
-    NativePanelRenderCommandBundle, NativePanelRuntimeInputDescriptor, NativePanelSceneHost,
+use super::descriptors::{
+    NativePanelPointerRegion, NativePanelPointerRegionInput, NativePanelRuntimeInputDescriptor,
 };
+use super::host_runtime_facade::{
+    native_panel_host_display_reposition,
+    native_panel_host_display_reposition_from_input_descriptor,
+};
+use super::presentation_model::{
+    NativePanelPresentationModel, NativePanelResolvedPresentation, NativePanelSnapshotRenderPlan,
+    resolve_native_panel_presentation, resolve_native_panel_presentation_model_for_scene,
+    resolve_native_panel_snapshot_render_plan_for_scene,
+};
+use super::render_commands::NativePanelRenderCommandBundle;
+use super::runtime_interaction::NativePanelCoreStateBridge;
+use super::traits::NativePanelSceneHost;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NativePanelRuntimeSceneCacheKey {
@@ -28,6 +41,20 @@ pub(crate) struct NativePanelRuntimeSceneCache {
     pub(crate) last_render_command_bundle: Option<NativePanelRenderCommandBundle>,
 }
 
+pub(crate) trait NativePanelRuntimeSceneStateBridge: NativePanelCoreStateBridge {
+    fn runtime_scene_cache(&self) -> &NativePanelRuntimeSceneCache;
+
+    fn runtime_scene_current_snapshot(&self) -> Option<&RuntimeSnapshot>;
+}
+
+pub(crate) trait NativePanelRuntimeSceneMutableStateBridge:
+    NativePanelRuntimeSceneStateBridge
+{
+    fn runtime_scene_cache_mut(&mut self) -> &mut NativePanelRuntimeSceneCache;
+
+    fn runtime_pointer_regions_mut(&mut self) -> &mut Vec<NativePanelPointerRegion>;
+}
+
 pub(crate) fn native_panel_runtime_scene_cache_key(
     panel_state: &PanelState,
     input: &NativePanelRuntimeInputDescriptor,
@@ -38,6 +65,221 @@ pub(crate) fn native_panel_runtime_scene_cache_key(
         surface_mode: panel_state.surface_mode,
         scene_input: input.scene_input.clone(),
     }
+}
+
+pub(crate) fn native_panel_runtime_scene_cache_key_for_state_bridge<S>(
+    state: &S,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> NativePanelRuntimeSceneCacheKey
+where
+    S: NativePanelCoreStateBridge,
+{
+    native_panel_runtime_scene_cache_key(&state.snapshot_core_panel_state(), input)
+}
+
+pub(crate) fn build_native_panel_scene_for_state_bridge_with_input<S>(
+    state: &S,
+    snapshot: &RuntimeSnapshot,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> PanelScene
+where
+    S: NativePanelCoreStateBridge,
+{
+    build_panel_scene(
+        &state.snapshot_core_panel_state(),
+        snapshot,
+        &input.scene_input,
+    )
+}
+
+pub(crate) fn resolve_native_panel_runtime_render_state_for_state_bridge_with_input<S>(
+    state: &S,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> PanelRuntimeRenderState
+where
+    S: NativePanelRuntimeSceneStateBridge,
+{
+    let cache_key = native_panel_runtime_scene_cache_key_for_state_bridge(state, input);
+    cached_runtime_render_state_for_key(state.runtime_scene_cache(), &cache_key).unwrap_or_else(
+        || {
+            resolve_panel_runtime_render_state(
+                &state.snapshot_core_panel_state(),
+                state.runtime_scene_current_snapshot(),
+                &input.scene_input,
+            )
+        },
+    )
+}
+
+fn runtime_scene_snapshot_matches_state_or_cache<S>(state: &S, snapshot: &RuntimeSnapshot) -> bool
+where
+    S: NativePanelRuntimeSceneStateBridge,
+{
+    state.runtime_scene_current_snapshot() == Some(snapshot)
+        || state.runtime_scene_cache().last_snapshot.as_ref() == Some(snapshot)
+}
+
+pub(crate) fn resolve_native_panel_scene_for_state_bridge_with_input<S>(
+    state: &S,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> Option<PanelScene>
+where
+    S: NativePanelRuntimeSceneStateBridge,
+{
+    let cache_key = native_panel_runtime_scene_cache_key_for_state_bridge(state, input);
+    cached_scene_for_key(state.runtime_scene_cache(), &cache_key).or_else(|| {
+        state.runtime_scene_current_snapshot().map(|snapshot| {
+            build_native_panel_scene_for_state_bridge_with_input(state, snapshot, input)
+        })
+    })
+}
+
+pub(crate) fn resolve_native_panel_scene_for_state_bridge_and_snapshot_with_input<S>(
+    state: &S,
+    snapshot: &RuntimeSnapshot,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> Option<PanelScene>
+where
+    S: NativePanelRuntimeSceneStateBridge,
+{
+    let cache_key = native_panel_runtime_scene_cache_key_for_state_bridge(state, input);
+    if runtime_scene_snapshot_matches_state_or_cache(state, snapshot) {
+        if let Some(scene) = cached_scene_for_key(state.runtime_scene_cache(), &cache_key) {
+            return Some(scene);
+        }
+    }
+
+    Some(build_native_panel_scene_for_state_bridge_with_input(
+        state, snapshot, input,
+    ))
+}
+
+pub(crate) fn resolve_native_panel_render_command_bundle_for_state_bridge_and_snapshot_with_input<
+    S,
+>(
+    state: &S,
+    snapshot: &RuntimeSnapshot,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> Option<NativePanelRenderCommandBundle>
+where
+    S: NativePanelRuntimeSceneStateBridge,
+{
+    let cache_key = native_panel_runtime_scene_cache_key_for_state_bridge(state, input);
+    runtime_scene_snapshot_matches_state_or_cache(state, snapshot)
+        .then(|| cached_render_command_bundle_for_key(state.runtime_scene_cache(), &cache_key))
+        .flatten()
+}
+
+pub(crate) fn resolve_current_native_panel_render_command_bundle_for_state_bridge_with_input<S>(
+    state: &S,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> Option<NativePanelRenderCommandBundle>
+where
+    S: NativePanelRuntimeSceneStateBridge,
+{
+    state.runtime_scene_current_snapshot().and_then(|snapshot| {
+        resolve_native_panel_render_command_bundle_for_state_bridge_and_snapshot_with_input(
+            state, snapshot, input,
+        )
+    })
+}
+
+pub(crate) fn resolve_native_panel_presentation_model_for_state_bridge_and_snapshot_with_input<S>(
+    state: &S,
+    snapshot: &RuntimeSnapshot,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> Option<NativePanelPresentationModel>
+where
+    S: NativePanelRuntimeSceneStateBridge,
+{
+    let cache_key = native_panel_runtime_scene_cache_key_for_state_bridge(state, input);
+
+    if runtime_scene_snapshot_matches_state_or_cache(state, snapshot) {
+        if let Some(model) =
+            cached_presentation_model_for_key(state.runtime_scene_cache(), &cache_key)
+        {
+            return Some(model);
+        }
+    }
+
+    let render_command_bundle =
+        resolve_native_panel_render_command_bundle_for_state_bridge_and_snapshot_with_input(
+            state, snapshot, input,
+        );
+    let scene = render_command_bundle
+        .as_ref()
+        .map(|bundle| bundle.scene.clone())
+        .or_else(|| {
+            resolve_native_panel_scene_for_state_bridge_and_snapshot_with_input(
+                state, snapshot, input,
+            )
+        })?;
+    Some(resolve_native_panel_presentation_model_for_scene(
+        &scene,
+        render_command_bundle.as_ref(),
+    ))
+}
+
+pub(crate) fn resolve_current_native_panel_presentation_model_for_state_bridge_with_input<S>(
+    state: &S,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> Option<NativePanelPresentationModel>
+where
+    S: NativePanelRuntimeSceneStateBridge,
+{
+    state.runtime_scene_current_snapshot().and_then(|snapshot| {
+        resolve_native_panel_presentation_model_for_state_bridge_and_snapshot_with_input(
+            state, snapshot, input,
+        )
+    })
+}
+
+pub(crate) fn resolve_and_cache_native_panel_presentation_for_state_bridge_with_input<S>(
+    state: &mut S,
+    input: &NativePanelRuntimeInputDescriptor,
+    layout: PanelLayout,
+    render_state: PanelRenderState,
+    pointer_region_input: Option<NativePanelPointerRegionInput>,
+) -> Option<NativePanelResolvedPresentation>
+where
+    S: NativePanelRuntimeSceneMutableStateBridge,
+{
+    let scene = resolve_native_panel_scene_for_state_bridge_with_input(state, input)?;
+    let runtime =
+        resolve_native_panel_runtime_render_state_for_state_bridge_with_input(state, input);
+    let resolved = resolve_native_panel_presentation(
+        layout,
+        &scene,
+        runtime,
+        render_state,
+        pointer_region_input,
+    );
+    cache_render_command_bundle_for_state_bridge_with_input(state, input, &resolved.bundle);
+    Some(resolved)
+}
+
+pub(crate) fn resolve_native_panel_snapshot_render_plan_for_state_bridge_snapshot_with_input<S>(
+    state: &S,
+    snapshot: &RuntimeSnapshot,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> NativePanelSnapshotRenderPlan
+where
+    S: NativePanelRuntimeSceneStateBridge,
+{
+    let render_command_bundle =
+        resolve_native_panel_render_command_bundle_for_state_bridge_and_snapshot_with_input(
+            state, snapshot, input,
+        );
+    let scene = render_command_bundle
+        .as_ref()
+        .map(|bundle| bundle.scene.clone())
+        .or_else(|| {
+            resolve_native_panel_scene_for_state_bridge_and_snapshot_with_input(
+                state, snapshot, input,
+            )
+        })
+        .expect("scene");
+    resolve_native_panel_snapshot_render_plan_for_scene(scene, render_command_bundle)
 }
 
 pub(crate) fn cache_runtime_scene(
@@ -96,6 +338,18 @@ pub(crate) fn cache_render_command_bundle_with_key(
     cache.last_render_command_bundle = Some(bundle.clone());
 }
 
+pub(crate) fn cache_render_command_bundle_for_state_bridge_with_input<S>(
+    state: &mut S,
+    input: &NativePanelRuntimeInputDescriptor,
+    bundle: &NativePanelRenderCommandBundle,
+) where
+    S: NativePanelRuntimeSceneMutableStateBridge,
+{
+    let cache_key = native_panel_runtime_scene_cache_key_for_state_bridge(state, input);
+    cache_render_command_bundle_with_key(state.runtime_scene_cache_mut(), Some(cache_key), bundle);
+    *state.runtime_pointer_regions_mut() = bundle.pointer_regions.clone();
+}
+
 pub(crate) fn cached_scene(cache: &NativePanelRuntimeSceneCache) -> Option<PanelScene> {
     cache
         .last_render_command_bundle
@@ -141,6 +395,26 @@ pub(crate) fn cached_render_command_bundle_for_key(
         .flatten()
 }
 
+pub(crate) fn cached_presentation_model(
+    cache: &NativePanelRuntimeSceneCache,
+) -> Option<NativePanelPresentationModel> {
+    cache.last_scene.as_ref().map(|scene| {
+        resolve_native_panel_presentation_model_for_scene(
+            scene,
+            cache.last_render_command_bundle.as_ref(),
+        )
+    })
+}
+
+pub(crate) fn cached_presentation_model_for_key(
+    cache: &NativePanelRuntimeSceneCache,
+    cache_key: &NativePanelRuntimeSceneCacheKey,
+) -> Option<NativePanelPresentationModel> {
+    (cache.last_cache_key.as_ref() == Some(cache_key))
+        .then(|| cached_presentation_model(cache))
+        .flatten()
+}
+
 pub(crate) fn apply_runtime_scene_bundle_to_host<H: NativePanelSceneHost>(
     host: &mut H,
     cache: &mut NativePanelRuntimeSceneCache,
@@ -148,11 +422,10 @@ pub(crate) fn apply_runtime_scene_bundle_to_host<H: NativePanelSceneHost>(
     preferred_display_index: usize,
     screen_frame: Option<PanelRect>,
 ) -> Result<(), H::Error> {
-    host.sync_scene(
+    host.sync_scene_with_payload(
         &bundle.scene,
         bundle.runtime_render_state,
-        preferred_display_index,
-        screen_frame,
+        native_panel_host_display_reposition(preferred_display_index, screen_frame),
     )?;
     cache_runtime_scene(
         cache,
@@ -186,13 +459,22 @@ pub(crate) fn rerender_runtime_scene_cache_to_host_with_input_descriptor<
     input: &NativePanelRuntimeInputDescriptor,
     rebuild_bundle: impl FnOnce(&RuntimeSnapshot) -> PanelRuntimeSceneBundle,
 ) -> Result<bool, H::Error> {
-    rerender_runtime_scene_cache_to_host(
-        host,
+    let Some(snapshot) = cache.last_snapshot.clone() else {
+        return Ok(false);
+    };
+    let bundle = rebuild_bundle(&snapshot);
+    host.sync_scene_with_payload(
+        &bundle.scene,
+        bundle.runtime_render_state,
+        native_panel_host_display_reposition_from_input_descriptor(input),
+    )?;
+    cache_runtime_scene(
         cache,
-        input.selected_display_index(),
-        input.screen_frame,
-        rebuild_bundle,
-    )
+        bundle.displayed_snapshot,
+        bundle.scene,
+        bundle.runtime_render_state,
+    );
+    Ok(true)
 }
 
 pub(crate) fn rerender_runtime_scene_cache_to_host_on_transition<H, T>(
@@ -228,38 +510,57 @@ pub(crate) fn rerender_runtime_scene_cache_to_host_on_transition_with_input_desc
 where
     H: NativePanelSceneHost,
 {
-    rerender_runtime_scene_cache_to_host_on_transition(
-        host,
-        cache,
-        transition,
-        input.selected_display_index(),
-        input.screen_frame,
-        rebuild_bundle,
-    )
+    if transition.is_some() {
+        let _ = rerender_runtime_scene_cache_to_host_with_input_descriptor(
+            host,
+            cache,
+            input,
+            rebuild_bundle,
+        )?;
+    }
+    Ok(transition)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        NativePanelRuntimeSceneCache, apply_runtime_scene_bundle_to_host,
-        cache_render_command_bundle, cache_render_command_bundle_with_key, cache_runtime_scene,
-        cache_scene_runtime_with_key, cached_render_command_bundle_for_key,
-        cached_runtime_render_state, cached_scene, cached_scene_for_key,
-        native_panel_runtime_scene_cache_key, rerender_runtime_scene_cache_to_host,
-        rerender_runtime_scene_cache_to_host_on_transition,
+        NativePanelRuntimeSceneCache, NativePanelRuntimeSceneMutableStateBridge,
+        NativePanelRuntimeSceneStateBridge, apply_runtime_scene_bundle_to_host,
+        build_native_panel_scene_for_state_bridge_with_input, cache_render_command_bundle,
+        cache_render_command_bundle_for_state_bridge_with_input,
+        cache_render_command_bundle_with_key, cache_runtime_scene, cache_scene_runtime_with_key,
+        cached_render_command_bundle_for_key, cached_runtime_render_state, cached_scene,
+        cached_scene_for_key, native_panel_runtime_scene_cache_key,
+        native_panel_runtime_scene_cache_key_for_state_bridge,
+        rerender_runtime_scene_cache_to_host, rerender_runtime_scene_cache_to_host_on_transition,
+        resolve_and_cache_native_panel_presentation_for_state_bridge_with_input,
+        resolve_current_native_panel_presentation_model_for_state_bridge_with_input,
+        resolve_current_native_panel_render_command_bundle_for_state_bridge_with_input,
+        resolve_native_panel_presentation_model_for_state_bridge_and_snapshot_with_input,
+        resolve_native_panel_runtime_render_state_for_state_bridge_with_input,
+        resolve_native_panel_scene_for_state_bridge_and_snapshot_with_input,
+        resolve_native_panel_snapshot_render_plan_for_state_bridge_snapshot_with_input,
     };
     use crate::{
         native_panel_core::{ExpandedSurface, PanelRect, PanelSettingsState, PanelState},
         native_panel_renderer::{
-            NativePanelHost, NativePanelHostWindowDescriptor, NativePanelHostWindowState,
-            NativePanelRenderer, NativePanelRuntimeInputDescriptor, NativePanelSceneHost,
-            resolve_native_panel_render_command_bundle,
+            descriptors::{
+                NativePanelHostWindowDescriptor, NativePanelHostWindowState,
+                NativePanelPointerRegion, NativePanelPointerRegionInput,
+                NativePanelRuntimeInputDescriptor,
+            },
+            render_commands::{
+                NativePanelRenderCommandBundle, resolve_native_panel_render_command_bundle,
+            },
+            runtime_interaction::NativePanelCoreStateBridge,
+            traits::{NativePanelHost, NativePanelRenderer, NativePanelSceneHost},
         },
         native_panel_scene::{
             CompactBarScene, PanelRuntimeRenderState, PanelRuntimeSceneBundle, PanelScene,
             PanelSceneBuildInput, SceneMascotPose, SceneText, SessionSurfaceScene,
             StatusSurfaceDefaultState, StatusSurfaceDisplayMode, StatusSurfaceQueueState,
-            StatusSurfaceScene, SurfaceScene, build_settings_surface_scene, surface_scene_mode,
+            StatusSurfaceScene, SurfaceScene, build_panel_scene, build_settings_surface_scene,
+            surface_scene_mode,
         },
     };
     use echoisland_runtime::RuntimeSnapshot;
@@ -267,6 +568,44 @@ mod tests {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum TestTransition {
         Changed,
+    }
+
+    #[derive(Clone, Default)]
+    struct TestRuntimeStateBridge {
+        panel_state: PanelState,
+        last_snapshot: Option<RuntimeSnapshot>,
+        scene_cache: NativePanelRuntimeSceneCache,
+        pointer_regions: Vec<NativePanelPointerRegion>,
+    }
+
+    impl NativePanelCoreStateBridge for TestRuntimeStateBridge {
+        fn snapshot_core_panel_state(&self) -> PanelState {
+            self.panel_state.clone()
+        }
+
+        fn apply_core_panel_state(&mut self, core: PanelState) {
+            self.panel_state = core;
+        }
+    }
+
+    impl NativePanelRuntimeSceneStateBridge for TestRuntimeStateBridge {
+        fn runtime_scene_cache(&self) -> &NativePanelRuntimeSceneCache {
+            &self.scene_cache
+        }
+
+        fn runtime_scene_current_snapshot(&self) -> Option<&RuntimeSnapshot> {
+            self.last_snapshot.as_ref()
+        }
+    }
+
+    impl NativePanelRuntimeSceneMutableStateBridge for TestRuntimeStateBridge {
+        fn runtime_scene_cache_mut(&mut self) -> &mut NativePanelRuntimeSceneCache {
+            &mut self.scene_cache
+        }
+
+        fn runtime_pointer_regions_mut(&mut self) -> &mut Vec<NativePanelPointerRegion> {
+            &mut self.pointer_regions
+        }
     }
 
     #[derive(Default)]
@@ -686,6 +1025,286 @@ mod tests {
         assert_ne!(settings_key, default_key);
     }
 
+    #[test]
+    fn state_bridge_helpers_reuse_cached_scene_bundle_and_presentation() {
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        let snapshot = RuntimeSnapshot {
+            status: "current".to_string(),
+            primary_source: "codex".to_string(),
+            active_session_count: 0,
+            total_session_count: 0,
+            pending_permission_count: 0,
+            pending_question_count: 0,
+            pending_permission: None,
+            pending_question: None,
+            pending_permissions: vec![],
+            pending_questions: vec![],
+            sessions: vec![],
+        };
+        let bundle = test_render_command_bundle("bundle", true);
+        let panel_state = PanelState {
+            expanded: true,
+            ..PanelState::default()
+        };
+        let cache_key = native_panel_runtime_scene_cache_key(&panel_state, &input);
+        let mut state = TestRuntimeStateBridge {
+            panel_state,
+            last_snapshot: Some(snapshot.clone()),
+            scene_cache: NativePanelRuntimeSceneCache {
+                last_snapshot: Some(snapshot.clone()),
+                ..NativePanelRuntimeSceneCache::default()
+            },
+            ..Default::default()
+        };
+        cache_render_command_bundle_with_key(&mut state.scene_cache, Some(cache_key), &bundle);
+
+        let scene = resolve_native_panel_scene_for_state_bridge_and_snapshot_with_input(
+            &state, &snapshot, &input,
+        )
+        .expect("scene");
+        let presentation =
+            resolve_native_panel_presentation_model_for_state_bridge_and_snapshot_with_input(
+                &state, &snapshot, &input,
+            )
+            .expect("presentation");
+        let plan = resolve_native_panel_snapshot_render_plan_for_state_bridge_snapshot_with_input(
+            &state, &snapshot, &input,
+        );
+
+        assert_eq!(scene.compact_bar.headline.text, "bundle");
+        assert_eq!(presentation.compact_bar.headline.text, "bundle");
+        assert_eq!(
+            plan.compact_bar_command(bundle.layout.pill_frame)
+                .headline
+                .text,
+            "bundle"
+        );
+    }
+
+    #[test]
+    fn state_bridge_helpers_rebuild_from_current_snapshot_when_cache_misses() {
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        let snapshot = RuntimeSnapshot {
+            status: "rebuilt".to_string(),
+            primary_source: "codex".to_string(),
+            active_session_count: 0,
+            total_session_count: 0,
+            pending_permission_count: 0,
+            pending_question_count: 0,
+            pending_permission: None,
+            pending_question: None,
+            pending_permissions: vec![],
+            pending_questions: vec![],
+            sessions: vec![],
+        };
+        let state = TestRuntimeStateBridge {
+            panel_state: PanelState::default(),
+            last_snapshot: Some(snapshot.clone()),
+            scene_cache: NativePanelRuntimeSceneCache::default(),
+            ..Default::default()
+        };
+
+        let bridge_key = native_panel_runtime_scene_cache_key_for_state_bridge(&state, &input);
+        let rebuilt_scene =
+            build_native_panel_scene_for_state_bridge_with_input(&state, &snapshot, &input);
+        let rebuilt_runtime =
+            resolve_native_panel_runtime_render_state_for_state_bridge_with_input(&state, &input);
+        let direct_scene = build_panel_scene(&state.panel_state, &snapshot, &input.scene_input);
+
+        assert_eq!(
+            bridge_key,
+            native_panel_runtime_scene_cache_key(&state.panel_state, &input)
+        );
+        assert_eq!(rebuilt_scene.surface, direct_scene.surface);
+        assert_eq!(
+            rebuilt_scene.compact_bar.headline.text,
+            direct_scene.compact_bar.headline.text
+        );
+        assert!(!rebuilt_runtime.transitioning);
+    }
+
+    #[test]
+    fn mutable_state_bridge_cache_helper_syncs_pointer_regions() {
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        let panel_state = PanelState {
+            expanded: true,
+            ..PanelState::default()
+        };
+        let bundle = test_render_command_bundle("bundle", true);
+        let mut state = TestRuntimeStateBridge {
+            panel_state,
+            ..Default::default()
+        };
+
+        cache_render_command_bundle_for_state_bridge_with_input(&mut state, &input, &bundle);
+
+        assert_eq!(state.pointer_regions.len(), bundle.pointer_regions.len());
+        assert_eq!(
+            state
+                .scene_cache
+                .last_render_command_bundle
+                .as_ref()
+                .map(|cached| cached.compact_bar.headline.text.as_str()),
+            Some("bundle")
+        );
+    }
+
+    #[test]
+    fn mutable_state_bridge_resolve_and_cache_presentation_syncs_bundle_and_regions() {
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        let snapshot = RuntimeSnapshot {
+            status: "resolved".to_string(),
+            primary_source: "codex".to_string(),
+            active_session_count: 0,
+            total_session_count: 0,
+            pending_permission_count: 0,
+            pending_question_count: 0,
+            pending_permission: None,
+            pending_question: None,
+            pending_permissions: vec![],
+            pending_questions: vec![],
+            sessions: vec![],
+        };
+        let mut state = TestRuntimeStateBridge {
+            panel_state: PanelState {
+                expanded: true,
+                ..PanelState::default()
+            },
+            last_snapshot: Some(snapshot),
+            ..Default::default()
+        };
+        let scene = build_native_panel_scene_for_state_bridge_with_input(
+            &state,
+            state.last_snapshot.as_ref().expect("snapshot"),
+            &input,
+        );
+        let bundle = test_render_command_bundle(&scene.compact_bar.headline.text, false);
+
+        let resolved = resolve_and_cache_native_panel_presentation_for_state_bridge_with_input(
+            &mut state,
+            &input,
+            bundle.layout,
+            bundle.render_state,
+            Some(NativePanelPointerRegionInput::default()),
+        )
+        .expect("resolved presentation");
+
+        assert_eq!(
+            state.pointer_regions.len(),
+            resolved.bundle.pointer_regions.len()
+        );
+        assert_eq!(
+            state
+                .scene_cache
+                .last_render_command_bundle
+                .as_ref()
+                .map(|cached| cached.compact_bar.headline.text.as_str()),
+            Some(bundle.compact_bar.headline.text.as_str())
+        );
+    }
+
+    #[test]
+    fn current_state_bridge_bundle_helper_uses_current_snapshot() {
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        let snapshot = RuntimeSnapshot {
+            status: "current".to_string(),
+            primary_source: "codex".to_string(),
+            active_session_count: 0,
+            total_session_count: 0,
+            pending_permission_count: 0,
+            pending_question_count: 0,
+            pending_permission: None,
+            pending_question: None,
+            pending_permissions: vec![],
+            pending_questions: vec![],
+            sessions: vec![],
+        };
+        let panel_state = PanelState {
+            expanded: true,
+            ..PanelState::default()
+        };
+        let cache_key = native_panel_runtime_scene_cache_key(&panel_state, &input);
+        let bundle = test_render_command_bundle("bundle", true);
+        let mut state = TestRuntimeStateBridge {
+            panel_state,
+            last_snapshot: Some(snapshot.clone()),
+            scene_cache: NativePanelRuntimeSceneCache {
+                last_snapshot: Some(snapshot),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        cache_render_command_bundle_with_key(&mut state.scene_cache, Some(cache_key), &bundle);
+
+        let current_bundle =
+            resolve_current_native_panel_render_command_bundle_for_state_bridge_with_input(
+                &state, &input,
+            )
+            .expect("current bundle");
+
+        assert_eq!(current_bundle.compact_bar.headline.text, "bundle");
+    }
+
+    #[test]
+    fn current_state_bridge_presentation_helper_uses_current_snapshot() {
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        let snapshot = RuntimeSnapshot {
+            status: "current".to_string(),
+            primary_source: "codex".to_string(),
+            active_session_count: 0,
+            total_session_count: 0,
+            pending_permission_count: 0,
+            pending_question_count: 0,
+            pending_permission: None,
+            pending_question: None,
+            pending_permissions: vec![],
+            pending_questions: vec![],
+            sessions: vec![],
+        };
+        let panel_state = PanelState {
+            expanded: true,
+            ..PanelState::default()
+        };
+        let cache_key = native_panel_runtime_scene_cache_key(&panel_state, &input);
+        let bundle = test_render_command_bundle("bundle", true);
+        let mut state = TestRuntimeStateBridge {
+            panel_state,
+            last_snapshot: Some(snapshot.clone()),
+            scene_cache: NativePanelRuntimeSceneCache {
+                last_snapshot: Some(snapshot),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        cache_render_command_bundle_with_key(&mut state.scene_cache, Some(cache_key), &bundle);
+
+        let presentation =
+            resolve_current_native_panel_presentation_model_for_state_bridge_with_input(
+                &state, &input,
+            )
+            .expect("current presentation");
+
+        assert_eq!(presentation.compact_bar.headline.text, "bundle");
+    }
+
     fn test_bundle(status: &str) -> PanelRuntimeSceneBundle {
         PanelRuntimeSceneBundle {
             scene: PanelScene {
@@ -716,7 +1335,7 @@ mod tests {
                 },
                 session_surface: SessionSurfaceScene { cards: vec![] },
                 settings_surface: build_settings_surface_scene(
-                    1,
+                    &[crate::native_panel_scene::fallback_panel_display_option()],
                     PanelSettingsState::default(),
                     "0.0.0",
                 ),
@@ -749,7 +1368,7 @@ mod tests {
     fn test_render_command_bundle(
         status: &str,
         transitioning: bool,
-    ) -> crate::native_panel_renderer::NativePanelRenderCommandBundle {
+    ) -> NativePanelRenderCommandBundle {
         let scene = test_bundle(status).scene;
         let layout = crate::native_panel_core::resolve_panel_layout(
             crate::native_panel_core::PanelLayoutInput {

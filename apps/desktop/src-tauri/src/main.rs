@@ -60,7 +60,9 @@ use commands::{
     set_preferred_display_index, show_main_window_interactive, skip_question,
 };
 use http_receiver::spawn_http_receiver;
-use native_panel_renderer::{NativePanelRuntimeBackend, current_native_panel_runtime_backend};
+use native_panel_renderer::facade::runtime::{
+    NativePanelRuntimeBackend, current_native_panel_runtime_backend,
+};
 use startup_service::AppStartupService;
 use web_panel_scene_service::WebPanelSceneState;
 

@@ -135,7 +135,7 @@ pub(crate) enum SceneCard {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum SceneCardHeightInput<'a> {
-    Settings,
+    Settings { row_count: usize },
     PendingPermission(&'a PendingPermissionView),
     PendingQuestion(&'a PendingQuestionView),
     PromptAssist(&'a SessionSnapshotView),
@@ -146,7 +146,9 @@ pub(crate) enum SceneCardHeightInput<'a> {
 
 pub(crate) fn resolve_scene_card_height_input(card: &SceneCard) -> SceneCardHeightInput<'_> {
     match card {
-        SceneCard::Settings { .. } => SceneCardHeightInput::Settings,
+        SceneCard::Settings { rows, .. } => SceneCardHeightInput::Settings {
+            row_count: rows.len(),
+        },
         SceneCard::PendingPermission { pending, .. } => {
             SceneCardHeightInput::PendingPermission(pending)
         }

@@ -1,16 +1,43 @@
 use echoisland_runtime::RuntimeSnapshot;
-use tauri::AppHandle;
+use std::marker::PhantomData;
+use tauri::{AppHandle, Manager};
 
 use crate::{
+    constants::MAIN_WINDOW_LABEL,
     native_panel_core::{PanelSnapshotSyncResult, PanelState},
     native_panel_scene::{PanelRuntimeSceneBundle, build_panel_runtime_scene_bundle},
 };
 
-use super::{
-    NativePanelRuntimeInputDescriptor, NativePanelRuntimeSceneCache,
-    NativePanelRuntimeSceneCacheKey, NativePanelSceneHost, cache_runtime_scene_with_key,
+use super::descriptors::NativePanelRuntimeInputDescriptor;
+use super::host_runtime_facade::native_panel_host_display_reposition_from_input_descriptor;
+use super::runtime_scene_cache::{
+    NativePanelRuntimeSceneCache, NativePanelRuntimeSceneCacheKey, cache_runtime_scene_with_key,
     native_panel_runtime_scene_cache_key,
 };
+use super::traits::NativePanelSceneHost;
+
+pub(crate) fn hide_main_webview_window_when_native_ui_enabled<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    native_ui_enabled: impl FnOnce() -> bool,
+) -> Result<(), String> {
+    if !native_ui_enabled() {
+        return Ok(());
+    }
+
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        window.hide().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+pub(crate) fn reposition_native_panel_to_selected_display_then_refresh<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    reposition: impl FnOnce(&AppHandle<R>) -> Result<(), String>,
+    refresh: impl FnOnce(&AppHandle<R>) -> Result<(), String>,
+) -> Result<(), String> {
+    reposition(app)?;
+    refresh(app)
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct NativePanelRuntimeSceneSyncResult {
@@ -41,6 +68,19 @@ pub(crate) fn sync_runtime_scene_bundle_from_input_descriptor(
     }
 }
 
+pub(crate) fn rebuild_runtime_scene_sync_result_from_snapshot_input(
+    panel_state: &mut PanelState,
+    snapshot: &RuntimeSnapshot,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> NativePanelRuntimeSceneSyncResult {
+    sync_runtime_scene_bundle_from_input_descriptor(
+        panel_state,
+        snapshot,
+        input,
+        chrono::Utc::now(),
+    )
+}
+
 pub(crate) fn cache_runtime_scene_sync_result(
     cache: &mut NativePanelRuntimeSceneCache,
     sync_result: NativePanelRuntimeSceneSyncResult,
@@ -69,11 +109,10 @@ where
         bundle,
         cache_key,
     } = sync_result;
-    host.sync_scene(
+    host.sync_scene_with_payload(
         &bundle.scene,
         bundle.runtime_render_state,
-        input.selected_display_index(),
-        input.screen_frame,
+        native_panel_host_display_reposition_from_input_descriptor(input),
     )?;
     cache_runtime_scene_with_key(
         cache,
@@ -118,6 +157,25 @@ where
     Ok(true)
 }
 
+pub(crate) fn rerender_runtime_scene_sync_result_to_host_for_panel_state_with_input_descriptor<H>(
+    host: &mut H,
+    cache: &mut NativePanelRuntimeSceneCache,
+    panel_state: &mut PanelState,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> Result<bool, H::Error>
+where
+    H: NativePanelSceneHost,
+{
+    rerender_runtime_scene_sync_result_to_host_with_input_descriptor(
+        host,
+        cache,
+        input,
+        |snapshot| {
+            rebuild_runtime_scene_sync_result_from_snapshot_input(panel_state, snapshot, input)
+        },
+    )
+}
+
 pub(crate) fn rerender_runtime_scene_sync_result_to_host_on_transition_with_input_descriptor<H, T>(
     host: &mut H,
     cache: &mut NativePanelRuntimeSceneCache,
@@ -137,6 +195,52 @@ where
         )?;
     }
     Ok(transition)
+}
+
+pub(crate) fn rerender_runtime_scene_sync_result_to_host_on_transition_for_panel_state_with_input_descriptor<
+    H,
+    T,
+>(
+    host: &mut H,
+    cache: &mut NativePanelRuntimeSceneCache,
+    panel_state: &mut PanelState,
+    transition: Option<T>,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> Result<Option<T>, H::Error>
+where
+    H: NativePanelSceneHost,
+{
+    rerender_runtime_scene_sync_result_to_host_on_transition_with_input_descriptor(
+        host,
+        cache,
+        transition,
+        input,
+        |snapshot| {
+            rebuild_runtime_scene_sync_result_from_snapshot_input(panel_state, snapshot, input)
+        },
+    )
+}
+
+pub(crate) fn mutate_panel_state_and_rerender_runtime_scene_sync_result_with_input_descriptor<H>(
+    host: &mut H,
+    cache: &mut NativePanelRuntimeSceneCache,
+    panel_state: &mut PanelState,
+    input: &NativePanelRuntimeInputDescriptor,
+    mutate: impl FnOnce(&mut PanelState) -> bool,
+) -> Result<bool, H::Error>
+where
+    H: NativePanelSceneHost,
+{
+    if !mutate(panel_state) {
+        return Ok(false);
+    }
+    let _ = rerender_runtime_scene_sync_result_to_host_for_panel_state_with_input_descriptor(
+        host,
+        cache,
+        panel_state,
+        input,
+    )?;
+    Ok(true)
 }
 
 pub(crate) trait NativePanelPlatformRuntimeBackend {
@@ -174,82 +278,68 @@ pub(crate) trait NativePanelPlatformRuntimeBackend {
     ) -> Result<(), String>;
 }
 
-pub(crate) trait NativePanelRuntimeBackend {
-    fn native_ui_enabled(&self) -> bool;
+pub(crate) trait NativePanelPlatformRuntimeFacadeApi {
+    fn native_ui_enabled() -> bool;
 
-    fn create_panel(&self) -> Result<(), String>;
+    fn create_panel() -> Result<(), String>;
 
-    fn hide_main_webview_window<R: tauri::Runtime>(&self, app: &AppHandle<R>)
-    -> Result<(), String>;
+    fn hide_main_webview_window<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+        hide_main_webview_window_when_native_ui_enabled(app, Self::native_ui_enabled)
+    }
 
-    fn spawn_platform_loops<R: tauri::Runtime + 'static>(&self, app: AppHandle<R>);
+    fn spawn_platform_loops<R: tauri::Runtime + 'static>(app: AppHandle<R>);
 
     fn update_snapshot<R: tauri::Runtime>(
-        &self,
         app: &AppHandle<R>,
         snapshot: &RuntimeSnapshot,
     ) -> Result<(), String>;
 
-    fn hide_panel<R: tauri::Runtime>(&self, app: &AppHandle<R>) -> Result<(), String>;
+    fn hide_panel<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), String>;
 
-    fn refresh_from_last_snapshot<R: tauri::Runtime>(
-        &self,
-        app: &AppHandle<R>,
-    ) -> Result<(), String>;
+    fn refresh_from_last_snapshot<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), String>;
 
-    fn reposition_to_selected_display<R: tauri::Runtime>(
-        &self,
-        app: &AppHandle<R>,
-    ) -> Result<(), String>;
+    fn reposition_to_selected_display<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), String>;
 
     fn set_shared_expanded_body_height<R: tauri::Runtime>(
-        &self,
         app: &AppHandle<R>,
         body_height: f64,
     ) -> Result<(), String>;
 }
 
-#[cfg(target_os = "macos")]
-pub(crate) struct CurrentNativePanelRuntimeBackend;
-
-#[cfg(target_os = "windows")]
-pub(crate) struct CurrentNativePanelRuntimeBackend;
-
-#[cfg(not(target_os = "macos"))]
-#[cfg(not(target_os = "windows"))]
-pub(crate) struct CurrentNativePanelRuntimeBackend;
-
-#[cfg(target_os = "macos")]
-fn current_platform_native_panel_runtime_backend()
--> crate::macos_native_test_panel::MacosNativePanelRuntimeBackendFacade {
-    crate::macos_native_test_panel::current_macos_native_panel_runtime_backend()
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct NativePanelPlatformRuntimeBackendFacade<Api> {
+    marker: PhantomData<fn() -> Api>,
 }
 
-#[cfg(target_os = "windows")]
-fn current_platform_native_panel_runtime_backend()
--> crate::windows_native_panel::WindowsNativePanelRuntimeBackendFacade {
-    crate::windows_native_panel::current_windows_native_panel_runtime_backend()
+impl<Api> NativePanelPlatformRuntimeBackendFacade<Api> {
+    pub(crate) fn new() -> Self {
+        Self {
+            marker: PhantomData,
+        }
+    }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-impl NativePanelRuntimeBackend for CurrentNativePanelRuntimeBackend {
+impl<Api> NativePanelPlatformRuntimeBackend for NativePanelPlatformRuntimeBackendFacade<Api>
+where
+    Api: NativePanelPlatformRuntimeFacadeApi,
+{
     fn native_ui_enabled(&self) -> bool {
-        current_platform_native_panel_runtime_backend().native_ui_enabled()
+        Api::native_ui_enabled()
     }
 
     fn create_panel(&self) -> Result<(), String> {
-        current_platform_native_panel_runtime_backend().create_panel()
+        Api::create_panel()
     }
 
     fn hide_main_webview_window<R: tauri::Runtime>(
         &self,
         app: &AppHandle<R>,
     ) -> Result<(), String> {
-        current_platform_native_panel_runtime_backend().hide_main_webview_window(app)
+        Api::hide_main_webview_window(app)
     }
 
     fn spawn_platform_loops<R: tauri::Runtime + 'static>(&self, app: AppHandle<R>) {
-        current_platform_native_panel_runtime_backend().spawn_platform_loops(app);
+        Api::spawn_platform_loops(app);
     }
 
     fn update_snapshot<R: tauri::Runtime>(
@@ -257,25 +347,25 @@ impl NativePanelRuntimeBackend for CurrentNativePanelRuntimeBackend {
         app: &AppHandle<R>,
         snapshot: &RuntimeSnapshot,
     ) -> Result<(), String> {
-        current_platform_native_panel_runtime_backend().update_snapshot(app, snapshot)
+        Api::update_snapshot(app, snapshot)
     }
 
     fn hide_panel<R: tauri::Runtime>(&self, app: &AppHandle<R>) -> Result<(), String> {
-        current_platform_native_panel_runtime_backend().hide_panel(app)
+        Api::hide_panel(app)
     }
 
     fn refresh_from_last_snapshot<R: tauri::Runtime>(
         &self,
         app: &AppHandle<R>,
     ) -> Result<(), String> {
-        current_platform_native_panel_runtime_backend().refresh_from_last_snapshot(app)
+        Api::refresh_from_last_snapshot(app)
     }
 
     fn reposition_to_selected_display<R: tauri::Runtime>(
         &self,
         app: &AppHandle<R>,
     ) -> Result<(), String> {
-        current_platform_native_panel_runtime_backend().reposition_to_selected_display(app)
+        Api::reposition_to_selected_display(app)
     }
 
     fn set_shared_expanded_body_height<R: tauri::Runtime>(
@@ -283,14 +373,92 @@ impl NativePanelRuntimeBackend for CurrentNativePanelRuntimeBackend {
         app: &AppHandle<R>,
         body_height: f64,
     ) -> Result<(), String> {
-        current_platform_native_panel_runtime_backend()
-            .set_shared_expanded_body_height(app, body_height)
+        Api::set_shared_expanded_body_height(app, body_height)
     }
+}
+
+pub(crate) trait NativePanelRuntimeBackend: NativePanelPlatformRuntimeBackend {
+    fn native_ui_enabled(&self) -> bool {
+        NativePanelPlatformRuntimeBackend::native_ui_enabled(self)
+    }
+
+    fn create_panel(&self) -> Result<(), String> {
+        NativePanelPlatformRuntimeBackend::create_panel(self)
+    }
+
+    fn hide_main_webview_window<R: tauri::Runtime>(
+        &self,
+        app: &AppHandle<R>,
+    ) -> Result<(), String> {
+        NativePanelPlatformRuntimeBackend::hide_main_webview_window(self, app)
+    }
+
+    fn spawn_platform_loops<R: tauri::Runtime + 'static>(&self, app: AppHandle<R>) {
+        NativePanelPlatformRuntimeBackend::spawn_platform_loops(self, app);
+    }
+
+    fn update_snapshot<R: tauri::Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        snapshot: &RuntimeSnapshot,
+    ) -> Result<(), String> {
+        NativePanelPlatformRuntimeBackend::update_snapshot(self, app, snapshot)
+    }
+
+    fn hide_panel<R: tauri::Runtime>(&self, app: &AppHandle<R>) -> Result<(), String> {
+        NativePanelPlatformRuntimeBackend::hide_panel(self, app)
+    }
+
+    fn refresh_from_last_snapshot<R: tauri::Runtime>(
+        &self,
+        app: &AppHandle<R>,
+    ) -> Result<(), String> {
+        NativePanelPlatformRuntimeBackend::refresh_from_last_snapshot(self, app)
+    }
+
+    fn reposition_to_selected_display<R: tauri::Runtime>(
+        &self,
+        app: &AppHandle<R>,
+    ) -> Result<(), String> {
+        NativePanelPlatformRuntimeBackend::reposition_to_selected_display(self, app)
+    }
+
+    fn set_shared_expanded_body_height<R: tauri::Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        body_height: f64,
+    ) -> Result<(), String> {
+        NativePanelPlatformRuntimeBackend::set_shared_expanded_body_height(self, app, body_height)
+    }
+}
+
+impl<T> NativePanelRuntimeBackend for T where T: NativePanelPlatformRuntimeBackend {}
+
+#[cfg(target_os = "macos")]
+pub(crate) type CurrentNativePanelRuntimeBackend =
+    crate::macos_native_test_panel::MacosNativePanelRuntimeBackendFacade;
+
+#[cfg(target_os = "windows")]
+pub(crate) type CurrentNativePanelRuntimeBackend =
+    crate::windows_native_panel::WindowsNativePanelRuntimeBackendFacade;
+
+#[cfg(not(target_os = "macos"))]
+#[cfg(not(target_os = "windows"))]
+pub(crate) struct CurrentNativePanelRuntimeBackend;
+
+#[cfg(target_os = "macos")]
+pub(crate) fn current_native_panel_runtime_backend() -> CurrentNativePanelRuntimeBackend {
+    crate::macos_native_test_panel::current_macos_native_panel_runtime_backend()
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn current_native_panel_runtime_backend() -> CurrentNativePanelRuntimeBackend {
+    crate::windows_native_panel::current_windows_native_panel_runtime_backend()
 }
 
 #[cfg(not(target_os = "macos"))]
 #[cfg(not(target_os = "windows"))]
-impl NativePanelRuntimeBackend for CurrentNativePanelRuntimeBackend {
+impl NativePanelPlatformRuntimeBackend for CurrentNativePanelRuntimeBackend {
     fn native_ui_enabled(&self) -> bool {
         false
     }
@@ -340,6 +508,8 @@ impl NativePanelRuntimeBackend for CurrentNativePanelRuntimeBackend {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
+#[cfg(not(target_os = "windows"))]
 pub(crate) fn current_native_panel_runtime_backend() -> CurrentNativePanelRuntimeBackend {
     CurrentNativePanelRuntimeBackend
 }
@@ -355,9 +525,14 @@ mod tests {
     use crate::{
         native_panel_core::{ExpandedSurface, PanelRect, PanelState},
         native_panel_renderer::{
-            NativePanelHost, NativePanelHostWindowDescriptor, NativePanelHostWindowState,
-            NativePanelRenderer, NativePanelRuntimeInputDescriptor, NativePanelRuntimeSceneCache,
-            NativePanelSceneHost, native_panel_runtime_scene_cache_key,
+            descriptors::{
+                NativePanelHostWindowDescriptor, NativePanelHostWindowState,
+                NativePanelRuntimeInputDescriptor,
+            },
+            runtime_scene_cache::{
+                NativePanelRuntimeSceneCache, native_panel_runtime_scene_cache_key,
+            },
+            traits::{NativePanelHost, NativePanelRenderer, NativePanelSceneHost},
         },
         native_panel_scene::{PanelRuntimeRenderState, PanelScene, PanelSceneBuildInput},
     };
@@ -450,7 +625,7 @@ mod tests {
             Utc::now(),
         );
 
-        assert!(result.snapshot_sync.play_message_card_sound);
+        assert!(result.snapshot_sync.reminder.play_sound);
         assert!(!panel_state.completion_badge_items.is_empty());
     }
 
@@ -568,7 +743,22 @@ mod tests {
         });
         let descriptor = NativePanelRuntimeInputDescriptor {
             scene_input: PanelSceneBuildInput {
-                display_count: 2,
+                display_options: vec![
+                    crate::native_panel_scene::panel_display_option_state(
+                        0,
+                        "display-1",
+                        "Built-in",
+                        3024,
+                        1964,
+                    ),
+                    crate::native_panel_scene::panel_display_option_state(
+                        1,
+                        "display-2",
+                        "Studio Display",
+                        2560,
+                        1440,
+                    ),
+                ],
                 settings: crate::native_panel_core::PanelSettingsState {
                     selected_display_index: 1,
                     ..Default::default()
@@ -652,6 +842,95 @@ mod tests {
         assert_eq!(
             host.synced_scene.as_ref().map(|scene| scene.surface),
             Some(ExpandedSurface::Settings)
+        );
+    }
+
+    #[test]
+    fn rerender_scene_sync_result_for_panel_state_uses_shared_rebuild_path() {
+        let mut panel_state = PanelState::default();
+        let mut host = TestHost::default();
+        let mut cache = NativePanelRuntimeSceneCache::default();
+        let descriptor = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        sync_and_apply_runtime_scene_from_input_descriptor(
+            &mut host,
+            &mut cache,
+            &mut panel_state,
+            &runtime_snapshot("idle", "Running"),
+            &descriptor,
+            Utc::now(),
+        )
+        .expect("seed sync and apply runtime scene");
+
+        panel_state.expanded = true;
+        panel_state.surface_mode = ExpandedSurface::Settings;
+
+        let updated =
+            super::rerender_runtime_scene_sync_result_to_host_for_panel_state_with_input_descriptor(
+                &mut host,
+                &mut cache,
+                &mut panel_state,
+                &descriptor,
+            )
+            .expect("rerender shared panel state path");
+
+        assert!(updated);
+        assert_eq!(
+            cache.last_cache_key,
+            Some(native_panel_runtime_scene_cache_key(
+                &panel_state,
+                &descriptor
+            ))
+        );
+        assert_eq!(
+            host.synced_scene.as_ref().map(|scene| scene.surface),
+            Some(ExpandedSurface::Settings)
+        );
+    }
+
+    #[test]
+    fn mutate_panel_state_and_rerender_returns_false_without_change() {
+        let mut panel_state = PanelState::default();
+        let mut host = TestHost::default();
+        let mut cache = NativePanelRuntimeSceneCache::default();
+        let descriptor = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+        sync_and_apply_runtime_scene_from_input_descriptor(
+            &mut host,
+            &mut cache,
+            &mut panel_state,
+            &runtime_snapshot("idle", "Running"),
+            &descriptor,
+            Utc::now(),
+        )
+        .expect("seed sync and apply runtime scene");
+        let seeded_surface = cache.last_scene.as_ref().map(|scene| scene.surface);
+
+        let updated =
+            super::mutate_panel_state_and_rerender_runtime_scene_sync_result_with_input_descriptor(
+                &mut host,
+                &mut cache,
+                &mut panel_state,
+                &descriptor,
+                |_| false,
+            )
+            .expect("mutate without change");
+
+        assert!(!updated);
+        assert_eq!(
+            cache.last_scene.as_ref().map(|scene| scene.surface),
+            seeded_surface
+        );
+        assert_eq!(
+            cache.last_cache_key,
+            Some(native_panel_runtime_scene_cache_key(
+                &panel_state,
+                &descriptor
+            ))
         );
     }
 }

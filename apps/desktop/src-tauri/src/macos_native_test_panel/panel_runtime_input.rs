@@ -1,44 +1,55 @@
 use objc2::MainThreadMarker;
-use objc2_app_kit::NSScreen;
 
 use crate::{
-    native_panel_renderer::{NativePanelRuntimeInputContext, NativePanelRuntimeInputDescriptor},
-    native_panel_scene_input::native_panel_runtime_input_descriptor_from_context,
+    native_panel_renderer::facade::descriptor::{
+        NativePanelRuntimeInputContext, NativePanelRuntimeInputDescriptor,
+    },
+    native_panel_scene_input::{
+        native_panel_runtime_input_descriptor_from_context,
+        native_panel_runtime_input_descriptor_from_display_options_with_screen_frame,
+    },
 };
 
-use super::panel_host_adapter::ns_rect_to_panel_rect;
+use super::panel_display_source::{
+    native_panel_screen_catalog, native_panel_screen_for_selected_index, native_panel_screen_frame,
+};
 
 pub(super) fn native_panel_runtime_input_descriptor() -> NativePanelRuntimeInputDescriptor {
     let settings = crate::app_settings::current_app_settings();
-    let context = native_panel_runtime_display_context().unwrap_or_default();
-    native_panel_runtime_input_descriptor_from_context(&settings, context)
+    native_panel_runtime_display_descriptor(&settings).unwrap_or_else(|| {
+        native_panel_runtime_input_descriptor_from_context(
+            &settings,
+            NativePanelRuntimeInputContext::default(),
+        )
+    })
 }
 
-fn native_panel_runtime_display_context() -> Option<NativePanelRuntimeInputContext> {
+fn native_panel_runtime_display_descriptor(
+    settings: &crate::app_settings::AppSettings,
+) -> Option<NativePanelRuntimeInputDescriptor> {
     let Some(mtm) = MainThreadMarker::new() else {
         return None;
     };
-    let screens = NSScreen::screens(mtm);
-    let display_count = screens.len().max(1);
-    let settings = crate::app_settings::current_app_settings();
-    let index = settings.preferred_display_index.min(display_count - 1);
-    let screen = if screens.is_empty() {
-        NSScreen::mainScreen(mtm)
-    } else {
-        Some(screens.objectAtIndex(index))
-    };
-    Some(NativePanelRuntimeInputContext {
-        display_count,
-        selected_display_index: settings.preferred_display_index,
-        screen_frame: screen.map(|screen| ns_rect_to_panel_rect(screen.frame())),
-    })
+    let catalog = native_panel_screen_catalog(mtm);
+
+    Some(
+        native_panel_runtime_input_descriptor_from_display_options_with_screen_frame(
+            &catalog.displays,
+            settings,
+            catalog.fallback_index,
+            |selected_display_index| {
+                native_panel_screen_for_selected_index(&catalog, selected_display_index, mtm)
+                    .map(|screen| native_panel_screen_frame(&screen))
+            },
+        ),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
         app_settings::AppSettings, native_panel_core::PanelRect,
-        native_panel_renderer::NativePanelRuntimeInputContext,
+        native_panel_renderer::facade::descriptor::NativePanelRuntimeInputContext,
         native_panel_scene_input::native_panel_runtime_input_descriptor_from_context,
     };
 
@@ -49,11 +60,26 @@ mod tests {
                 completion_sound_enabled: false,
                 mascot_enabled: false,
                 preferred_display_index: 3,
-                preferred_display_key: Some("external".to_string()),
+                preferred_display_key: Some("display-2".to_string()),
             },
             NativePanelRuntimeInputContext {
-                display_count: 2,
-                selected_display_index: 3,
+                display_options: vec![
+                    crate::native_panel_scene::panel_display_option_state(
+                        0,
+                        "display-1",
+                        "Built-in",
+                        3024,
+                        1964,
+                    ),
+                    crate::native_panel_scene::panel_display_option_state(
+                        1,
+                        "display-2",
+                        "Studio Display",
+                        2560,
+                        1440,
+                    ),
+                ],
+                selected_display_index: 1,
                 screen_frame: Some(PanelRect {
                     x: 10.0,
                     y: 20.0,
@@ -63,8 +89,8 @@ mod tests {
             },
         );
 
-        assert_eq!(descriptor.selected_display_index(), 3);
-        assert_eq!(descriptor.scene_input.display_count, 2);
+        assert_eq!(descriptor.selected_display_index(), 1);
+        assert_eq!(descriptor.scene_input.display_options.len(), 2);
         assert!(!descriptor.scene_input.settings.completion_sound_enabled);
         assert!(!descriptor.scene_input.settings.mascot_enabled);
         assert_eq!(
@@ -85,7 +111,7 @@ mod tests {
             NativePanelRuntimeInputContext::default(),
         );
 
-        assert_eq!(descriptor.scene_input.display_count, 1);
+        assert_eq!(descriptor.scene_input.display_options.len(), 1);
         assert_eq!(descriptor.selected_display_index(), 0);
         assert_eq!(descriptor.screen_frame, None);
     }

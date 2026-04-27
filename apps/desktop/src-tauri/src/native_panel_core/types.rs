@@ -5,6 +5,8 @@ use echoisland_runtime::{
     PendingPermissionView, PendingQuestionView, RuntimeSnapshot, SessionSnapshotView,
 };
 
+use super::PanelReminderState;
+
 #[derive(Clone, Debug)]
 pub(crate) enum StatusQueuePayload {
     Approval(PendingPermissionView),
@@ -61,6 +63,7 @@ pub(crate) enum PanelHitAction {
     CycleDisplay,
     ToggleCompletionSound,
     ToggleMascot,
+    OpenSettingsLocation,
     OpenReleasePage,
 }
 
@@ -135,7 +138,7 @@ pub(crate) struct StatusSurfaceTransition {
 #[derive(Clone, Debug)]
 pub(crate) struct PanelSnapshotSyncResult {
     pub(crate) displayed_snapshot: RuntimeSnapshot,
-    pub(crate) play_message_card_sound: bool,
+    pub(crate) reminder: PanelReminderState,
     pub(crate) panel_transition: Option<bool>,
     pub(crate) surface_transition: bool,
 }

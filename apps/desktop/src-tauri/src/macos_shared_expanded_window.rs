@@ -18,6 +18,8 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "macos")]
 use crate::constants::SHARED_EXPANDED_WINDOW_LABEL;
+#[cfg(target_os = "macos")]
+use crate::native_panel_renderer::facade::env::native_panel_feature_enabled_from_env_value;
 
 #[cfg(target_os = "macos")]
 static SHARED_EXPANDED_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
@@ -46,9 +48,8 @@ struct SharedExpandedWindowState {
 
 #[cfg(target_os = "macos")]
 pub fn shared_expanded_enabled() -> bool {
-    matches!(
-        std::env::var("CODEISLAND_MACOS_SHARED_EXPANDED").as_deref(),
-        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
+    native_panel_feature_enabled_from_env_value(
+        std::env::var("CODEISLAND_MACOS_SHARED_EXPANDED").ok(),
     )
 }
 
@@ -232,6 +233,7 @@ pub fn create_shared_expanded_window(_: &tauri::AppHandle) -> Result<(), String>
 }
 
 #[cfg(not(target_os = "macos"))]
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub fn hide_shared_expanded_window<R: tauri::Runtime>(
     _: &tauri::AppHandle<R>,
 ) -> Result<(), String> {
@@ -239,6 +241,7 @@ pub fn hide_shared_expanded_window<R: tauri::Runtime>(
 }
 
 #[cfg(not(target_os = "macos"))]
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub fn sync_shared_expanded_snapshot<R: tauri::Runtime>(
     _: &tauri::AppHandle<R>,
     _: &echoisland_runtime::RuntimeSnapshot,

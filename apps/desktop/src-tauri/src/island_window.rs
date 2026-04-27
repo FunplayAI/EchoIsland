@@ -1,7 +1,5 @@
 use crate::app_settings::current_app_settings;
-use crate::display_settings::{
-    DisplayOption, display_key_for_monitor, resolve_preferred_display_index,
-};
+use crate::display_settings::{display_options_from_monitors, resolve_preferred_display_index};
 use tauri::window::Color;
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
@@ -279,20 +277,7 @@ fn position_island_window<R: tauri::Runtime>(
 ) -> tauri::Result<()> {
     let settings = current_app_settings();
     let monitors = window.available_monitors()?;
-    let displays = monitors
-        .iter()
-        .enumerate()
-        .map(|(index, monitor)| DisplayOption {
-            index,
-            key: display_key_for_monitor(monitor),
-            name: monitor
-                .name()
-                .cloned()
-                .unwrap_or_else(|| format!("Display {}", index + 1)),
-            width: monitor.size().width,
-            height: monitor.size().height,
-        })
-        .collect::<Vec<_>>();
+    let displays = display_options_from_monitors(&monitors);
     let preferred_index =
         resolve_preferred_display_index(&displays, settings.preferred_display_key.as_deref());
     let monitor = monitors

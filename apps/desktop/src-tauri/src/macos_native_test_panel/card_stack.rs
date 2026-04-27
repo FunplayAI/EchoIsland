@@ -2,18 +2,18 @@ use objc2_app_kit::NSView;
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
 use super::card_animation::clear_card_animation_layouts;
-use super::card_metrics::{estimated_scene_card_height, estimated_scene_cards_content_height};
 use super::card_views::{
     apply_status_queue_item_visual_state, clear_subviews, create_empty_card,
     create_pending_permission_card, create_pending_question_card, create_prompt_assist_card,
     create_session_card, create_settings_surface_card, create_status_queue_card,
-    settings_surface_card_height,
+    settings_surface_card_content_from_scene_card, settings_surface_card_height,
 };
 use super::panel_constants::{EXPANDED_CARD_GAP, EXPANDED_CARD_OVERHANG};
 use super::panel_geometry::expanded_cards_width;
-use super::panel_scene_adapter::NativePanelSnapshotRenderPlan;
 use crate::native_panel_core::PanelRect;
-use crate::native_panel_renderer::NativePanelCardStackCommand;
+use crate::native_panel_renderer::facade::presentation::{
+    NativePanelCardStackCommand, NativePanelSnapshotRenderPlan, estimated_scene_card_height,
+};
 use crate::native_panel_scene::SceneCard;
 
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -34,21 +34,19 @@ pub(super) unsafe fn render_expanded_cards_with_plan(
         },
         true,
     );
-    render_card_stack_command(
-        cards_container,
-        cards_width,
-        &command,
-        Some(plan.expanded_content_height),
-    );
+    render_card_stack_command(cards_container, cards_width, &command);
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn render_settings_surface(cards_container: &NSView, cards_width: f64) {
-    let body_height = settings_surface_card_height();
+unsafe fn render_settings_surface(cards_container: &NSView, cards_width: f64, card: &SceneCard) {
+    let Some(content) = settings_surface_card_content_from_scene_card(card) else {
+        return;
+    };
+    let body_height = settings_surface_card_height(content.rows.len());
     set_cards_container_body_height(cards_container, cards_width, body_height);
     let mut cursor_y = body_height;
     if let Some(frame) = next_expanded_card_frame(&mut cursor_y, false, body_height, cards_width) {
-        let card = create_settings_surface_card(frame);
+        let card = create_settings_surface_card(frame, &content);
         cards_container.addSubview(&card);
     }
 }
@@ -135,27 +133,31 @@ unsafe fn render_card_stack_command(
     cards_container: &NSView,
     cards_width: f64,
     command: &NativePanelCardStackCommand,
-    body_height_override: Option<f64>,
 ) {
-    if matches!(command.cards.first(), Some(SceneCard::Settings { .. })) {
-        render_settings_surface(cards_container, cards_width);
+    if command.surface == crate::native_panel_core::ExpandedSurface::Settings {
+        let Some(card @ SceneCard::Settings { .. }) = command.cards.first() else {
+            return;
+        };
+        render_settings_surface(cards_container, cards_width, card);
         return;
     }
 
-    let body_height = body_height_override
-        .unwrap_or_else(|| estimated_scene_cards_content_height(&command.cards));
-
-    if command.cards.iter().any(|card| {
-        matches!(
-            card,
-            SceneCard::StatusApproval { .. } | SceneCard::StatusCompletion { .. }
-        )
-    }) {
-        render_status_queue_cards(cards_container, command, cards_width, body_height);
+    if command.surface == crate::native_panel_core::ExpandedSurface::Status {
+        render_status_queue_cards(
+            cards_container,
+            command,
+            cards_width,
+            command.content_height,
+        );
         return;
     }
 
-    render_default_cards(cards_container, command, cards_width, body_height);
+    render_default_cards(
+        cards_container,
+        command,
+        cards_width,
+        command.content_height,
+    );
 }
 
 fn set_cards_container_body_height(cards_container: &NSView, cards_width: f64, body_height: f64) {

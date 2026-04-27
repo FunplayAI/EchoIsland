@@ -4,10 +4,6 @@ use objc2_app_kit::{NSFont, NSView};
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
 use super::super::card_animation::register_card_animation_layout;
-use super::super::card_metrics::{
-    is_long_idle_session, session_card_collapsed_height, session_prompt_preview,
-    session_reply_preview, session_tool_preview,
-};
 use super::super::display_helpers::{
     compact_title, format_source, format_status, normalize_status, session_meta_line, session_title,
 };
@@ -29,16 +25,16 @@ pub(crate) unsafe fn create_session_card(
     let mtm = MainThreadMarker::new().expect("main thread required");
     let view = NSView::initWithFrame(NSView::alloc(mtm), frame);
     let status = normalize_status(&session.status);
-    let prompt = session_prompt_preview(session);
-    let reply = session_reply_preview(session);
-    let tool_preview = session_tool_preview(session);
+    let prompt = crate::native_panel_core::session_prompt_preview(session);
+    let reply = crate::native_panel_core::session_reply_preview(session);
+    let tool_preview = crate::native_panel_core::session_tool_preview(session);
     let has_body_content = prompt.is_some()
         || reply.is_some()
         || tool_preview
             .as_ref()
             .map(|(name, _)| !name.is_empty())
             .unwrap_or(false);
-    let is_compact = is_long_idle_session(session) || !has_body_content;
+    let is_compact = crate::native_panel_core::is_long_idle_session(session) || !has_body_content;
     let background = if emphasize {
         [0.40, 0.87, 0.57, 0.08]
     } else {
@@ -53,7 +49,10 @@ pub(crate) unsafe fn create_session_card(
     register_card_animation_layout(
         &view,
         frame,
-        session_card_collapsed_height(frame.size.height, is_compact),
+        crate::native_panel_core::resolve_session_card_collapsed_height(
+            frame.size.height,
+            is_compact,
+        ),
     );
 
     let (status_bg, status_fg) = status_pill_colors(&status, emphasize);

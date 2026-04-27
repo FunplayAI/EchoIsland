@@ -5,8 +5,11 @@ use tauri::AppHandle;
 use tokio::time::Duration;
 
 use crate::{
-    native_panel_core::{PANEL_ANIMATION_FRAME_MS, PanelAnimationTimeline},
-    native_panel_renderer::native_panel_timeline_descriptor_for_animation,
+    native_panel_core::PANEL_ANIMATION_FRAME_MS,
+    native_panel_renderer::facade::{
+        descriptor::native_panel_timeline_descriptor_for_animation,
+        transition::{NativePanelTransitionRequest, resolve_native_panel_animation_timeline},
+    },
 };
 
 use super::panel_globals::NATIVE_TEST_PANEL_ANIMATION_ID;
@@ -15,10 +18,11 @@ use super::panel_view_updates::with_disabled_layer_actions;
 use super::transition_logic::update_timeline_transition_state_from_descriptor;
 use super::transition_ui::apply_transition_timeline_descriptor;
 
-pub(super) async fn animate_open_transition<R: tauri::Runtime + 'static>(
+pub(super) async fn animate_transition_request<R: tauri::Runtime + 'static>(
     app: AppHandle<R>,
     handles: NativePanelHandles,
     animation_id: u64,
+    request: NativePanelTransitionRequest,
     start_height: f64,
     target_height: f64,
     card_count: usize,
@@ -27,40 +31,7 @@ pub(super) async fn animate_open_transition<R: tauri::Runtime + 'static>(
         app,
         handles,
         animation_id,
-        PanelAnimationTimeline::open(start_height, target_height, card_count),
-    )
-    .await;
-}
-
-pub(super) async fn animate_surface_switch_transition<R: tauri::Runtime + 'static>(
-    app: AppHandle<R>,
-    handles: NativePanelHandles,
-    animation_id: u64,
-    start_height: f64,
-    target_height: f64,
-    card_count: usize,
-) {
-    animate_panel_timeline(
-        app,
-        handles,
-        animation_id,
-        PanelAnimationTimeline::surface_switch(start_height, target_height, card_count),
-    )
-    .await;
-}
-
-pub(super) async fn animate_close_transition<R: tauri::Runtime + 'static>(
-    app: AppHandle<R>,
-    handles: NativePanelHandles,
-    animation_id: u64,
-    start_height: f64,
-    card_count: usize,
-) {
-    animate_panel_timeline(
-        app,
-        handles,
-        animation_id,
-        PanelAnimationTimeline::close(start_height, card_count),
+        resolve_native_panel_animation_timeline(request, start_height, target_height, card_count),
     )
     .await;
 }
@@ -69,7 +40,7 @@ async fn animate_panel_timeline<R>(
     app: AppHandle<R>,
     handles: NativePanelHandles,
     animation_id: u64,
-    timeline: PanelAnimationTimeline,
+    timeline: crate::native_panel_core::PanelAnimationTimeline,
 ) where
     R: tauri::Runtime + 'static,
 {

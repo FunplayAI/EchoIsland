@@ -2,8 +2,11 @@ use crate::{
     native_panel_core::{
         HoverTransition, PanelAnimationDescriptor, PanelHitTarget, PanelInteractionCommand,
         PanelLayout, PanelPoint, PanelRect, point_in_rect, resolve_native_panel_host_frame,
+        resolve_settings_surface_card_height, settings_surface_row_frame,
     },
-    native_panel_scene::{PanelScene, PanelSceneBuildInput, SceneHitTarget},
+    native_panel_scene::{
+        PanelDisplayOptionState, PanelScene, PanelSceneBuildInput, SceneCard, SceneHitTarget,
+    },
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -18,9 +21,18 @@ impl NativePanelRuntimeInputDescriptor {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) fn native_panel_runtime_input_descriptor_with_screen_frame(
+    screen_frame: Option<PanelRect>,
+) -> NativePanelRuntimeInputDescriptor {
+    NativePanelRuntimeInputDescriptor {
+        scene_input: PanelSceneBuildInput::default(),
+        screen_frame,
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct NativePanelRuntimeInputContext {
-    pub(crate) display_count: usize,
+    pub(crate) display_options: Vec<PanelDisplayOptionState>,
     pub(crate) selected_display_index: usize,
     pub(crate) screen_frame: Option<PanelRect>,
 }
@@ -266,6 +278,19 @@ pub(crate) enum NativePanelPlatformEvent {
     CycleDisplay,
     ToggleCompletionSound,
     ToggleMascot,
+    OpenSettingsLocation,
+    OpenReleasePage,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum NativePanelRuntimeCommand {
+    FocusSession(String),
+    ToggleSettingsSurface,
+    QuitApplication,
+    CycleDisplay,
+    ToggleCompletionSound,
+    ToggleMascot,
+    OpenSettingsLocation,
     OpenReleasePage,
 }
 
@@ -275,7 +300,23 @@ pub(crate) enum NativePanelPointerInputOutcome {
     Click(Option<NativePanelPlatformEvent>),
 }
 
-pub(crate) trait NativePanelPlatformEventHandler {
+impl NativePanelPointerInputOutcome {
+    pub(crate) fn into_hover_transition(self) -> Option<HoverTransition> {
+        match self {
+            NativePanelPointerInputOutcome::Hover(transition) => transition,
+            NativePanelPointerInputOutcome::Click(_) => None,
+        }
+    }
+
+    pub(crate) fn into_click_event(self) -> Option<NativePanelPlatformEvent> {
+        match self {
+            NativePanelPointerInputOutcome::Click(event) => event,
+            NativePanelPointerInputOutcome::Hover(_) => None,
+        }
+    }
+}
+
+pub(crate) trait NativePanelRuntimeCommandCapability {
     type Error;
 
     fn focus_session(&mut self, session_id: String) -> Result<(), Self::Error>;
@@ -290,7 +331,90 @@ pub(crate) trait NativePanelPlatformEventHandler {
 
     fn toggle_mascot(&mut self) -> Result<(), Self::Error>;
 
+    fn open_settings_location(&mut self) -> Result<(), Self::Error>;
+
     fn open_release_page(&mut self) -> Result<(), Self::Error>;
+}
+
+pub(crate) trait NativePanelRuntimeCommandHandler:
+    NativePanelRuntimeCommandCapability
+{
+    fn execute_runtime_command(
+        &mut self,
+        command: NativePanelRuntimeCommand,
+    ) -> Result<(), Self::Error> {
+        match command {
+            NativePanelRuntimeCommand::FocusSession(session_id) => self.focus_session(session_id),
+            NativePanelRuntimeCommand::ToggleSettingsSurface => self.toggle_settings_surface(),
+            NativePanelRuntimeCommand::QuitApplication => self.quit_application(),
+            NativePanelRuntimeCommand::CycleDisplay => self.cycle_display(),
+            NativePanelRuntimeCommand::ToggleCompletionSound => self.toggle_completion_sound(),
+            NativePanelRuntimeCommand::ToggleMascot => self.toggle_mascot(),
+            NativePanelRuntimeCommand::OpenSettingsLocation => self.open_settings_location(),
+            NativePanelRuntimeCommand::OpenReleasePage => self.open_release_page(),
+        }
+    }
+}
+
+impl<T> NativePanelRuntimeCommandHandler for T where T: NativePanelRuntimeCommandCapability {}
+
+#[derive(Default)]
+pub(crate) struct NativePanelQueuedRuntimeCommandHandler {
+    events: Vec<NativePanelPlatformEvent>,
+}
+
+impl NativePanelQueuedRuntimeCommandHandler {
+    pub(crate) fn take_events(self) -> Vec<NativePanelPlatformEvent> {
+        self.events
+    }
+}
+
+impl NativePanelRuntimeCommandCapability for NativePanelQueuedRuntimeCommandHandler {
+    type Error = String;
+
+    fn focus_session(&mut self, session_id: String) -> Result<(), Self::Error> {
+        self.events
+            .push(NativePanelPlatformEvent::FocusSession(session_id));
+        Ok(())
+    }
+
+    fn toggle_settings_surface(&mut self) -> Result<(), Self::Error> {
+        self.events
+            .push(NativePanelPlatformEvent::ToggleSettingsSurface);
+        Ok(())
+    }
+
+    fn quit_application(&mut self) -> Result<(), Self::Error> {
+        self.events.push(NativePanelPlatformEvent::QuitApplication);
+        Ok(())
+    }
+
+    fn cycle_display(&mut self) -> Result<(), Self::Error> {
+        self.events.push(NativePanelPlatformEvent::CycleDisplay);
+        Ok(())
+    }
+
+    fn toggle_completion_sound(&mut self) -> Result<(), Self::Error> {
+        self.events
+            .push(NativePanelPlatformEvent::ToggleCompletionSound);
+        Ok(())
+    }
+
+    fn toggle_mascot(&mut self) -> Result<(), Self::Error> {
+        self.events.push(NativePanelPlatformEvent::ToggleMascot);
+        Ok(())
+    }
+
+    fn open_settings_location(&mut self) -> Result<(), Self::Error> {
+        self.events
+            .push(NativePanelPlatformEvent::OpenSettingsLocation);
+        Ok(())
+    }
+
+    fn open_release_page(&mut self) -> Result<(), Self::Error> {
+        self.events.push(NativePanelPlatformEvent::OpenReleasePage);
+        Ok(())
+    }
 }
 
 impl From<SceneHitTarget> for PanelHitTarget {
@@ -302,22 +426,63 @@ impl From<SceneHitTarget> for PanelHitTarget {
     }
 }
 
+pub(crate) fn native_panel_runtime_command_for_platform_event(
+    event: NativePanelPlatformEvent,
+) -> NativePanelRuntimeCommand {
+    match event {
+        NativePanelPlatformEvent::FocusSession(session_id) => {
+            NativePanelRuntimeCommand::FocusSession(session_id)
+        }
+        NativePanelPlatformEvent::ToggleSettingsSurface => {
+            NativePanelRuntimeCommand::ToggleSettingsSurface
+        }
+        NativePanelPlatformEvent::QuitApplication => NativePanelRuntimeCommand::QuitApplication,
+        NativePanelPlatformEvent::CycleDisplay => NativePanelRuntimeCommand::CycleDisplay,
+        NativePanelPlatformEvent::ToggleCompletionSound => {
+            NativePanelRuntimeCommand::ToggleCompletionSound
+        }
+        NativePanelPlatformEvent::ToggleMascot => NativePanelRuntimeCommand::ToggleMascot,
+        NativePanelPlatformEvent::OpenSettingsLocation => {
+            NativePanelRuntimeCommand::OpenSettingsLocation
+        }
+        NativePanelPlatformEvent::OpenReleasePage => NativePanelRuntimeCommand::OpenReleasePage,
+    }
+}
+
+pub(crate) fn dispatch_native_panel_runtime_command<H>(
+    handler: &mut H,
+    command: NativePanelRuntimeCommand,
+) -> Result<(), H::Error>
+where
+    H: NativePanelRuntimeCommandHandler,
+{
+    handler.execute_runtime_command(command)
+}
+
+pub(crate) fn dispatch_native_panel_runtime_commands<H>(
+    handler: &mut H,
+    commands: impl IntoIterator<Item = NativePanelRuntimeCommand>,
+) -> Result<(), H::Error>
+where
+    H: NativePanelRuntimeCommandHandler,
+{
+    for command in commands {
+        dispatch_native_panel_runtime_command(handler, command)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn dispatch_native_panel_platform_event<H>(
     handler: &mut H,
     event: NativePanelPlatformEvent,
 ) -> Result<(), H::Error>
 where
-    H: NativePanelPlatformEventHandler,
+    H: NativePanelRuntimeCommandHandler,
 {
-    match event {
-        NativePanelPlatformEvent::FocusSession(session_id) => handler.focus_session(session_id),
-        NativePanelPlatformEvent::ToggleSettingsSurface => handler.toggle_settings_surface(),
-        NativePanelPlatformEvent::QuitApplication => handler.quit_application(),
-        NativePanelPlatformEvent::CycleDisplay => handler.cycle_display(),
-        NativePanelPlatformEvent::ToggleCompletionSound => handler.toggle_completion_sound(),
-        NativePanelPlatformEvent::ToggleMascot => handler.toggle_mascot(),
-        NativePanelPlatformEvent::OpenReleasePage => handler.open_release_page(),
-    }
+    dispatch_native_panel_runtime_command(
+        handler,
+        native_panel_runtime_command_for_platform_event(event),
+    )
 }
 
 pub(crate) fn dispatch_native_panel_platform_events<H>(
@@ -325,12 +490,14 @@ pub(crate) fn dispatch_native_panel_platform_events<H>(
     events: impl IntoIterator<Item = NativePanelPlatformEvent>,
 ) -> Result<(), H::Error>
 where
-    H: NativePanelPlatformEventHandler,
+    H: NativePanelRuntimeCommandHandler,
 {
-    for event in events {
-        dispatch_native_panel_platform_event(handler, event)?;
-    }
-    Ok(())
+    dispatch_native_panel_runtime_commands(
+        handler,
+        events
+            .into_iter()
+            .map(native_panel_runtime_command_for_platform_event),
+    )
 }
 
 pub(crate) fn native_panel_platform_event_for_hit_target(
@@ -348,6 +515,9 @@ pub(crate) fn native_panel_platform_event_for_hit_target(
         }
         crate::native_panel_core::PanelHitAction::ToggleMascot => {
             NativePanelPlatformEvent::ToggleMascot
+        }
+        crate::native_panel_core::PanelHitAction::OpenSettingsLocation => {
+            NativePanelPlatformEvent::OpenSettingsLocation
         }
         crate::native_panel_core::PanelHitAction::OpenReleasePage => {
             NativePanelPlatformEvent::OpenReleasePage
@@ -397,6 +567,34 @@ pub(crate) fn native_panel_platform_event_at_point(
 ) -> Option<NativePanelPlatformEvent> {
     native_panel_pointer_region_at_point(regions, point)
         .and_then(native_panel_platform_event_for_pointer_region)
+}
+
+pub(crate) fn queue_native_panel_platform_event(
+    events: &mut Vec<NativePanelPlatformEvent>,
+    event: Option<NativePanelPlatformEvent>,
+) -> Option<NativePanelPlatformEvent> {
+    if let Some(event) = event.clone() {
+        events.push(event);
+    }
+    event
+}
+
+pub(crate) fn queue_native_panel_platform_event_for_pointer_region(
+    events: &mut Vec<NativePanelPlatformEvent>,
+    region: &NativePanelPointerRegion,
+) -> Option<NativePanelPlatformEvent> {
+    queue_native_panel_platform_event(
+        events,
+        native_panel_platform_event_for_pointer_region(region),
+    )
+}
+
+pub(crate) fn queue_native_panel_platform_event_at_point(
+    events: &mut Vec<NativePanelPlatformEvent>,
+    regions: &[NativePanelPointerRegion],
+    point: PanelPoint,
+) -> Option<NativePanelPlatformEvent> {
+    queue_native_panel_platform_event(events, native_panel_platform_event_at_point(regions, point))
 }
 
 pub(crate) fn native_panel_pointer_state_at_point(
@@ -566,6 +764,10 @@ fn push_scene_hit_target_regions(
     }
 
     let cards = absolute_panel_rect(layout, layout.cards_frame);
+    if push_settings_hit_target_regions(regions, cards, scene) {
+        return;
+    }
+
     let target_count = scene.hit_targets.len();
     let row_height = cards.height / target_count as f64;
     for (index, target) in scene.hit_targets.iter().cloned().enumerate() {
@@ -580,6 +782,31 @@ fn push_scene_hit_target_regions(
             NativePanelPointerRegionKind::HitTarget(target.into()),
         );
     }
+}
+
+fn push_settings_hit_target_regions(
+    regions: &mut Vec<NativePanelPointerRegion>,
+    cards: PanelRect,
+    scene: &PanelScene,
+) -> bool {
+    let Some(SceneCard::Settings { rows, .. }) = scene.cards.first() else {
+        return false;
+    };
+    let card_height = resolve_settings_surface_card_height(rows.len());
+    let card_frame = PanelRect {
+        x: cards.x,
+        y: cards.y + (cards.height - card_height).max(0.0),
+        width: cards.width,
+        height: card_height,
+    };
+    for (index, target) in scene.hit_targets.iter().cloned().enumerate() {
+        push_region(
+            regions,
+            settings_surface_row_frame(card_frame, index),
+            NativePanelPointerRegionKind::HitTarget(target.into()),
+        );
+    }
+    true
 }
 
 fn absolute_panel_rect(layout: PanelLayout, local_frame: PanelRect) -> PanelRect {
@@ -614,16 +841,19 @@ mod tests {
     };
     use super::{
         NativePanelHostWindowDescriptor, NativePanelHostWindowDescriptorPatch,
-        NativePanelPlatformEvent, NativePanelPointerInput, NativePanelPointerInputOutcome,
-        NativePanelTimelineDescriptor, absolute_panel_rect, native_panel_hit_target_at_point,
-        native_panel_host_window_descriptor, native_panel_host_window_frame,
-        native_panel_platform_event_at_point, native_panel_platform_event_for_interaction_command,
+        NativePanelHostWindowState, NativePanelPlatformEvent, NativePanelPointerInput,
+        NativePanelPointerInputOutcome, NativePanelRuntimeCommand, NativePanelTimelineDescriptor,
+        absolute_panel_rect, native_panel_hit_target_at_point, native_panel_host_window_descriptor,
+        native_panel_host_window_frame, native_panel_platform_event_at_point,
+        native_panel_platform_event_for_interaction_command,
         native_panel_platform_event_for_pointer_input,
         native_panel_platform_event_for_pointer_region, native_panel_pointer_input_outcome,
         native_panel_pointer_inside_for_input, native_panel_pointer_inside_regions,
         native_panel_pointer_region_at_point, native_panel_pointer_state_at_point,
-        native_panel_timeline_descriptor, native_panel_timeline_descriptor_for_animation,
-        patch_native_panel_host_window_descriptor, resolve_native_panel_pointer_regions,
+        native_panel_runtime_command_for_platform_event, native_panel_timeline_descriptor,
+        native_panel_timeline_descriptor_for_animation, patch_native_panel_host_window_descriptor,
+        queue_native_panel_platform_event_at_point,
+        queue_native_panel_platform_event_for_pointer_region, resolve_native_panel_pointer_regions,
         sync_native_panel_host_window_screen_frame,
         sync_native_panel_host_window_shared_body_height, sync_native_panel_host_window_timeline,
         sync_native_panel_host_window_visibility,
@@ -717,6 +947,52 @@ mod tests {
     }
 
     #[test]
+    fn platform_event_maps_to_runtime_command() {
+        assert_eq!(
+            native_panel_runtime_command_for_platform_event(
+                NativePanelPlatformEvent::FocusSession("session-1".to_string())
+            ),
+            NativePanelRuntimeCommand::FocusSession("session-1".to_string())
+        );
+        assert_eq!(
+            native_panel_runtime_command_for_platform_event(
+                NativePanelPlatformEvent::ToggleCompletionSound
+            ),
+            NativePanelRuntimeCommand::ToggleCompletionSound
+        );
+        assert_eq!(
+            native_panel_runtime_command_for_platform_event(
+                NativePanelPlatformEvent::OpenReleasePage
+            ),
+            NativePanelRuntimeCommand::OpenReleasePage
+        );
+    }
+
+    #[test]
+    fn pointer_input_outcome_projects_expected_variant_payload() {
+        assert_eq!(
+            NativePanelPointerInputOutcome::Hover(Some(HoverTransition::Expand))
+                .into_hover_transition(),
+            Some(HoverTransition::Expand)
+        );
+        assert_eq!(
+            NativePanelPointerInputOutcome::Click(Some(NativePanelPlatformEvent::QuitApplication))
+                .into_click_event(),
+            Some(NativePanelPlatformEvent::QuitApplication)
+        );
+        assert_eq!(
+            NativePanelPointerInputOutcome::Click(Some(NativePanelPlatformEvent::QuitApplication))
+                .into_hover_transition(),
+            None
+        );
+        assert_eq!(
+            NativePanelPointerInputOutcome::Hover(Some(HoverTransition::Collapse))
+                .into_click_event(),
+            None
+        );
+    }
+
+    #[test]
     fn pointer_region_maps_to_platform_event() {
         let frame = PanelRect {
             x: 0.0,
@@ -790,6 +1066,74 @@ mod tests {
             &regions,
             PanelPoint { x: 180.0, y: 180.0 }
         ));
+    }
+
+    #[test]
+    fn queue_pointer_region_platform_event_pushes_focus_event() {
+        let mut events = Vec::new();
+        let region = NativePanelPointerRegion {
+            frame: PanelRect {
+                x: 10.0,
+                y: 10.0,
+                width: 40.0,
+                height: 40.0,
+            },
+            kind: NativePanelPointerRegionKind::HitTarget(PanelHitTarget {
+                action: PanelHitAction::FocusSession,
+                value: "session-1".to_string(),
+            }),
+        };
+
+        let event = queue_native_panel_platform_event_for_pointer_region(&mut events, &region);
+
+        assert_eq!(
+            event,
+            Some(NativePanelPlatformEvent::FocusSession(
+                "session-1".to_string()
+            ))
+        );
+        assert_eq!(
+            events,
+            vec![NativePanelPlatformEvent::FocusSession(
+                "session-1".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn queue_platform_event_at_point_pushes_hit_target_event() {
+        let regions = vec![NativePanelPointerRegion {
+            frame: PanelRect {
+                x: 10.0,
+                y: 10.0,
+                width: 40.0,
+                height: 40.0,
+            },
+            kind: NativePanelPointerRegionKind::HitTarget(PanelHitTarget {
+                action: PanelHitAction::FocusSession,
+                value: "session-1".to_string(),
+            }),
+        }];
+        let mut events = Vec::new();
+
+        let event = queue_native_panel_platform_event_at_point(
+            &mut events,
+            &regions,
+            PanelPoint { x: 20.0, y: 20.0 },
+        );
+
+        assert_eq!(
+            event,
+            Some(NativePanelPlatformEvent::FocusSession(
+                "session-1".to_string()
+            ))
+        );
+        assert_eq!(
+            events,
+            vec![NativePanelPlatformEvent::FocusSession(
+                "session-1".to_string()
+            )]
+        );
     }
 
     #[test]
@@ -966,6 +1310,97 @@ mod tests {
     }
 
     #[test]
+    fn settings_pointer_regions_match_visible_rows_without_settings_folder_action() {
+        let layout = resolve_panel_layout(PanelLayoutInput {
+            screen_frame: PanelRect {
+                x: 0.0,
+                y: 0.0,
+                width: 1440.0,
+                height: 900.0,
+            },
+            metrics: PanelGeometryMetrics {
+                compact_height: 38.0,
+                compact_width: 253.0,
+                expanded_width: 283.0,
+                panel_width: 420.0,
+            },
+            canvas_height: 260.0,
+            visible_height: 260.0,
+            bar_progress: 1.0,
+            height_progress: 1.0,
+            drop_progress: 1.0,
+            content_visibility: 1.0,
+            collapsed_height: crate::native_panel_core::COLLAPSED_PANEL_HEIGHT,
+            drop_distance: crate::native_panel_core::PANEL_DROP_DISTANCE,
+            content_top_gap: crate::native_panel_core::EXPANDED_CONTENT_TOP_GAP,
+            content_bottom_inset: crate::native_panel_core::EXPANDED_CONTENT_BOTTOM_INSET,
+            cards_side_inset: crate::native_panel_core::EXPANDED_CARDS_SIDE_INSET,
+            shoulder_size: crate::native_panel_core::COMPACT_SHOULDER_SIZE,
+            separator_side_inset: crate::native_panel_core::EXPANDED_SEPARATOR_SIDE_INSET,
+        });
+        let state = PanelState {
+            expanded: true,
+            surface_mode: ExpandedSurface::Settings,
+            ..PanelState::default()
+        };
+        let scene = build_panel_scene(
+            &state,
+            &RuntimeSnapshot {
+                status: "Idle".to_string(),
+                primary_source: "claude".to_string(),
+                active_session_count: 0,
+                total_session_count: 0,
+                pending_permission_count: 0,
+                pending_question_count: 0,
+                pending_permission: None,
+                pending_question: None,
+                pending_permissions: Vec::new(),
+                pending_questions: Vec::new(),
+                sessions: Vec::new(),
+            },
+            &PanelSceneBuildInput::default(),
+        );
+
+        let regions = resolve_native_panel_pointer_regions(layout, &scene, None);
+        let hit_regions = regions
+            .iter()
+            .filter(|region| matches!(region.kind, NativePanelPointerRegionKind::HitTarget(_)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(hit_regions.len(), 4);
+        assert!(!hit_regions.iter().any(|region| matches!(
+            region.kind,
+            NativePanelPointerRegionKind::HitTarget(PanelHitTarget {
+                action: PanelHitAction::OpenSettingsLocation,
+                ..
+            })
+        )));
+
+        let mute_region = hit_regions
+            .iter()
+            .find(|region| {
+                matches!(
+                    region.kind,
+                    NativePanelPointerRegionKind::HitTarget(PanelHitTarget {
+                        action: PanelHitAction::ToggleCompletionSound,
+                        ..
+                    })
+                )
+            })
+            .expect("mute sound region");
+        assert_eq!(
+            native_panel_platform_event_at_point(
+                &regions,
+                PanelPoint {
+                    x: mute_region.frame.x + 8.0,
+                    y: mute_region.frame.y + 2.0,
+                },
+            ),
+            Some(NativePanelPlatformEvent::ToggleCompletionSound)
+        );
+    }
+
+    #[test]
     fn pointer_regions_do_not_claim_transparent_canvas_margins() {
         let layout = pointer_test_layout();
         let scene = pointer_test_scene();
@@ -1030,7 +1465,7 @@ mod tests {
                 width: 160.0,
                 height: 100.0,
             })),
-            crate::native_panel_renderer::NativePanelHostWindowState {
+            NativePanelHostWindowState {
                 frame: Some(PanelRect {
                     x: 30.0,
                     y: 40.0,

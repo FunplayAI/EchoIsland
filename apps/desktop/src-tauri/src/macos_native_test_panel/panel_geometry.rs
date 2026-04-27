@@ -283,16 +283,6 @@ pub(super) fn compose_local_rect(parent_frame: NSRect, child_frame: NSRect) -> N
     ))
 }
 
-pub(super) fn point_in_rect(point: NSPoint, rect: NSRect) -> bool {
-    crate::native_panel_core::point_in_rect(
-        crate::native_panel_core::PanelPoint {
-            x: point.x,
-            y: point.y,
-        },
-        panel_rect(rect),
-    )
-}
-
 fn panel_rect(rect: NSRect) -> crate::native_panel_core::PanelRect {
     crate::native_panel_core::PanelRect {
         x: rect.origin.x,

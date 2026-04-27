@@ -1,22 +1,14 @@
-use echoisland_runtime::RuntimeSnapshot;
-use objc2_app_kit::NSPanel;
 use objc2_foundation::NSRect;
-use tauri::AppHandle;
 
 use super::panel_host_adapter::MacosNativePanelHostAdapter;
-use super::panel_host_descriptor::{
-    sync_native_host_window_screen_frame, sync_native_host_window_shared_body_height,
-    sync_native_host_window_timeline, sync_native_host_window_visibility,
-};
-use super::panel_refs::{native_panel_handles, native_panel_state, panel_from_ptr};
-use super::panel_transition_entry::{
-    begin_native_panel_surface_transition, begin_native_panel_transition,
-};
-use super::panel_types::{NativePanelHandles, NativePanelRenderPayload};
-use crate::native_panel_renderer::{
-    NativePanelHost, NativePanelHostWindowDescriptor, NativePanelHostWindowState,
-    NativePanelPlatformEvent, NativePanelPointerRegion, NativePanelSceneHost,
-    NativePanelTimelineDescriptor,
+use super::panel_host_commands::current_native_panel_window_frame;
+use super::panel_refs::native_panel_state;
+use crate::native_panel_renderer::facade::{
+    command::NativePanelPlatformEvent,
+    descriptor::{
+        NativePanelHostWindowDescriptor, NativePanelHostWindowState, NativePanelPointerRegion,
+    },
+    host::{NativePanelHost, NativePanelSceneHost, sync_runtime_pointer_regions_in_state},
 };
 
 #[allow(dead_code)]
@@ -58,7 +50,9 @@ impl NativePanelHost for MacosNativePanelRuntimeHost {
         regions: &[NativePanelPointerRegion],
     ) -> Result<(), Self::Error> {
         self.adapter.sync_pointer_regions(regions)?;
-        sync_runtime_pointer_regions(regions);
+        let _ = with_native_runtime_panel_state_mut(|state| {
+            sync_runtime_pointer_regions_in_state(state, regions);
+        });
         Ok(())
     }
 
@@ -92,108 +86,6 @@ impl MacosNativePanelRuntimeHost {
     ) {
         self.adapter.sync_from_native_panel_state(state, frame);
     }
-
-    pub(super) unsafe fn with_window<T>(
-        f: impl FnOnce(NativePanelHandles, &'static NSPanel) -> T,
-    ) -> Option<T> {
-        let handles = current_runtime_panel_handles()?;
-        Some(f(handles, unsafe { panel_from_ptr(handles.panel) }))
-    }
-
-    pub(super) unsafe fn order_out() -> Option<()> {
-        unsafe {
-            Self::with_window(|_, panel| {
-                let _ = sync_runtime_host_visibility(false);
-                panel.orderOut(None);
-            })
-        }
-    }
-
-    pub(super) unsafe fn reposition_to_screen(
-        preferred_display_index: usize,
-        screen_frame: NSRect,
-        centered_frame: NSRect,
-    ) -> Option<()> {
-        unsafe {
-            Self::with_window(|_, panel| {
-                panel.setFrame_display(centered_frame, true);
-                let _ = sync_runtime_host_visibility(true);
-                let _ = sync_runtime_host_screen_frame(preferred_display_index, screen_frame);
-            })
-        }
-    }
-
-    pub(super) unsafe fn current_window_frame() -> Option<NSRect> {
-        unsafe { Self::with_window(|_, panel| panel.frame()) }
-    }
-
-    pub(super) fn rerender_from_last_snapshot<R: tauri::Runtime>(
-        app: &AppHandle<R>,
-    ) -> Result<(), String> {
-        let Some(handles) = current_runtime_panel_handles() else {
-            return Ok(());
-        };
-        let Some(payload) = current_runtime_panel_render_payload() else {
-            return Ok(());
-        };
-        dispatch_runtime_panel_render_payload(app, handles, payload)
-    }
-
-    pub(super) fn apply_render_payload<R: tauri::Runtime>(
-        app: &AppHandle<R>,
-        payload: NativePanelRenderPayload,
-    ) -> Result<(), String> {
-        let Some(handles) = current_runtime_panel_handles() else {
-            return Ok(());
-        };
-        dispatch_runtime_panel_render_payload(app, handles, payload)
-    }
-
-    pub(super) fn begin_transition<R: tauri::Runtime>(
-        app: &AppHandle<R>,
-        snapshot: RuntimeSnapshot,
-        expanded: bool,
-    ) -> Result<(), String> {
-        let app_for_transition = app.clone();
-        app.run_on_main_thread(move || unsafe {
-            dispatch_runtime_panel_transition(app_for_transition, snapshot, expanded);
-        })
-        .map_err(|error| error.to_string())
-    }
-
-    pub(super) fn begin_surface_transition<R: tauri::Runtime>(
-        app: &AppHandle<R>,
-        snapshot: RuntimeSnapshot,
-    ) -> Result<(), String> {
-        let app_for_transition = app.clone();
-        app.run_on_main_thread(move || unsafe {
-            dispatch_runtime_panel_surface_transition(app_for_transition, snapshot);
-        })
-        .map_err(|error| error.to_string())
-    }
-}
-
-#[allow(unsafe_op_in_unsafe_fn)]
-pub(super) unsafe fn dispatch_runtime_panel_transition<R: tauri::Runtime>(
-    app: AppHandle<R>,
-    snapshot: RuntimeSnapshot,
-    expanded: bool,
-) {
-    let Some(handles) = current_runtime_panel_handles() else {
-        return;
-    };
-    begin_native_panel_transition(app, handles, snapshot, expanded);
-}
-
-#[allow(unsafe_op_in_unsafe_fn)]
-pub(super) unsafe fn dispatch_runtime_panel_surface_transition<R: tauri::Runtime>(
-    app: AppHandle<R>,
-    snapshot: RuntimeSnapshot,
-) {
-    let Some(handles) = current_runtime_panel_handles() else {
-        return;
-    };
-    begin_native_panel_surface_transition(app, handles, snapshot);
 }
 
 pub(super) fn with_native_runtime_panel_state_mut<T>(
@@ -203,126 +95,8 @@ pub(super) fn with_native_runtime_panel_state_mut<T>(
         .and_then(|state_mutex| state_mutex.lock().ok().map(|mut state| f(&mut state)))
 }
 
-pub(super) fn current_runtime_panel_handles() -> Option<NativePanelHandles> {
-    native_panel_handles()
-}
-
-pub(super) fn current_runtime_panel_render_payload() -> Option<NativePanelRenderPayload> {
-    let mut host = MacosNativePanelRuntimeHost::capture()?;
-    native_panel_state().and_then(|state_mutex| {
-        state_mutex.lock().ok().and_then(|state| {
-            current_runtime_panel_render_payload_for_state_and_host(&state, &mut host)
-        })
-    })
-}
-
-pub(super) fn dispatch_runtime_panel_render_payload<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    handles: NativePanelHandles,
-    payload: NativePanelRenderPayload,
-) -> Result<(), String> {
-    app.run_on_main_thread(move || unsafe {
-        crate::macos_native_test_panel::panel_snapshot::apply_native_panel_render_payload(
-            handles, payload,
-        );
-    })
-    .map_err(|error| error.to_string())
-}
-
-pub(super) fn rerender_runtime_panel_from_last_snapshot<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-) -> Result<(), String> {
-    MacosNativePanelRuntimeHost::rerender_from_last_snapshot(app)
-}
-
-pub(super) fn sync_runtime_host_visibility(visible: bool) -> Option<()> {
-    with_native_runtime_panel_state_mut(|state| {
-        sync_runtime_host_visibility_in_state(state, visible);
-    })
-}
-
-pub(super) fn sync_runtime_host_visibility_in_state(
-    state: &mut super::panel_types::NativePanelState,
-    visible: bool,
-) {
-    sync_native_host_window_visibility(state, visible);
-}
-
-pub(super) fn sync_runtime_pointer_regions(regions: &[NativePanelPointerRegion]) -> Option<()> {
-    with_native_runtime_panel_state_mut(|state| {
-        sync_runtime_pointer_regions_in_state(state, regions);
-    })
-}
-
-pub(super) fn sync_runtime_pointer_regions_in_state(
-    state: &mut super::panel_types::NativePanelState,
-    regions: &[NativePanelPointerRegion],
-) {
-    state.pointer_regions = regions.to_vec();
-}
-
-pub(super) fn sync_runtime_host_screen_frame(
-    preferred_display_index: usize,
-    screen_frame: NSRect,
-) -> Option<()> {
-    with_native_runtime_panel_state_mut(|state| {
-        sync_runtime_host_screen_frame_in_state(state, preferred_display_index, screen_frame);
-    })
-}
-
-pub(super) fn sync_runtime_host_screen_frame_in_state(
-    state: &mut super::panel_types::NativePanelState,
-    preferred_display_index: usize,
-    screen_frame: NSRect,
-) {
-    sync_native_host_window_screen_frame(state, preferred_display_index, screen_frame);
-}
-
-#[allow(dead_code)]
-pub(super) fn sync_runtime_host_shared_body_height(shared_body_height: Option<f64>) -> Option<()> {
-    with_native_runtime_panel_state_mut(|state| {
-        sync_runtime_host_shared_body_height_in_state(state, shared_body_height);
-    })
-}
-
-pub(super) fn sync_runtime_host_shared_body_height_in_state(
-    state: &mut super::panel_types::NativePanelState,
-    shared_body_height: Option<f64>,
-) {
-    sync_native_host_window_shared_body_height(state, shared_body_height);
-}
-
-#[allow(dead_code)]
-pub(super) fn sync_runtime_host_timeline(descriptor: NativePanelTimelineDescriptor) -> Option<()> {
-    with_native_runtime_panel_state_mut(|state| {
-        sync_runtime_host_timeline_in_state(state, descriptor);
-    })
-}
-
-pub(super) fn sync_runtime_host_timeline_in_state(
-    state: &mut super::panel_types::NativePanelState,
-    descriptor: NativePanelTimelineDescriptor,
-) {
-    sync_native_host_window_timeline(state, descriptor);
-}
-
 fn current_native_panel_frame() -> Option<NSRect> {
-    unsafe { MacosNativePanelRuntimeHost::current_window_frame() }
-}
-
-fn current_runtime_panel_render_payload_for_state_and_host(
-    state: &super::panel_types::NativePanelState,
-    host: &mut MacosNativePanelRuntimeHost,
-) -> Option<NativePanelRenderPayload> {
-    let snapshot = host.adapter.renderer.scene_cache.last_snapshot.clone()?;
-    Some(NativePanelRenderPayload {
-        snapshot,
-        expanded: state.expanded,
-        shared_body_height: state.shared_body_height,
-        transitioning: state.transitioning,
-        transition_cards_progress: state.transition_cards_progress,
-        transition_cards_entering: state.transition_cards_entering,
-    })
+    unsafe { current_native_panel_window_frame() }
 }
 
 #[cfg(test)]
@@ -336,8 +110,18 @@ mod tests {
         macos_native_test_panel::{
             mascot::NativeMascotRuntime, panel_types::NativeExpandedSurface,
         },
-        native_panel_renderer::{
-            NativePanelHost, NativePanelHostWindowDescriptor, NativePanelTimelineDescriptor,
+        native_panel_renderer::facade::{
+            descriptor::{
+                NativePanelHostWindowDescriptor, NativePanelPointerRegion,
+                NativePanelPointerRegionKind, NativePanelTimelineDescriptor,
+                native_panel_timeline_descriptor,
+            },
+            host::{
+                NativePanelHost, sync_runtime_host_screen_frame_in_state,
+                sync_runtime_host_shared_body_height_in_state, sync_runtime_host_timeline_in_state,
+                sync_runtime_host_visibility_in_state, sync_runtime_pointer_regions_in_state,
+            },
+            renderer::NativePanelRuntimeSceneCache,
         },
     };
 
@@ -362,7 +146,7 @@ mod tests {
                 pending_questions: vec![],
                 sessions: vec![],
             }),
-            scene_cache: crate::native_panel_renderer::NativePanelRuntimeSceneCache::default(),
+            scene_cache: NativePanelRuntimeSceneCache::default(),
             status_queue: Vec::new(),
             completion_badge_items: Vec::new(),
             pending_permission_card: None,
@@ -392,6 +176,7 @@ mod tests {
             pointer_inside_since: None,
             pointer_outside_since: None,
             primary_mouse_down: false,
+            ignores_mouse_events: true,
             last_focus_click: None,
             pointer_regions: Vec::new(),
             mascot_runtime: NativeMascotRuntime::new(Instant::now()),
@@ -494,19 +279,19 @@ mod tests {
         let mut state = panel_state();
         let mut host = MacosNativePanelRuntimeHost::default();
         host.sync_from_native_panel_state(&state, None);
-        let regions = vec![crate::native_panel_renderer::NativePanelPointerRegion {
+        let regions = vec![NativePanelPointerRegion {
             frame: crate::native_panel_core::PanelRect {
                 x: 10.0,
                 y: 20.0,
                 width: 30.0,
                 height: 40.0,
             },
-            kind: crate::native_panel_renderer::NativePanelPointerRegionKind::CompactBar,
+            kind: NativePanelPointerRegionKind::CompactBar,
         }];
 
         host.sync_pointer_regions(&regions)
             .expect("sync pointer regions into runtime host");
-        super::sync_runtime_pointer_regions_in_state(&mut state, &regions);
+        sync_runtime_pointer_regions_in_state(&mut state, &regions);
 
         assert_eq!(host.adapter.renderer.last_pointer_regions, regions);
         assert_eq!(
@@ -519,16 +304,21 @@ mod tests {
     fn runtime_host_state_helper_updates_descriptor_fields() {
         let mut state = panel_state();
 
-        super::sync_native_host_window_visibility(&mut state, false);
-        super::sync_native_host_window_shared_body_height(&mut state, Some(222.0));
-        super::sync_native_host_window_screen_frame(
+        sync_runtime_host_visibility_in_state(&mut state, false);
+        sync_runtime_host_shared_body_height_in_state(&mut state, Some(222.0));
+        sync_runtime_host_screen_frame_in_state(
             &mut state,
             3,
-            NSRect::new(NSPoint::new(40.0, 50.0), NSSize::new(800.0, 600.0)),
+            crate::native_panel_core::PanelRect {
+                x: 40.0,
+                y: 50.0,
+                width: 800.0,
+                height: 600.0,
+            },
         );
-        super::sync_native_host_window_timeline(
+        sync_runtime_host_timeline_in_state(
             &mut state,
-            crate::native_panel_renderer::native_panel_timeline_descriptor(
+            native_panel_timeline_descriptor(
                 crate::native_panel_core::PanelAnimationDescriptor {
                     kind: crate::native_panel_core::PanelAnimationKind::Close,
                     canvas_height: 160.0,
@@ -567,12 +357,9 @@ mod tests {
     #[test]
     fn runtime_host_builds_render_payload_from_shared_scene_cache_snapshot() {
         let state = panel_state();
-        let mut host = MacosNativePanelRuntimeHost::default();
-        host.sync_from_native_panel_state(&state, None);
-
-        let payload =
-            super::current_runtime_panel_render_payload_for_state_and_host(&state, &mut host)
-                .expect("payload from shared scene cache snapshot");
+        let payload = state
+            .render_payload()
+            .expect("payload from shared scene cache snapshot");
 
         assert_eq!(payload.snapshot.status, "idle");
         assert_eq!(payload.expanded, state.expanded);

@@ -1,5 +1,17 @@
-use crate::native_panel_core::{LastFocusClick, PanelClickInput, resolve_panel_click_action};
-use crate::native_panel_renderer::{NativePanelPlatformEvent, native_panel_pointer_state_at_point};
+use crate::native_panel_core::PanelInteractionCommand;
+#[cfg(test)]
+use crate::native_panel_renderer::facade::interaction::{
+    sync_native_panel_hover_expansion_state_for_state,
+    toggle_native_panel_settings_surface_for_state,
+};
+use crate::native_panel_renderer::facade::{
+    descriptor::NativePanelPointerRegion,
+    interaction::{
+        NativePanelHoverFallbackFrames, NativePanelPollingHostFacts,
+        sync_native_panel_host_polling_interaction_from_host_facts_for_state,
+    },
+    transition::NativePanelTransitionRequest,
+};
 use echoisland_runtime::RuntimeSnapshot;
 use objc2_app_kit::NSEvent;
 use std::time::Instant;
@@ -9,17 +21,19 @@ use super::compact_bar_layout::sync_active_count_marquee;
 use super::panel_constants::{
     CARD_FOCUS_CLICK_DEBOUNCE_MS, COLLAPSED_PANEL_HEIGHT, HOVER_DELAY_MS,
 };
-use super::panel_geometry::{absolute_rect, point_in_rect};
+use super::panel_geometry::absolute_rect;
 use super::panel_hit_testing::native_hover_pill_rect;
-use super::panel_host_runtime::{
-    dispatch_runtime_panel_surface_transition, dispatch_runtime_panel_transition,
-};
+use super::panel_host_adapter::ns_rect_to_panel_rect;
 use super::panel_interaction_effects::handle_native_click_command;
 use super::panel_refs::{
     native_panel_handles, native_panel_state, panel_from_ptr, resolve_native_panel_refs,
     view_from_ptr,
 };
-use super::panel_types::{NativeExpandedSurface, NativeHoverTransition, NativePanelState};
+use super::panel_runtime_dispatch::dispatch_native_panel_transition_request_immediate_with_snapshot;
+use super::panel_types::NativeExpandedSurface;
+use super::panel_types::NativePanelHandles;
+#[cfg(test)]
+use super::panel_types::{NativeHoverTransition, NativePanelState};
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static>(
@@ -35,6 +49,100 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
     let refs = resolve_native_panel_refs(handles);
     sync_active_count_marquee(&refs);
 
+    let polling_sample = collect_native_panel_polling_host_sample(handles, &refs);
+    let now = Instant::now();
+    let transition_request: Option<NativePanelTransitionRequest>;
+    let transition_snapshot;
+    let click_command: PanelInteractionCommand;
+    let next_ignores_mouse_events;
+    let sync_mouse_event_passthrough;
+
+    {
+        let mut state = match state_mutex.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        let pointer_regions = state.pointer_regions.clone();
+        let snapshot = state.last_snapshot.clone();
+        let polling_facts = polling_sample.with_state(pointer_regions, snapshot);
+        let interaction = sync_native_panel_host_polling_interaction_from_host_facts_for_state(
+            &mut *state,
+            polling_facts.as_shared_facts(),
+            now,
+            HOVER_DELAY_MS,
+            CARD_FOCUS_CLICK_DEBOUNCE_MS,
+        );
+        click_command = interaction.click_command;
+        transition_request = interaction.transition_request;
+        transition_snapshot = interaction.transition_snapshot;
+        next_ignores_mouse_events = interaction.next_ignores_mouse_events;
+        sync_mouse_event_passthrough = interaction.sync_mouse_event_passthrough;
+    }
+
+    if sync_mouse_event_passthrough {
+        panel_from_ptr(handles.panel).setIgnoresMouseEvents(next_ignores_mouse_events);
+    }
+
+    let _ = dispatch_native_panel_transition_request_immediate_with_snapshot(
+        app.clone(),
+        transition_request,
+        transition_snapshot,
+    );
+
+    let _ = handle_native_click_command(app, click_command);
+}
+
+struct NativePanelPollingHostSample {
+    pointer: crate::native_panel_core::PanelPoint,
+    hover_frames: NativePanelHoverFallbackFrames,
+    primary_mouse_down: bool,
+    cards_visible: bool,
+}
+
+impl NativePanelPollingHostSample {
+    fn with_state(
+        self,
+        pointer_regions: Vec<NativePanelPointerRegion>,
+        snapshot: Option<RuntimeSnapshot>,
+    ) -> NativePanelPollingHostFactsSnapshot {
+        NativePanelPollingHostFactsSnapshot {
+            pointer: self.pointer,
+            pointer_regions,
+            hover_frames: self.hover_frames,
+            primary_mouse_down: self.primary_mouse_down,
+            cards_visible: self.cards_visible,
+            snapshot,
+        }
+    }
+}
+
+struct NativePanelPollingHostFactsSnapshot {
+    pointer: crate::native_panel_core::PanelPoint,
+    pointer_regions: Vec<NativePanelPointerRegion>,
+    hover_frames: NativePanelHoverFallbackFrames,
+    primary_mouse_down: bool,
+    cards_visible: bool,
+    snapshot: Option<RuntimeSnapshot>,
+}
+
+impl NativePanelPollingHostFactsSnapshot {
+    fn as_shared_facts(&self) -> NativePanelPollingHostFacts<'_> {
+        NativePanelPollingHostFacts {
+            pointer: self.pointer,
+            pointer_regions: &self.pointer_regions,
+            hover_frames: self.hover_frames,
+            primary_mouse_down: self.primary_mouse_down,
+            cards_visible: self.cards_visible,
+            snapshot: self.snapshot.clone(),
+        }
+    }
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn collect_native_panel_polling_host_sample(
+    handles: NativePanelHandles,
+    refs: &super::panel_refs::NativePanelRefs,
+) -> NativePanelPollingHostSample {
     let panel = panel_from_ptr(handles.panel);
     let mouse = NSEvent::mouseLocation();
     let primary_mouse_down = (NSEvent::pressedMouseButtons() & 1) != 0;
@@ -45,171 +153,37 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
     let expanded_container = view_from_ptr(handles.expanded_container);
     let cards_container = view_from_ptr(handles.cards_container);
     let interactive_expanded_frame = absolute_rect(panel_frame, expanded_container.frame());
-    let fallback_interactive_inside = if panel_frame.size.height > COLLAPSED_PANEL_HEIGHT + 0.5 {
-        point_in_rect(mouse, interactive_expanded_frame)
-            || point_in_rect(mouse, interactive_pill_frame)
-    } else {
-        point_in_rect(mouse, interactive_pill_frame)
+    let pointer = crate::native_panel_core::PanelPoint {
+        x: mouse.x,
+        y: mouse.y,
     };
-    let fallback_hover_inside = if panel_frame.size.height > COLLAPSED_PANEL_HEIGHT + 0.5 {
-        point_in_rect(mouse, interactive_expanded_frame) || point_in_rect(mouse, hover_pill_frame)
-    } else {
-        point_in_rect(mouse, hover_pill_frame)
+    let hover_frames = NativePanelHoverFallbackFrames {
+        interactive_pill_frame: ns_rect_to_panel_rect(interactive_pill_frame),
+        hover_pill_frame: ns_rect_to_panel_rect(hover_pill_frame),
+        interactive_expanded_frame: (panel_frame.size.height > COLLAPSED_PANEL_HEIGHT + 0.5)
+            .then(|| ns_rect_to_panel_rect(interactive_expanded_frame)),
     };
 
-    let now = Instant::now();
-    let mut transition_snapshot: Option<(RuntimeSnapshot, bool)> = None;
-    let mut surface_transition_snapshot: Option<RuntimeSnapshot> = None;
-    let click_command;
-    let interactive_inside;
-    let hover_inside;
-
-    {
-        let mut state = match state_mutex.lock() {
-            Ok(guard) => guard,
-            Err(_) => return,
-        };
-        let pointer = crate::native_panel_core::PanelPoint {
-            x: mouse.x,
-            y: mouse.y,
-        };
-        let pointer_state = native_panel_pointer_state_at_point(&state.pointer_regions, pointer);
-        interactive_inside = if state.pointer_regions.is_empty() {
-            fallback_interactive_inside
-        } else {
-            pointer_state.inside
-        };
-        hover_inside = interactive_inside || fallback_hover_inside;
-        let primary_click_started =
-            primary_mouse_down && !state.primary_mouse_down && interactive_inside;
-        let click_event = primary_click_started
-            .then(|| pointer_state.platform_event.clone())
-            .flatten();
-        let settings_clicked = matches!(
-            click_event,
-            Some(NativePanelPlatformEvent::ToggleSettingsSurface)
-        );
-        let quit_clicked = matches!(click_event, Some(NativePanelPlatformEvent::QuitApplication));
-        if primary_click_started
-            && state.expanded
-            && !state.transitioning
-            && !settings_clicked
-            && !quit_clicked
-        {
-            let click_resolution = resolve_panel_click_action(PanelClickInput {
-                primary_click_started,
-                expanded: state.expanded,
-                transitioning: state.transitioning,
-                settings_button_hit: settings_clicked,
-                quit_button_hit: quit_clicked,
-                cards_visible: !cards_container.isHidden(),
-                card_target: pointer_state.hit_target.clone(),
-                last_focus_click: state.last_focus_click.as_ref().map(
-                    |(session_id, clicked_at)| LastFocusClick {
-                        session_id,
-                        clicked_at: *clicked_at,
-                    },
-                ),
-                now,
-                focus_debounce_ms: CARD_FOCUS_CLICK_DEBOUNCE_MS,
-            });
-            let resolved_command = click_resolution.command;
-            let focus_click_to_record = click_resolution.focus_click_to_record;
-            if let Some(session_id) = focus_click_to_record {
-                state.last_focus_click = Some((session_id, now));
-            }
-            click_command = resolved_command;
-        } else {
-            click_command = resolve_panel_click_action(PanelClickInput {
-                primary_click_started,
-                expanded: state.expanded,
-                transitioning: state.transitioning,
-                settings_button_hit: settings_clicked,
-                quit_button_hit: quit_clicked,
-                cards_visible: !cards_container.isHidden(),
-                card_target: None,
-                last_focus_click: state.last_focus_click.as_ref().map(
-                    |(session_id, clicked_at)| LastFocusClick {
-                        session_id,
-                        clicked_at: *clicked_at,
-                    },
-                ),
-                now,
-                focus_debounce_ms: CARD_FOCUS_CLICK_DEBOUNCE_MS,
-            })
-            .command;
-        }
-        state.primary_mouse_down = primary_mouse_down;
-        let was_status_surface =
-            state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
-        let was_surface_mode = state.surface_mode;
-
-        if let Some(hover_transition) =
-            sync_native_hover_expansion_state(&mut state, hover_inside, now)
-        {
-            if let Some(snapshot) = state.last_snapshot.clone() {
-                transition_snapshot =
-                    Some((snapshot, hover_transition == NativeHoverTransition::Expand));
-            }
-        }
-
-        if primary_click_started && state.expanded && !state.transitioning && settings_clicked {
-            if toggle_native_settings_surface(&mut state) {
-                surface_transition_snapshot = state.last_snapshot.clone();
-            }
-        }
-
-        let is_status_surface =
-            state.surface_mode == NativeExpandedSurface::Status && !state.status_queue.is_empty();
-        if surface_transition_snapshot.is_none()
-            && was_status_surface != is_status_surface
-            && state.expanded
-            && !state.transitioning
-        {
-            if let Some(snapshot) = state.last_snapshot.clone() {
-                surface_transition_snapshot = Some(snapshot);
-            }
-        } else if surface_transition_snapshot.is_none()
-            && was_surface_mode != state.surface_mode
-            && state.expanded
-            && !state.transitioning
-        {
-            surface_transition_snapshot = state.last_snapshot.clone();
-        }
+    NativePanelPollingHostSample {
+        pointer,
+        hover_frames,
+        primary_mouse_down,
+        cards_visible: !cards_container.isHidden(),
     }
-
-    panel.setIgnoresMouseEvents(!interactive_inside);
-
-    if let Some((snapshot, expanded)) = transition_snapshot {
-        dispatch_runtime_panel_transition(app.clone(), snapshot, expanded);
-    } else if let Some(snapshot) = surface_transition_snapshot {
-        dispatch_runtime_panel_surface_transition(app.clone(), snapshot);
-    }
-
-    handle_native_click_command(app, click_command);
 }
 
+#[cfg(test)]
 pub(super) fn toggle_native_settings_surface(state: &mut NativePanelState) -> bool {
-    let mut core = state.to_core_panel_state();
-    let changed = crate::native_panel_core::toggle_settings_surface(&mut core);
-    state.apply_core_panel_state(core);
-    changed
+    toggle_native_panel_settings_surface_for_state(state)
 }
 
+#[cfg(test)]
 pub(super) fn sync_native_hover_expansion_state(
     state: &mut NativePanelState,
     inside: bool,
     now: Instant,
 ) -> Option<NativeHoverTransition> {
-    let mut core = state.to_core_panel_state();
-    let transition = crate::native_panel_core::sync_hover_expansion_state(
-        &mut core,
-        inside,
-        now,
-        HOVER_DELAY_MS,
-    );
-    state.apply_core_panel_state(core);
-    transition
+    sync_native_panel_hover_expansion_state_for_state(state, inside, now, HOVER_DELAY_MS)
 }
 
 pub(super) fn native_status_surface_active() -> bool {
@@ -218,16 +192,6 @@ pub(super) fn native_status_surface_active() -> bool {
             state.lock().ok().map(|guard| {
                 guard.surface_mode == NativeExpandedSurface::Status
                     && !guard.status_queue.is_empty()
-            })
-        })
-        .unwrap_or(false)
-}
-
-pub(super) fn native_settings_surface_active() -> bool {
-    native_panel_state()
-        .and_then(|state| {
-            state.lock().ok().map(|guard| {
-                guard.surface_mode == NativeExpandedSurface::Settings && guard.expanded
             })
         })
         .unwrap_or(false)

@@ -1,9 +1,11 @@
 use std::time::{Duration, Instant};
 
-use crate::native_panel_renderer::{
-    NativePanelHostWindowDescriptor, NativePanelPointerRegionKind,
-    NativePanelRuntimeInputDescriptor, NativePanelRuntimeSceneCache,
-    resolve_native_panel_pointer_regions,
+use crate::native_panel_renderer::facade::{
+    descriptor::{
+        NativePanelHostWindowDescriptor, NativePanelPointerRegionKind,
+        NativePanelRuntimeInputDescriptor, resolve_native_panel_pointer_regions,
+    },
+    renderer::NativePanelRuntimeSceneCache,
 };
 use chrono::Utc;
 use echoisland_runtime::{PendingPermissionView, RuntimeSnapshot, SessionSnapshotView};
@@ -139,6 +141,7 @@ fn panel_state() -> NativePanelState {
         pointer_inside_since: None,
         pointer_outside_since: None,
         primary_mouse_down: false,
+        ignores_mouse_events: true,
         last_focus_click: None,
         pointer_regions: Vec::new(),
         mascot_runtime: NativeMascotRuntime::new(Instant::now()),

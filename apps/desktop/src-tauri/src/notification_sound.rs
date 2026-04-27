@@ -1,3 +1,4 @@
+#[cfg(target_os = "macos")]
 use crate::app_settings::current_app_settings;
 
 #[cfg(target_os = "macos")]
@@ -90,4 +91,5 @@ pub(crate) fn play_message_card_sound() {
 }
 
 #[cfg(not(target_os = "macos"))]
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub(crate) fn play_message_card_sound() {}

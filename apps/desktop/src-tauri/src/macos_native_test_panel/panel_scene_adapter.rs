@@ -1,56 +1,28 @@
 use echoisland_runtime::RuntimeSnapshot;
 
 use super::{
-    card_metrics::estimated_scene_content_height, panel_constants::EXPANDED_MAX_BODY_HEIGHT,
     panel_refs::native_panel_state, panel_runtime_input::native_panel_runtime_input_descriptor,
     panel_types::NativePanelState,
 };
-use crate::{
-    native_panel_core::PanelRect,
-    native_panel_renderer::{
-        NativePanelCardStackCommand, NativePanelCompactBarCommand,
-        NativePanelRuntimeInputDescriptor, NativePanelRuntimeSceneCacheKey,
-        cached_render_command_bundle_for_key, cached_scene_for_key,
-        native_panel_card_stack_command, native_panel_compact_bar_command,
-        native_panel_runtime_scene_cache_key,
+use crate::native_panel_renderer::facade::{
+    descriptor::{NativePanelPointerRegionInput, NativePanelRuntimeInputDescriptor},
+    presentation::{
+        NativePanelPresentationModel, NativePanelResolvedPresentation,
+        NativePanelSnapshotRenderPlan, resolve_native_panel_snapshot_render_plan_for_scene,
     },
-    native_panel_scene::PanelScene,
+    renderer::{
+        NativePanelRenderCommandBundle, build_native_panel_scene_for_state_bridge_with_input,
+        resolve_and_cache_native_panel_presentation_for_state_bridge_with_input,
+        resolve_current_native_panel_presentation_model_for_state_bridge_with_input,
+        resolve_current_native_panel_render_command_bundle_for_state_bridge_with_input,
+        resolve_native_panel_presentation_model_for_state_bridge_and_snapshot_with_input,
+        resolve_native_panel_render_command_bundle_for_state_bridge_and_snapshot_with_input,
+        resolve_native_panel_runtime_render_state_for_state_bridge_with_input,
+        resolve_native_panel_scene_for_state_bridge_and_snapshot_with_input,
+        resolve_native_panel_scene_for_state_bridge_with_input,
+        resolve_native_panel_snapshot_render_plan_for_state_bridge_snapshot_with_input,
+    },
 };
-
-#[derive(Clone, Debug)]
-pub(super) struct NativePanelSnapshotRenderPlan {
-    pub(super) scene: PanelScene,
-    pub(super) expanded_content_height: f64,
-    pub(super) expanded_body_height: f64,
-    render_command_bundle: Option<crate::native_panel_renderer::NativePanelRenderCommandBundle>,
-}
-
-impl NativePanelSnapshotRenderPlan {
-    pub(super) fn compact_bar_command(&self, frame: PanelRect) -> NativePanelCompactBarCommand {
-        if let Some(bundle) = self.render_command_bundle.clone() {
-            let mut command = bundle.compact_bar;
-            command.frame = frame;
-            return command;
-        }
-
-        native_panel_compact_bar_command(&self.scene, frame)
-    }
-
-    pub(super) fn card_stack_command(
-        &self,
-        frame: PanelRect,
-        visible: bool,
-    ) -> NativePanelCardStackCommand {
-        if let Some(bundle) = self.render_command_bundle.clone() {
-            let mut command = bundle.card_stack;
-            command.frame = frame;
-            command.visible = visible;
-            return command;
-        }
-
-        native_panel_card_stack_command(&self.scene, frame, visible)
-    }
-}
 
 pub(super) fn build_native_panel_scene(
     snapshot: &RuntimeSnapshot,
@@ -80,8 +52,7 @@ pub(super) fn build_native_panel_scene_for_state_with_input(
     snapshot: &RuntimeSnapshot,
     input: &NativePanelRuntimeInputDescriptor,
 ) -> crate::native_panel_scene::PanelScene {
-    let core = state.to_core_panel_state();
-    build_native_panel_scene_for_core_state_with_input(snapshot, &core, input)
+    build_native_panel_scene_for_state_bridge_with_input(state, snapshot, input)
 }
 
 pub(super) fn build_native_panel_scene_for_core_state_with_input(
@@ -90,18 +61,6 @@ pub(super) fn build_native_panel_scene_for_core_state_with_input(
     input: &NativePanelRuntimeInputDescriptor,
 ) -> crate::native_panel_scene::PanelScene {
     crate::native_panel_scene::build_panel_scene(state, snapshot, &input.scene_input)
-}
-
-pub(super) fn resolve_native_panel_runtime_render_state_with_input(
-    snapshot: Option<&RuntimeSnapshot>,
-    state: &crate::native_panel_core::PanelState,
-    input: &NativePanelRuntimeInputDescriptor,
-) -> crate::native_panel_scene::PanelRuntimeRenderState {
-    crate::native_panel_scene::resolve_panel_runtime_render_state(
-        state,
-        snapshot,
-        &input.scene_input,
-    )
 }
 
 pub(super) fn resolve_current_native_panel_runtime_render_state()
@@ -132,63 +91,54 @@ pub(super) fn resolve_current_native_panel_scene_for_snapshot(
         })
 }
 
-pub(super) fn resolve_current_native_panel_render_command_bundle_for_snapshot(
-    snapshot: &RuntimeSnapshot,
-) -> Option<crate::native_panel_renderer::NativePanelRenderCommandBundle> {
-    native_panel_state()
-        .and_then(|state| state.lock().ok())
-        .and_then(|guard| {
-            resolve_native_panel_render_command_bundle_for_state_and_snapshot(&guard, snapshot)
-        })
-}
-
 pub(super) fn resolve_current_native_panel_render_command_bundle(
     state: &NativePanelState,
-) -> Option<crate::native_panel_renderer::NativePanelRenderCommandBundle> {
-    state.last_snapshot.as_ref().and_then(|snapshot| {
-        resolve_native_panel_render_command_bundle_for_state_and_snapshot(state, snapshot)
-    })
+) -> Option<NativePanelRenderCommandBundle> {
+    resolve_current_native_panel_render_command_bundle_for_state_bridge_with_input(
+        state,
+        &native_panel_runtime_input_descriptor(),
+    )
 }
 
-pub(super) fn cache_native_panel_render_command_bundle_in_state(
+pub(super) fn resolve_and_cache_native_panel_presentation(
     state: &mut NativePanelState,
-    bundle: &crate::native_panel_renderer::NativePanelRenderCommandBundle,
-) {
+    layout: crate::native_panel_core::PanelLayout,
+    render_state: crate::native_panel_core::PanelRenderState,
+    pointer_region_input: Option<NativePanelPointerRegionInput>,
+) -> Option<NativePanelResolvedPresentation> {
     let input = native_panel_runtime_input_descriptor();
-    let cache_key = native_panel_runtime_scene_cache_key(&state.to_core_panel_state(), &input);
-    crate::native_panel_renderer::cache_render_command_bundle_with_key(
-        &mut state.scene_cache,
-        Some(cache_key),
-        bundle,
-    );
-    state.pointer_regions = bundle.pointer_regions.clone();
+    resolve_and_cache_native_panel_presentation_for_state_bridge_with_input(
+        state,
+        &input,
+        layout,
+        render_state,
+        pointer_region_input,
+    )
 }
 
 pub(super) fn resolve_snapshot_render_plan(
     snapshot: &RuntimeSnapshot,
 ) -> NativePanelSnapshotRenderPlan {
-    let render_command_bundle =
-        resolve_current_native_panel_render_command_bundle_for_snapshot(snapshot);
-    let scene = render_command_bundle
-        .as_ref()
-        .map(|bundle| bundle.scene.clone())
-        .unwrap_or_else(|| resolve_or_build_native_panel_scene(snapshot));
-    render_plan_from_scene_and_bundle(scene, render_command_bundle)
-}
-
-pub(super) fn resolve_snapshot_compact_bar_command(
-    snapshot: &RuntimeSnapshot,
-    frame: PanelRect,
-) -> NativePanelCompactBarCommand {
-    resolve_snapshot_render_plan(snapshot).compact_bar_command(frame)
+    let input = native_panel_runtime_input_descriptor();
+    native_panel_state()
+        .and_then(|state| state.lock().ok())
+        .map(|guard| {
+            resolve_snapshot_render_plan_for_state_snapshot_with_input(&guard, snapshot, &input)
+        })
+        .unwrap_or_else(|| {
+            resolve_native_panel_snapshot_render_plan_for_scene(
+                resolve_or_build_native_panel_scene(snapshot),
+                None,
+            )
+        })
 }
 
 #[cfg(test)]
 pub(super) fn resolve_snapshot_card_stack_command(
     snapshot: &RuntimeSnapshot,
-    frame: PanelRect,
+    frame: crate::native_panel_core::PanelRect,
     visible: bool,
-) -> NativePanelCardStackCommand {
+) -> crate::native_panel_renderer::facade::presentation::NativePanelCardStackCommand {
     resolve_snapshot_render_plan(snapshot).card_stack_command(frame, visible)
 }
 
@@ -196,66 +146,14 @@ pub(super) fn build_native_panel_runtime_render_state_for_state_with_input(
     state: &NativePanelState,
     input: &NativePanelRuntimeInputDescriptor,
 ) -> crate::native_panel_scene::PanelRuntimeRenderState {
-    let core_state = state.to_core_panel_state();
-    resolve_native_panel_runtime_render_state_with_input(
-        state.last_snapshot.as_ref(),
-        &core_state,
-        input,
-    )
-}
-
-fn scene_cache_key_for_state(
-    state: &NativePanelState,
-    input: &NativePanelRuntimeInputDescriptor,
-) -> NativePanelRuntimeSceneCacheKey {
-    native_panel_runtime_scene_cache_key(&state.to_core_panel_state(), input)
-}
-
-fn snapshot_matches_current_state_or_cache(
-    state: &NativePanelState,
-    snapshot: &RuntimeSnapshot,
-) -> bool {
-    state.last_snapshot.as_ref() == Some(snapshot)
-        || state.scene_cache.last_snapshot.as_ref() == Some(snapshot)
-}
-
-fn build_scene_for_state_snapshot_with_input(
-    state: &NativePanelState,
-    snapshot: &RuntimeSnapshot,
-    input: &NativePanelRuntimeInputDescriptor,
-) -> crate::native_panel_scene::PanelScene {
-    build_native_panel_scene_for_core_state_with_input(
-        snapshot,
-        &state.to_core_panel_state(),
-        input,
-    )
-}
-
-fn render_plan_from_scene_and_bundle(
-    scene: PanelScene,
-    render_command_bundle: Option<crate::native_panel_renderer::NativePanelRenderCommandBundle>,
-) -> NativePanelSnapshotRenderPlan {
-    let expanded_content_height = estimated_scene_content_height(&scene);
-
-    NativePanelSnapshotRenderPlan {
-        scene,
-        expanded_content_height,
-        expanded_body_height: expanded_content_height.min(EXPANDED_MAX_BODY_HEIGHT),
-        render_command_bundle,
-    }
+    resolve_native_panel_runtime_render_state_for_state_bridge_with_input(state, input)
 }
 
 pub(super) fn resolve_native_panel_scene_for_state_with_input(
     state: &NativePanelState,
     input: &NativePanelRuntimeInputDescriptor,
 ) -> Option<crate::native_panel_scene::PanelScene> {
-    let core_state = state.to_core_panel_state();
-    let cache_key = scene_cache_key_for_state(state, input);
-    cached_scene_for_key(&state.scene_cache, &cache_key).or_else(|| {
-        state.last_snapshot.as_ref().map(|snapshot| {
-            build_native_panel_scene_for_core_state_with_input(snapshot, &core_state, input)
-        })
-    })
+    resolve_native_panel_scene_for_state_bridge_with_input(state, input)
 }
 
 pub(super) fn resolve_native_panel_scene_for_state_and_snapshot(
@@ -263,37 +161,59 @@ pub(super) fn resolve_native_panel_scene_for_state_and_snapshot(
     snapshot: &RuntimeSnapshot,
     input: &NativePanelRuntimeInputDescriptor,
 ) -> Option<crate::native_panel_scene::PanelScene> {
-    let cache_key = scene_cache_key_for_state(state, input);
-    if snapshot_matches_current_state_or_cache(state, snapshot) {
-        if let Some(scene) = cached_scene_for_key(&state.scene_cache, &cache_key) {
-            return Some(scene);
-        }
-    }
-
-    Some(build_scene_for_state_snapshot_with_input(
-        state, snapshot, input,
-    ))
+    resolve_native_panel_scene_for_state_bridge_and_snapshot_with_input(state, snapshot, input)
 }
 
+#[allow(dead_code)]
 fn resolve_native_panel_render_command_bundle_for_state_and_snapshot_with_input(
     state: &NativePanelState,
     snapshot: &RuntimeSnapshot,
     input: &NativePanelRuntimeInputDescriptor,
-) -> Option<crate::native_panel_renderer::NativePanelRenderCommandBundle> {
-    let cache_key = scene_cache_key_for_state(state, input);
-    snapshot_matches_current_state_or_cache(state, snapshot)
-        .then(|| cached_render_command_bundle_for_key(&state.scene_cache, &cache_key))
-        .flatten()
+) -> Option<NativePanelRenderCommandBundle> {
+    resolve_native_panel_render_command_bundle_for_state_bridge_and_snapshot_with_input(
+        state, snapshot, input,
+    )
 }
 
+#[allow(dead_code)]
 pub(super) fn resolve_native_panel_render_command_bundle_for_state_and_snapshot(
     state: &NativePanelState,
     snapshot: &RuntimeSnapshot,
-) -> Option<crate::native_panel_renderer::NativePanelRenderCommandBundle> {
+) -> Option<NativePanelRenderCommandBundle> {
     resolve_native_panel_render_command_bundle_for_state_and_snapshot_with_input(
         state,
         snapshot,
         &native_panel_runtime_input_descriptor(),
+    )
+}
+
+#[allow(dead_code)]
+pub(super) fn resolve_native_panel_presentation_model_for_state_and_snapshot(
+    state: &NativePanelState,
+    snapshot: &RuntimeSnapshot,
+) -> Option<NativePanelPresentationModel> {
+    let input = native_panel_runtime_input_descriptor();
+    resolve_native_panel_presentation_model_for_state_bridge_and_snapshot_with_input(
+        state, snapshot, &input,
+    )
+}
+
+pub(super) fn resolve_current_native_panel_presentation_model(
+    state: &NativePanelState,
+) -> Option<NativePanelPresentationModel> {
+    resolve_current_native_panel_presentation_model_for_state_bridge_with_input(
+        state,
+        &native_panel_runtime_input_descriptor(),
+    )
+}
+
+fn resolve_snapshot_render_plan_for_state_snapshot_with_input(
+    state: &NativePanelState,
+    snapshot: &RuntimeSnapshot,
+    input: &NativePanelRuntimeInputDescriptor,
+) -> NativePanelSnapshotRenderPlan {
+    resolve_native_panel_snapshot_render_plan_for_state_bridge_snapshot_with_input(
+        state, snapshot, input,
     )
 }
 
@@ -303,16 +223,7 @@ fn current_snapshot_render_plan_for_state_and_snapshot(
     snapshot: &RuntimeSnapshot,
 ) -> NativePanelSnapshotRenderPlan {
     let input = native_panel_runtime_input_descriptor();
-    let render_command_bundle =
-        resolve_native_panel_render_command_bundle_for_state_and_snapshot_with_input(
-            state, snapshot, &input,
-        );
-    let scene = render_command_bundle
-        .as_ref()
-        .map(|bundle| bundle.scene.clone())
-        .or_else(|| resolve_native_panel_scene_for_state_and_snapshot(state, snapshot, &input))
-        .expect("scene");
-    render_plan_from_scene_and_bundle(scene, render_command_bundle)
+    resolve_snapshot_render_plan_for_state_snapshot_with_input(state, snapshot, &input)
 }
 
 #[cfg(test)]
@@ -320,19 +231,7 @@ pub(super) fn resolve_native_panel_runtime_render_state_for_state_with_input(
     state: &NativePanelState,
     input: &NativePanelRuntimeInputDescriptor,
 ) -> crate::native_panel_scene::PanelRuntimeRenderState {
-    let core_state = state.to_core_panel_state();
-    let cache_key = scene_cache_key_for_state(state, input);
-    crate::native_panel_renderer::cached_runtime_render_state_for_key(
-        &state.scene_cache,
-        &cache_key,
-    )
-    .unwrap_or_else(|| {
-        resolve_native_panel_runtime_render_state_with_input(
-            state.last_snapshot.as_ref(),
-            &core_state,
-            input,
-        )
-    })
+    resolve_native_panel_runtime_render_state_for_state_bridge_with_input(state, input)
 }
 
 #[cfg(test)]
@@ -345,23 +244,27 @@ mod tests {
         build_native_panel_runtime_render_state_for_state_with_input,
         build_native_panel_scene_for_core_state_with_input,
         build_native_panel_scene_for_state_with_input,
-        current_snapshot_render_plan_for_state_and_snapshot,
+        current_snapshot_render_plan_for_state_and_snapshot, native_panel_runtime_input_descriptor,
+        resolve_native_panel_presentation_model_for_state_and_snapshot,
         resolve_native_panel_render_command_bundle_for_state_and_snapshot,
         resolve_native_panel_runtime_render_state_for_state_with_input,
         resolve_native_panel_scene_for_state_and_snapshot,
         resolve_native_panel_scene_for_state_with_input, resolve_or_build_native_panel_scene,
-        resolve_snapshot_card_stack_command, resolve_snapshot_compact_bar_command,
-        resolve_snapshot_render_plan,
+        resolve_snapshot_card_stack_command, resolve_snapshot_render_plan,
     };
     use crate::{
         macos_native_test_panel::{
             mascot::NativeMascotRuntime, panel_types::NativeExpandedSurface,
         },
-        native_panel_renderer::{
-            NativePanelHostWindowDescriptor, NativePanelRuntimeInputDescriptor,
-            NativePanelRuntimeSceneCache, cache_render_command_bundle,
-            cache_render_command_bundle_with_key, cache_scene_runtime_with_key,
-            native_panel_runtime_scene_cache_key, resolve_native_panel_render_command_bundle,
+        native_panel_renderer::facade::{
+            descriptor::{NativePanelHostWindowDescriptor, NativePanelRuntimeInputDescriptor},
+            renderer::{
+                NativePanelRenderCommandBundle, NativePanelRuntimeSceneCache,
+                cache_render_command_bundle, cache_render_command_bundle_with_key,
+                cache_scene_runtime_with_key, native_panel_runtime_scene_cache_key,
+                native_panel_runtime_scene_cache_key_for_state_bridge,
+                resolve_native_panel_render_command_bundle,
+            },
         },
         native_panel_scene::{PanelRuntimeRenderState, PanelSceneBuildInput, build_panel_scene},
     };
@@ -403,6 +306,7 @@ mod tests {
             pointer_inside_since: None,
             pointer_outside_since: None,
             primary_mouse_down: false,
+            ignores_mouse_events: true,
             last_focus_click: None,
             pointer_regions: Vec::new(),
             mascot_runtime: NativeMascotRuntime::new(Instant::now()),
@@ -423,6 +327,8 @@ mod tests {
         runtime_render_state: PanelRuntimeRenderState,
     ) {
         let cache_key = native_panel_runtime_scene_cache_key(&state.to_core_panel_state(), input);
+        let bridge_key = native_panel_runtime_scene_cache_key_for_state_bridge(state, input);
+        assert_eq!(cache_key, bridge_key);
         cache_scene_runtime_with_key(
             &mut state.scene_cache,
             Some(cache_key),
@@ -434,9 +340,11 @@ mod tests {
     fn cache_bundle_for_state(
         state: &mut crate::macos_native_test_panel::panel_types::NativePanelState,
         input: &NativePanelRuntimeInputDescriptor,
-        bundle: &crate::native_panel_renderer::NativePanelRenderCommandBundle,
+        bundle: &NativePanelRenderCommandBundle,
     ) {
         let cache_key = native_panel_runtime_scene_cache_key(&state.to_core_panel_state(), input);
+        let bridge_key = native_panel_runtime_scene_cache_key_for_state_bridge(state, input);
+        assert_eq!(cache_key, bridge_key);
         cache_render_command_bundle_with_key(&mut state.scene_cache, Some(cache_key), bundle);
     }
 
@@ -725,7 +633,7 @@ mod tests {
     fn render_command_bundle_resolution_reuses_current_snapshot_cache() {
         let mut state = panel_state();
         let current_snapshot = test_snapshot("idle");
-        let input = runtime_input_descriptor();
+        let input = native_panel_runtime_input_descriptor();
         let bundle = test_render_command_bundle("bundle", true);
         state.last_snapshot = Some(current_snapshot.clone());
         state.scene_cache.last_snapshot = Some(current_snapshot.clone());
@@ -763,6 +671,33 @@ mod tests {
     }
 
     #[test]
+    fn presentation_model_resolution_reuses_current_snapshot_cache() {
+        let mut state = panel_state();
+        let current_snapshot = test_snapshot("idle");
+        let input = native_panel_runtime_input_descriptor();
+        let bundle = test_render_command_bundle_with_input("bundle", true, &input);
+        state.last_snapshot = Some(current_snapshot.clone());
+        state.scene_cache.last_snapshot = Some(current_snapshot.clone());
+        cache_bundle_for_state(&mut state, &input, &bundle);
+
+        let resolved = resolve_native_panel_presentation_model_for_state_and_snapshot(
+            &state,
+            &current_snapshot,
+        )
+        .expect("cached presentation");
+
+        assert_eq!(
+            resolved.compact_bar.headline.text,
+            bundle.compact_bar.headline.text
+        );
+        assert_eq!(
+            resolved.compact_bar.completion_count,
+            bundle.compact_bar.completion_count
+        );
+        assert_eq!(resolved.mascot.pose, bundle.mascot.pose);
+    }
+
+    #[test]
     fn snapshot_render_plan_ignores_stale_surface_bundle_cache() {
         let mut state = panel_state();
         let current_snapshot = test_snapshot("current");
@@ -786,7 +721,6 @@ mod tests {
             resolved.scene.cards.first(),
             Some(crate::native_panel_scene::SceneCard::Settings { .. })
         ));
-        assert!(resolved.render_command_bundle.is_none());
     }
 
     #[test]
@@ -806,7 +740,7 @@ mod tests {
             height: 14.0,
         };
 
-        let resolved = resolve_snapshot_compact_bar_command(&current_snapshot, frame);
+        let resolved = resolve_snapshot_render_plan(&current_snapshot).compact_bar_command(frame);
 
         assert_eq!(resolved.headline.text, bundle.compact_bar.headline.text);
         assert_eq!(resolved.frame, frame);
@@ -852,17 +786,25 @@ mod tests {
             resolved.scene.compact_bar.headline.text,
             bundle.scene.compact_bar.headline.text
         );
-        assert!(resolved.expanded_body_height <= resolved.expanded_content_height);
+        assert!(resolved.expanded_body_height() <= resolved.expanded_content_height());
     }
 
     fn test_render_command_bundle(
         status: &str,
         transitioning: bool,
-    ) -> crate::native_panel_renderer::NativePanelRenderCommandBundle {
+    ) -> NativePanelRenderCommandBundle {
+        test_render_command_bundle_with_input(status, transitioning, &runtime_input_descriptor())
+    }
+
+    fn test_render_command_bundle_with_input(
+        status: &str,
+        transitioning: bool,
+        input: &NativePanelRuntimeInputDescriptor,
+    ) -> NativePanelRenderCommandBundle {
         let scene = build_panel_scene(
             &crate::native_panel_core::PanelState::default(),
             &test_snapshot(status),
-            &PanelSceneBuildInput::default(),
+            &input.scene_input,
         );
         let layout = crate::native_panel_core::resolve_panel_layout(
             crate::native_panel_core::PanelLayoutInput {

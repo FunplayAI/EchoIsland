@@ -1,12 +1,12 @@
-use super::panel_host_runtime::{
-    sync_runtime_host_timeline_in_state, with_native_runtime_panel_state_mut,
-};
+use super::panel_host_runtime::with_native_runtime_panel_state_mut;
 #[cfg(test)]
 use super::panel_types::NativePanelAnimationDescriptor;
 use super::panel_types::NativePanelState;
 #[cfg(test)]
 use super::panel_types::NativePanelTransitionFrame;
-use crate::native_panel_renderer::NativePanelTimelineDescriptor;
+use crate::native_panel_renderer::facade::{
+    descriptor::NativePanelTimelineDescriptor, host::sync_runtime_host_timeline_in_state,
+};
 
 fn with_native_panel_state_mut<T>(f: impl FnOnce(&mut NativePanelState) -> T) -> Option<T> {
     with_native_runtime_panel_state_mut(f)

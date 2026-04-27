@@ -175,7 +175,8 @@ fn snapshot_sync_emits_message_sound_and_panel_transition_for_new_status() {
 
     let result = sync_panel_snapshot_state(&mut state, &raw_snapshot, Utc::now());
 
-    assert!(result.play_message_card_sound);
+    assert!(result.reminder.play_sound);
+    assert!(result.reminder.show_status_card);
     assert_eq!(result.panel_transition, Some(true));
     assert!(!result.surface_transition);
     assert_eq!(result.displayed_snapshot.pending_permission_count, 1);
@@ -457,6 +458,34 @@ fn mascot_base_state_preserves_priority_order() {
         resolve_mascot_base_state(Some(&snapshot), true, true),
         PanelMascotBaseState::Approval
     );
+}
+
+#[test]
+fn reminder_state_unifies_badge_glow_and_mascot_semantics() {
+    let mut snapshot = snapshot(1, 1);
+    snapshot.sessions = vec![session("Running")];
+    let state = PanelState {
+        completion_badge_items: vec![CompletionBadgeItem {
+            session_id: "session-1".to_string(),
+            completed_at: Utc::now(),
+            last_user_prompt: None,
+            last_assistant_message: Some("Done".to_string()),
+        }],
+        ..PanelState::default()
+    };
+
+    let reminder = resolve_panel_reminder_state(&state, Some(&snapshot));
+
+    assert_eq!(reminder.completion_badge_count, 1);
+    assert!(reminder.show_completion_glow);
+    assert!(!reminder.has_status_completion);
+    assert_eq!(reminder.mascot_base_state, PanelMascotBaseState::Complete);
+}
+
+#[test]
+fn settings_surface_card_height_grows_with_row_count() {
+    assert_eq!(resolve_settings_surface_card_height(4), 206.0);
+    assert_eq!(resolve_settings_surface_card_height(5), 244.0);
 }
 
 #[test]

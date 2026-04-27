@@ -40,13 +40,14 @@ pub(crate) fn sync_panel_snapshot_state(
     sync_completion_badge(state, raw_snapshot, &completed_session_ids);
     let status_queue_sync = sync_status_queue(state, raw_snapshot);
     let status_surface_transition = sync_status_surface_policy(state, status_queue_sync);
+    let play_sound = status_queue_sync.added_approvals + status_queue_sync.added_completions > 0;
+    let reminder =
+        super::resolve_panel_sync_reminder_state(state, Some(&displayed_snapshot), play_sound);
     state.last_raw_snapshot = Some(raw_snapshot.clone());
 
     PanelSnapshotSyncResult {
         displayed_snapshot,
-        play_message_card_sound: status_queue_sync.added_approvals
-            + status_queue_sync.added_completions
-            > 0,
+        reminder,
         panel_transition: status_surface_transition.panel_transition,
         surface_transition: status_surface_transition.surface_transition,
     }

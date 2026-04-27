@@ -34,10 +34,6 @@ pub(super) const CARD_PENDING_ACTION_Y: f64 = crate::native_panel_core::CARD_PEN
 pub(super) const CARD_PENDING_ACTION_HEIGHT: f64 =
     crate::native_panel_core::CARD_PENDING_ACTION_HEIGHT;
 pub(super) const CARD_PENDING_ACTION_GAP: f64 = crate::native_panel_core::CARD_PENDING_ACTION_GAP;
-pub(super) const PENDING_QUESTION_CARD_MIN_HEIGHT: f64 =
-    crate::native_panel_core::PENDING_QUESTION_CARD_MIN_HEIGHT;
-pub(super) const PENDING_QUESTION_CARD_MAX_HEIGHT: f64 =
-    crate::native_panel_core::PENDING_QUESTION_CARD_MAX_HEIGHT;
 #[cfg(test)]
 pub(super) const STATUS_COMPLETION_VISIBLE_SECONDS: u64 =
     crate::native_panel_core::STATUS_COMPLETION_VISIBLE_SECONDS;

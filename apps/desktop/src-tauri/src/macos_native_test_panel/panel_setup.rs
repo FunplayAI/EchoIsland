@@ -4,6 +4,7 @@ use objc2_app_kit::{NSColor, NSScreen};
 use objc2_foundation::{NSRect, NSSize};
 
 use super::panel_constants::COLLAPSED_PANEL_HEIGHT;
+use super::panel_display_source::resolve_preferred_native_screen_target;
 use super::panel_geometry::{centered_top_frame, island_bar_frame};
 use super::panel_screen_geometry::{
     compact_pill_height_for_screen, compact_pill_width_for_screen, expanded_panel_width_for_screen,
@@ -40,7 +41,9 @@ pub(super) struct NativePanelColors {
 pub(super) fn resolve_native_panel_setup(
     mtm: MainThreadMarker,
 ) -> Result<NativePanelSetup, String> {
-    let screen = resolve_preferred_native_screen(mtm)
+    let settings = crate::app_settings::current_app_settings();
+    let screen = resolve_preferred_native_screen_target(mtm, &settings)
+        .map(|target| target.screen)
         .ok_or_else(|| "failed to resolve a macOS screen".to_string())?;
 
     let compact_height = compact_pill_height_for_screen(&screen);
@@ -72,45 +75,6 @@ pub(super) fn resolve_native_panel_setup(
         pill_frame,
     })
 }
-
-pub(super) fn resolve_preferred_native_screen(mtm: MainThreadMarker) -> Option<Retained<NSScreen>> {
-    let screens = NSScreen::screens(mtm);
-    if screens.is_empty() {
-        return None;
-    }
-    let settings = crate::app_settings::current_app_settings();
-    let display_keys = native_screen_display_keys(&screens);
-    let fallback_index = NSScreen::mainScreen(mtm).and_then(|main_screen| {
-        let main_key = native_screen_display_key(&main_screen);
-        display_keys.iter().position(|key| key == &main_key)
-    });
-    let index = crate::native_panel_core::resolve_preferred_panel_display_index(
-        &display_keys,
-        settings.preferred_display_key.as_deref(),
-        settings.preferred_display_index,
-        fallback_index,
-    )?;
-    Some(screens.objectAtIndex(index))
-}
-
-fn native_screen_display_keys(
-    screens: &objc2::rc::Retained<objc2_foundation::NSArray<NSScreen>>,
-) -> Vec<String> {
-    (0..screens.len())
-        .map(|index| native_screen_display_key(&screens.objectAtIndex(index)))
-        .collect()
-}
-
-fn native_screen_display_key(screen: &NSScreen) -> String {
-    let frame = screen.frame();
-    crate::native_panel_core::panel_display_key(crate::native_panel_core::PanelDisplayGeometry {
-        x: frame.origin.x as i64,
-        y: frame.origin.y as i64,
-        width: frame.size.width as i64,
-        height: frame.size.height as i64,
-    })
-}
-
 pub(super) fn native_panel_colors() -> NativePanelColors {
     NativePanelColors {
         pill_background: NSColor::colorWithSRGBRed_green_blue_alpha(0.0, 0.0, 0.0, 1.0),

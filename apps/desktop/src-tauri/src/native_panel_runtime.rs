@@ -1,17 +1,19 @@
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use crate::{
     app_runtime::AppRuntime,
-    native_panel_renderer::{NativePanelRuntimeBackend, current_native_panel_runtime_backend},
+    native_panel_renderer::facade::runtime::{
+        NativePanelRuntimeBackend, current_native_panel_runtime_backend,
+    },
     terminal_focus_service::TerminalFocusService,
 };
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use tokio::time::{Duration, MissedTickBehavior};
-#[cfg(target_os = "macos")]
-use tracing::{info, warn};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use tracing::warn;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) fn spawn_native_snapshot_loop<R: tauri::Runtime + 'static>(
     app: AppHandle<R>,
     runtime: AppRuntime,
@@ -29,14 +31,14 @@ pub(crate) fn spawn_native_snapshot_loop<R: tauri::Runtime + 'static>(
     });
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub(crate) fn spawn_native_snapshot_loop<R: tauri::Runtime + 'static>(
     _: AppHandle<R>,
     _: crate::app_runtime::AppRuntime,
 ) {
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 async fn sync_native_snapshot_once<R: tauri::Runtime>(app: &AppHandle<R>, runtime: &AppRuntime) {
     let raw_snapshot = runtime.runtime.snapshot().await;
     if raw_snapshot.pending_permission_count > 0 || raw_snapshot.pending_question_count > 0 {
@@ -58,40 +60,6 @@ async fn sync_native_snapshot_once<R: tauri::Runtime>(app: &AppHandle<R>, runtim
 
     let native_panel_backend = current_native_panel_runtime_backend();
     if let Err(error) = native_panel_backend.update_snapshot(app, &raw_snapshot) {
-        warn!(error = %error, "failed to update native macOS island panel");
+        warn!(error = %error, "failed to update native island panel");
     }
 }
-
-#[cfg(target_os = "macos")]
-pub(crate) fn spawn_native_focus_session<R: tauri::Runtime + 'static>(
-    app: AppHandle<R>,
-    session_id: String,
-) {
-    let runtime = app.state::<AppRuntime>().inner().clone();
-    tauri::async_runtime::spawn(async move {
-        match TerminalFocusService::new(&runtime)
-            .focus_session(&session_id)
-            .await
-        {
-            Ok(true) => {
-                info!(session_id = %session_id, "native card click focused terminal session");
-            }
-            Ok(false) => {
-                warn!(
-                    session_id = %session_id,
-                    "native card click did not find a focusable terminal target"
-                );
-            }
-            Err(error) => {
-                warn!(
-                    session_id = %session_id,
-                    error = %error,
-                    "native card click failed to focus terminal session"
-                );
-            }
-        }
-    });
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn spawn_native_focus_session<R: tauri::Runtime + 'static>(_: AppHandle<R>, _: String) {}

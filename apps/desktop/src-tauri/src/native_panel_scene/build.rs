@@ -2,7 +2,7 @@ use crate::native_panel_core::{
     ExpandedSurface, PanelHitAction, PanelMascotBaseState, PanelSettingsState, PanelState,
     StatusQueuePayload, compact_active_session_count, displayed_default_pending_permissions,
     displayed_default_pending_questions, displayed_prompt_assist_sessions, displayed_sessions,
-    format_status, normalize_status, resolve_mascot_base_state, session_title,
+    format_status, normalize_status, resolve_panel_reminder_state, session_title,
     sync_panel_snapshot_state,
 };
 use chrono::{DateTime, Utc};
@@ -22,8 +22,15 @@ use super::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
+pub(crate) struct PanelDisplayOptionState {
+    pub(crate) index: usize,
+    pub(crate) key: String,
+    pub(crate) label: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PanelSceneBuildInput {
-    pub(crate) display_count: usize,
+    pub(crate) display_options: Vec<PanelDisplayOptionState>,
     pub(crate) settings: PanelSettingsState,
     pub(crate) app_version: String,
 }
@@ -38,7 +45,7 @@ pub(crate) struct PanelRuntimeSceneBundle {
 impl Default for PanelSceneBuildInput {
     fn default() -> Self {
         Self {
-            display_count: 1,
+            display_options: vec![fallback_panel_display_option()],
             settings: PanelSettingsState::default(),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
         }
@@ -55,7 +62,7 @@ pub(crate) fn build_panel_scene(
     let status_surface = build_status_surface_scene(state, snapshot);
     let session_surface = build_session_surface_scene(state, snapshot);
     let settings_surface =
-        build_settings_surface_scene(input.display_count, input.settings, &input.app_version);
+        build_settings_surface_scene(&input.display_options, input.settings, &input.app_version);
     let glow = build_completion_glow(state);
     let mascot_pose = build_mascot_pose(state, snapshot, input.settings.mascot_enabled);
     let mut cards = Vec::new();
@@ -253,7 +260,8 @@ fn build_status_surface_scene(
     state: &PanelState,
     snapshot: &RuntimeSnapshot,
 ) -> StatusSurfaceScene {
-    if !state.status_queue.is_empty() {
+    let reminder = resolve_panel_reminder_state(state, Some(snapshot));
+    if reminder.show_status_card {
         let now = Instant::now();
         return StatusSurfaceScene {
             cards: state
@@ -294,8 +302,8 @@ fn build_status_surface_scene(
                     })
                     .min(),
             },
-            completion_badge_count: state.completion_badge_items.len(),
-            show_completion_glow: !state.completion_badge_items.is_empty() && !state.expanded,
+            completion_badge_count: reminder.completion_badge_count,
+            show_completion_glow: reminder.show_completion_glow,
         };
     }
 
@@ -331,8 +339,8 @@ fn build_status_surface_scene(
             prompt_assist_count: displayed_prompt_assist_sessions(snapshot).len(),
         },
         queue_state: StatusSurfaceQueueState::default(),
-        completion_badge_count: state.completion_badge_items.len(),
-        show_completion_glow: !state.completion_badge_items.is_empty() && !state.expanded,
+        completion_badge_count: reminder.completion_badge_count,
+        show_completion_glow: reminder.show_completion_glow,
     }
 }
 
@@ -364,8 +372,35 @@ pub(crate) fn resolve_panel_shell_scene_state(scene: &PanelScene) -> super::Pane
     }
 }
 
+pub(crate) fn panel_display_option_state(
+    index: usize,
+    key: impl Into<String>,
+    name: &str,
+    width: u32,
+    height: u32,
+) -> PanelDisplayOptionState {
+    PanelDisplayOptionState {
+        index,
+        key: key.into(),
+        label: panel_display_option_label(name, width, height),
+    }
+}
+
+pub(crate) fn panel_display_option_label(name: &str, width: u32, height: u32) -> String {
+    format!("{name} · {width}×{height}")
+}
+
+pub(crate) fn fallback_panel_display_option() -> PanelDisplayOptionState {
+    PanelDisplayOptionState {
+        index: 0,
+        key: "default".to_string(),
+        label: "Display 1".to_string(),
+    }
+}
+
 fn build_compact_bar_scene(state: &PanelState, snapshot: &RuntimeSnapshot) -> CompactBarScene {
     let active_count = compact_active_session_count(snapshot);
+    let reminder = resolve_panel_reminder_state(state, Some(snapshot));
     CompactBarScene {
         headline: SceneText {
             text: compact_headline(state, snapshot),
@@ -377,13 +412,13 @@ fn build_compact_bar_scene(state: &PanelState, snapshot: &RuntimeSnapshot) -> Co
             active_count.to_string()
         },
         total_count: snapshot.total_session_count.to_string(),
-        completion_count: state.completion_badge_items.len(),
+        completion_count: reminder.completion_badge_count,
         actions_visible: state.expanded || state.transitioning,
     }
 }
 
 fn build_completion_glow(state: &PanelState) -> Option<SceneGlow> {
-    if state.completion_badge_items.is_empty() || state.expanded {
+    if !resolve_panel_reminder_state(state, None).show_completion_glow {
         return None;
     }
     Some(SceneGlow {
@@ -400,17 +435,7 @@ fn build_mascot_pose(
     if !mascot_enabled {
         return SceneMascotPose::Hidden;
     }
-    let has_status_completion = state.expanded
-        && state.surface_mode == ExpandedSurface::Status
-        && state
-            .status_queue
-            .iter()
-            .any(|item| matches!(item.payload, StatusQueuePayload::Completion(_)));
-    match resolve_mascot_base_state(
-        Some(snapshot),
-        has_status_completion,
-        !state.completion_badge_items.is_empty(),
-    ) {
+    match resolve_panel_reminder_state(state, Some(snapshot)).mascot_base_state {
         PanelMascotBaseState::Idle => SceneMascotPose::Idle,
         PanelMascotBaseState::Running => SceneMascotPose::Running,
         PanelMascotBaseState::Approval => SceneMascotPose::Approval,

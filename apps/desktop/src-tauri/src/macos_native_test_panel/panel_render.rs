@@ -7,8 +7,8 @@ use super::panel_helpers::native_panel_content_visibility;
 use super::panel_interaction::native_status_surface_active;
 use super::panel_refs::{NativePanelRefs, native_panel_state, resolve_native_panel_refs};
 use super::panel_scene_adapter::{
-    cache_native_panel_render_command_bundle_in_state,
-    resolve_current_native_panel_runtime_render_state, resolve_current_native_panel_scene,
+    resolve_and_cache_native_panel_presentation, resolve_current_native_panel_runtime_render_state,
+    resolve_current_native_panel_scene,
 };
 use super::panel_screen_geometry::resolve_screen_frame_for_panel;
 use super::panel_shoulder::apply_shoulder_path_scale_x;
@@ -18,6 +18,12 @@ use crate::macos_shared_expanded_window;
 use crate::native_panel_core::{
     PanelRenderProgress, PanelRenderState, PanelRenderStateInput, resolve_panel_render_progress,
     resolve_panel_render_state,
+};
+use crate::native_panel_renderer::facade::{
+    descriptor::{
+        NativePanelEdgeAction, NativePanelEdgeActionFrames, NativePanelPointerRegionInput,
+    },
+    presentation::{NativePanelActionButtonCommand, resolve_native_panel_presentation},
 };
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_panel_geometry(
@@ -101,36 +107,49 @@ fn sync_native_panel_pointer_regions(
     runtime_state: crate::native_panel_scene::PanelRuntimeRenderState,
     render_state: PanelRenderState,
 ) {
-    let Some(scene) = resolve_current_native_panel_scene() else {
+    let pointer_region_input = Some(edge_action_pointer_region_input(layout, refs));
+    let resolved = native_panel_state()
+        .and_then(|state| state.lock().ok())
+        .and_then(|mut guard| {
+            resolve_and_cache_native_panel_presentation(
+                &mut guard,
+                native_panel_core_layout(layout),
+                render_state,
+                pointer_region_input,
+            )
+        })
+        .or_else(|| {
+            let scene = resolve_current_native_panel_scene()?;
+            Some(resolve_native_panel_presentation(
+                native_panel_core_layout(layout),
+                &scene,
+                runtime_state,
+                render_state,
+                pointer_region_input,
+            ))
+        });
+    let Some(resolved) = resolved else {
         return;
     };
-    let bundle = crate::native_panel_renderer::resolve_native_panel_render_command_bundle(
-        native_panel_core_layout(layout),
-        &scene,
-        runtime_state,
-        render_state,
-        Some(edge_action_pointer_region_input(layout, refs)),
+    apply_edge_action_button_commands(
+        refs,
+        layout,
+        &resolved.presentation.action_button_commands(),
     );
-    apply_edge_action_button_commands(refs, layout, &bundle.action_buttons);
-    if let Some(state) = native_panel_state() {
-        if let Ok(mut guard) = state.lock() {
-            cache_native_panel_render_command_bundle_in_state(&mut guard, &bundle);
-        }
-    }
 }
 
 fn apply_edge_action_button_commands(
     refs: &NativePanelRefs,
     layout: &NativePanelLayout,
-    commands: &[crate::native_panel_renderer::NativePanelActionButtonCommand],
+    commands: &[NativePanelActionButtonCommand],
 ) {
     for command in commands {
         let frame = edge_action_command_local_frame(layout, command.frame);
         match command.action {
-            crate::native_panel_renderer::NativePanelEdgeAction::Settings => {
+            NativePanelEdgeAction::Settings => {
                 refs.settings_button.setFrame(frame);
             }
-            crate::native_panel_renderer::NativePanelEdgeAction::Quit => {
+            NativePanelEdgeAction::Quit => {
                 refs.quit_button.setFrame(frame);
             }
         }
@@ -153,9 +172,9 @@ fn edge_action_command_local_frame(
 fn edge_action_pointer_region_input(
     layout: &NativePanelLayout,
     refs: &NativePanelRefs,
-) -> crate::native_panel_renderer::NativePanelPointerRegionInput {
-    crate::native_panel_renderer::NativePanelPointerRegionInput {
-        edge_action_frames: crate::native_panel_renderer::NativePanelEdgeActionFrames {
+) -> NativePanelPointerRegionInput {
+    NativePanelPointerRegionInput {
+        edge_action_frames: NativePanelEdgeActionFrames {
             settings_action: Some(edge_action_button_pointer_frame(
                 layout,
                 refs.settings_button.frame(),

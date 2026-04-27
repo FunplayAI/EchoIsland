@@ -1,7 +1,9 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
-use echoisland_core::{EventEnvelope, EventMetadata, ResponseEnvelope};
+#[cfg(target_os = "macos")]
+use echoisland_core::EventMetadata;
+use echoisland_core::{EventEnvelope, ResponseEnvelope};
 use echoisland_ipc::{DEFAULT_ADDR, EventHandler, serve_tcp};
 use echoisland_runtime::SharedRuntime;
 use tauri::{AppHandle, Emitter};
@@ -10,7 +12,9 @@ use tracing::{info, warn};
 
 use crate::focus_store::{default_focus_bindings_path, load_focus_bindings, save_focus_bindings};
 use crate::native_ui_refresh::maybe_refresh_native_ui_for_event;
-use crate::terminal_focus::{ObservedTab, SessionFocusTarget, SessionObservation, SessionTabCache};
+#[cfg(target_os = "macos")]
+use crate::terminal_focus::SessionFocusTarget;
+use crate::terminal_focus::{ObservedTab, SessionObservation, SessionTabCache};
 
 pub struct RuntimeEventHandler<R: tauri::Runtime> {
     app_handle: AppHandle<R>,
@@ -195,6 +199,7 @@ fn maybe_enrich_event_terminal_metadata(event: &mut EventEnvelope) {
 #[cfg(not(target_os = "macos"))]
 fn maybe_enrich_event_terminal_metadata(_event: &mut EventEnvelope) {}
 
+#[cfg(target_os = "macos")]
 fn merge_missing_event_metadata(metadata: &mut EventMetadata, inferred: EventMetadata) {
     if metadata.terminal_app.is_none() {
         metadata.terminal_app = inferred.terminal_app;
@@ -242,6 +247,7 @@ fn merge_missing_event_metadata(metadata: &mut EventMetadata, inferred: EventMet
     }
 }
 
+#[cfg(target_os = "macos")]
 fn is_precise_terminal_tty(value: &str) -> bool {
     let trimmed = value.trim();
     !trimmed.is_empty() && trimmed != "/dev/tty" && trimmed != "/dev/console"

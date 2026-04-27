@@ -3,16 +3,16 @@ use std::sync::Arc;
 use echoisland_runtime::SharedRuntime;
 use tauri::AppHandle;
 
-#[cfg(target_os = "macos")]
-use crate::native_panel_renderer::{
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use crate::native_panel_renderer::facade::runtime::{
     NativePanelRuntimeBackend, current_native_panel_runtime_backend,
 };
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use tokio::time::{Duration, sleep};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use tracing::warn;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn maybe_refresh_native_ui_for_event<R: tauri::Runtime + 'static>(
     app_handle: AppHandle<R>,
     runtime: Arc<SharedRuntime>,
@@ -39,16 +39,16 @@ pub fn maybe_refresh_native_ui_for_event<R: tauri::Runtime + 'static>(
                 active_session_count = snapshot.active_session_count,
                 pending_permission_count = snapshot.pending_permission_count,
                 pending_question_count = snapshot.pending_question_count,
-                "native macOS pending-lifecycle snapshot refresh"
+                "native pending-lifecycle snapshot refresh"
             );
             if let Err(error) = native_panel_backend.update_snapshot(&app_handle, &snapshot) {
-                warn!(error = %error, "failed to refresh native macOS island after pending event");
+                warn!(error = %error, "failed to refresh native island after pending event");
             }
         }
     });
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn should_refresh_native_ui_for_event(event_name: &str) -> bool {
     matches!(
         event_name,
@@ -60,7 +60,7 @@ fn should_refresh_native_ui_for_event(event_name: &str) -> bool {
     )
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn maybe_refresh_native_ui_for_event<R: tauri::Runtime + 'static>(
     _app_handle: AppHandle<R>,
     _runtime: Arc<SharedRuntime>,
@@ -68,7 +68,7 @@ pub fn maybe_refresh_native_ui_for_event<R: tauri::Runtime + 'static>(
 ) {
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(all(test, any(target_os = "macos", target_os = "windows")))]
 mod tests {
     use super::should_refresh_native_ui_for_event;
 

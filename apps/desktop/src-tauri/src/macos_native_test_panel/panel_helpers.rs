@@ -3,11 +3,7 @@ use std::time::Duration;
 use objc2_app_kit::NSColor;
 
 use super::card_animation::card_content_visibility_phase;
-use super::card_metrics::native_card_metrics;
-use super::panel_constants::{
-    DEFAULT_PANEL_CANVAS_WIDTH, PANEL_CARD_EXIT_MS, STATUS_QUEUE_EXIT_EXTRA_MS,
-};
-use super::panel_geometry::expanded_cards_width;
+use super::panel_constants::{PANEL_CARD_EXIT_MS, STATUS_QUEUE_EXIT_EXTRA_MS};
 use super::panel_refs::native_panel_state;
 
 pub(super) fn native_panel_content_visibility() -> f64 {
@@ -30,7 +26,10 @@ pub(super) fn native_panel_content_visibility() -> f64 {
 }
 
 pub(super) fn card_chat_body_width(card_width: f64) -> f64 {
-    crate::native_panel_core::resolve_card_chat_body_width(card_width, native_card_metrics())
+    crate::native_panel_core::resolve_card_chat_body_width(
+        card_width,
+        crate::native_panel_core::default_panel_card_metric_constants(),
+    )
 }
 
 pub(super) fn estimated_chat_body_height(body: &str, width: f64, max_lines: isize) -> f64 {
@@ -38,12 +37,8 @@ pub(super) fn estimated_chat_body_height(body: &str, width: f64, max_lines: isiz
         body,
         width,
         max_lines,
-        native_card_metrics(),
+        crate::native_panel_core::default_panel_card_metric_constants(),
     )
-}
-
-pub(super) fn estimated_default_chat_body_width() -> f64 {
-    card_chat_body_width(expanded_cards_width(DEFAULT_PANEL_CANVAS_WIDTH))
 }
 
 pub(super) fn lerp(start: f64, end: f64, progress: f64) -> f64 {

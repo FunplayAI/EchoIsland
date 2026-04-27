@@ -8,7 +8,7 @@ use super::panel_constants::{
     ACTIVE_COUNT_SLOT_WIDTH, ACTIVE_COUNT_TEXT_OFFSET_X, ACTIVE_COUNT_TEXT_WIDTH,
     COMPACT_HEADLINE_LABEL_HEIGHT, COMPACT_HEADLINE_VERTICAL_NUDGE_Y,
 };
-use crate::native_panel_renderer::NativePanelCompactBarCommand;
+use crate::native_panel_renderer::facade::presentation::NativePanelCompactBarCommand;
 
 pub(super) struct CompactBarViews {
     pub(super) headline: Retained<NSTextField>,

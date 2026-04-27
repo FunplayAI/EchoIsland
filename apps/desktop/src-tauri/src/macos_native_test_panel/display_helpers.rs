@@ -38,7 +38,3 @@ pub(super) fn compact_title(value: &str, max_length: usize) -> String {
 pub(super) fn session_meta_line(session: &SessionSnapshotView) -> String {
     crate::native_panel_core::session_meta_line(session)
 }
-
-pub(super) fn display_snippet(value: Option<&str>, max_chars: usize) -> Option<String> {
-    crate::native_panel_core::display_snippet(value, max_chars)
-}

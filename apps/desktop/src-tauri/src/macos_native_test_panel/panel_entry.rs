@@ -15,14 +15,12 @@ use super::panel_setup::{
 use super::panel_state_init::{initialize_active_count_scroll_text, initialize_native_panel_state};
 use super::panel_views::{PanelBaseViews, create_panel_base_views};
 use super::panel_window;
+use crate::native_panel_renderer::facade::env::native_panel_enabled_from_webview_env_value;
 
 use tracing::info;
 
 pub(crate) fn native_ui_enabled() -> bool {
-    !matches!(
-        std::env::var("CODEISLAND_USE_WEBVIEW").as_deref(),
-        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
-    )
+    native_panel_enabled_from_webview_env_value(std::env::var("CODEISLAND_USE_WEBVIEW").ok())
 }
 
 pub(crate) fn create_native_island_panel() -> Result<(), String> {

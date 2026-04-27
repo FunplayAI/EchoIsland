@@ -1,10 +1,21 @@
 use crate::{
     native_panel_core::{DEFAULT_COMPACT_PILL_WIDTH, DEFAULT_EXPANDED_PILL_WIDTH, PanelRect},
-    native_panel_renderer::{
-        NativePanelHost, NativePanelHostWindowDescriptor, NativePanelHostWindowState,
-        NativePanelPlatformEvent, NativePanelPointerRegion, NativePanelRenderCommandBundle,
-        NativePanelRenderer, NativePanelRuntimeSceneCache, NativePanelTimelineDescriptor,
-        cache_render_command_bundle, cache_scene_runtime, native_panel_host_window_frame,
+    native_panel_renderer::facade::{
+        command::NativePanelPlatformEvent,
+        descriptor::{
+            NativePanelHostWindowDescriptor, NativePanelHostWindowState, NativePanelPointerRegion,
+            NativePanelTimelineDescriptor, native_panel_host_window_frame,
+        },
+        host::NativePanelHost,
+        presentation::NativePanelPresentationModel,
+        renderer::{
+            NativePanelCachedRendererBackend, NativePanelRenderCommandBundle, NativePanelRenderer,
+            NativePanelRuntimeSceneCache, cache_host_window_descriptor_on_renderer,
+            cache_host_window_state_on_renderer, cache_pointer_regions_on_renderer,
+            cache_render_command_bundle_on_renderer, cache_scene_runtime_on_renderer,
+            cache_timeline_descriptor_on_renderer, sync_cached_presentation_model_slot,
+            sync_cached_visibility_on_renderer,
+        },
     },
     native_panel_scene::{PanelRuntimeRenderState, PanelScene},
 };
@@ -19,7 +30,40 @@ pub(super) struct MacosNativePanelRendererAdapter {
     pub(super) last_host_window_descriptor: Option<NativePanelHostWindowDescriptor>,
     pub(super) last_host_window_state: Option<NativePanelHostWindowState>,
     pub(super) last_pointer_regions: Vec<NativePanelPointerRegion>,
+    pub(super) last_presentation_model: Option<NativePanelPresentationModel>,
     pub(super) visible: bool,
+}
+
+impl NativePanelCachedRendererBackend for MacosNativePanelRendererAdapter {
+    type Error = String;
+
+    fn scene_cache_mut(&mut self) -> &mut NativePanelRuntimeSceneCache {
+        &mut self.scene_cache
+    }
+
+    fn timeline_descriptor_slot(&mut self) -> &mut Option<NativePanelTimelineDescriptor> {
+        &mut self.last_timeline_descriptor
+    }
+
+    fn host_window_descriptor_slot(&mut self) -> &mut Option<NativePanelHostWindowDescriptor> {
+        &mut self.last_host_window_descriptor
+    }
+
+    fn host_window_state_slot(&mut self) -> &mut Option<NativePanelHostWindowState> {
+        &mut self.last_host_window_state
+    }
+
+    fn pointer_regions_slot(&mut self) -> &mut Vec<NativePanelPointerRegion> {
+        &mut self.last_pointer_regions
+    }
+
+    fn presentation_model_slot(&mut self) -> Option<&mut Option<NativePanelPresentationModel>> {
+        Some(&mut self.last_presentation_model)
+    }
+
+    fn set_cached_visible(&mut self, visible: bool) {
+        self.visible = visible;
+    }
 }
 
 impl NativePanelRenderer for MacosNativePanelRendererAdapter {
@@ -30,24 +74,21 @@ impl NativePanelRenderer for MacosNativePanelRendererAdapter {
         scene: &PanelScene,
         runtime: PanelRuntimeRenderState,
     ) -> Result<(), Self::Error> {
-        cache_scene_runtime(&mut self.scene_cache, scene.clone(), runtime);
-        Ok(())
+        cache_scene_runtime_on_renderer(self, scene, runtime)
     }
 
     fn apply_timeline_descriptor(
         &mut self,
         descriptor: NativePanelTimelineDescriptor,
     ) -> Result<(), Self::Error> {
-        self.last_timeline_descriptor = Some(descriptor);
-        Ok(())
+        cache_timeline_descriptor_on_renderer(self, descriptor)
     }
 
     fn sync_host_window_state(
         &mut self,
         state: NativePanelHostWindowState,
     ) -> Result<(), Self::Error> {
-        self.last_host_window_state = Some(state);
-        Ok(())
+        cache_host_window_state_on_renderer(self, state)
     }
 
     fn sync_shared_body_height(
@@ -61,29 +102,25 @@ impl NativePanelRenderer for MacosNativePanelRendererAdapter {
         &mut self,
         descriptor: NativePanelHostWindowDescriptor,
     ) -> Result<(), Self::Error> {
-        self.last_host_window_descriptor = Some(descriptor);
-        Ok(())
+        cache_host_window_descriptor_on_renderer(self, descriptor)
     }
 
     fn sync_pointer_regions(
         &mut self,
         regions: &[NativePanelPointerRegion],
     ) -> Result<(), Self::Error> {
-        self.last_pointer_regions = regions.to_vec();
-        Ok(())
+        cache_pointer_regions_on_renderer(self, regions)
     }
 
     fn record_render_command_bundle(
         &mut self,
         bundle: &NativePanelRenderCommandBundle,
     ) -> Result<(), Self::Error> {
-        cache_render_command_bundle(&mut self.scene_cache, bundle);
-        Ok(())
+        cache_render_command_bundle_on_renderer(self, bundle)
     }
 
     fn set_visible(&mut self, visible: bool) -> Result<(), Self::Error> {
-        self.visible = visible;
-        Ok(())
+        sync_cached_visibility_on_renderer(self, visible)
     }
 }
 
@@ -144,6 +181,10 @@ impl MacosNativePanelHostAdapter {
         if self.renderer.scene_cache.last_snapshot.is_none() {
             self.renderer.scene_cache.last_snapshot = state.last_snapshot.clone();
         }
+        sync_cached_presentation_model_slot(
+            &mut self.renderer.last_presentation_model,
+            &self.renderer.scene_cache,
+        );
     }
 
     fn resolved_window_frame(&self) -> Option<PanelRect> {
@@ -178,9 +219,13 @@ mod tests {
         macos_native_test_panel::{
             mascot::NativeMascotRuntime, panel_types::NativeExpandedSurface,
         },
-        native_panel_renderer::{
-            NativePanelHost, NativePanelHostWindowDescriptor, NativePanelRenderer,
-            NativePanelTimelineDescriptor, resolve_native_panel_render_command_bundle,
+        native_panel_renderer::facade::{
+            descriptor::{NativePanelHostWindowDescriptor, NativePanelTimelineDescriptor},
+            host::NativePanelHost,
+            renderer::{
+                NativePanelRenderer, NativePanelRuntimeSceneCache,
+                resolve_native_panel_render_command_bundle,
+            },
         },
         native_panel_scene::{PanelRuntimeRenderState, PanelSceneBuildInput, build_panel_scene},
     };
@@ -206,7 +251,7 @@ mod tests {
                 pending_questions: vec![],
                 sessions: vec![],
             }),
-            scene_cache: crate::native_panel_renderer::NativePanelRuntimeSceneCache::default(),
+            scene_cache: NativePanelRuntimeSceneCache::default(),
             status_queue: Vec::new(),
             completion_badge_items: Vec::new(),
             pending_permission_card: None,
@@ -236,6 +281,7 @@ mod tests {
             pointer_inside_since: None,
             pointer_outside_since: None,
             primary_mouse_down: false,
+            ignores_mouse_events: true,
             last_focus_click: None,
             pointer_regions: Vec::new(),
             mascot_runtime: NativeMascotRuntime::new(Instant::now()),
@@ -464,5 +510,12 @@ mod tests {
             Some(scene.compact_bar.headline.text.as_str())
         );
         assert_eq!(host.renderer.last_pointer_regions, bundle.pointer_regions);
+        assert_eq!(
+            host.renderer
+                .last_presentation_model
+                .as_ref()
+                .map(|presentation| presentation.compact_bar.headline.text.as_str()),
+            Some(scene.compact_bar.headline.text.as_str())
+        );
     }
 }

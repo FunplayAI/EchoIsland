@@ -3,56 +3,38 @@ use tauri::{AppHandle, Manager};
 use crate::{
     app_settings::current_app_settings,
     constants::MAIN_WINDOW_LABEL,
-    display_settings::{list_available_displays, resolve_preferred_display_index},
-    native_panel_core::PanelRect,
-    native_panel_renderer::{NativePanelRuntimeInputContext, NativePanelRuntimeInputDescriptor},
-    native_panel_scene_input::native_panel_runtime_input_descriptor_from_context,
+    display_settings::{display_options_from_monitors, panel_rect_from_monitor},
+    native_panel_renderer::facade::descriptor::NativePanelRuntimeInputDescriptor,
+    native_panel_scene_input::native_panel_runtime_input_descriptor_from_display_options_with_screen_frame,
 };
 
 pub(super) fn windows_runtime_input_descriptor<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> NativePanelRuntimeInputDescriptor {
     let settings = current_app_settings();
-    let displays = list_available_displays(app).unwrap_or_default();
-    let selected_display_index =
-        resolve_preferred_display_index(&displays, settings.preferred_display_key.as_deref());
-    let screen_frame = windows_display_screen_frame(app, selected_display_index);
-
-    native_panel_runtime_input_descriptor_from_context(
+    let monitors = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .and_then(|window| window.available_monitors().ok())
+        .unwrap_or_default();
+    let displays = display_options_from_monitors(&monitors);
+    native_panel_runtime_input_descriptor_from_display_options_with_screen_frame(
+        &displays,
         &settings,
-        NativePanelRuntimeInputContext {
-            display_count: displays.len(),
-            selected_display_index,
-            screen_frame,
+        Some(0),
+        |selected_display_index| {
+            monitors
+                .get(selected_display_index)
+                .or_else(|| monitors.first())
+                .map(panel_rect_from_monitor)
         },
     )
-}
-
-fn windows_display_screen_frame<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    preferred_display_index: usize,
-) -> Option<PanelRect> {
-    let window = app.get_webview_window(MAIN_WINDOW_LABEL)?;
-    let monitors = window.available_monitors().ok()?;
-    let monitor = monitors
-        .get(preferred_display_index)
-        .or_else(|| monitors.first())?;
-    let position = monitor.position();
-    let size = monitor.size();
-    let scale = monitor.scale_factor();
-    Some(PanelRect {
-        x: position.x as f64 / scale,
-        y: position.y as f64 / scale,
-        width: size.width as f64 / scale,
-        height: size.height as f64 / scale,
-    })
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
         app_settings::AppSettings, native_panel_core::PanelRect,
-        native_panel_renderer::NativePanelRuntimeInputContext,
+        native_panel_renderer::facade::descriptor::NativePanelRuntimeInputContext,
         native_panel_scene_input::native_panel_runtime_input_descriptor_from_context,
     };
 
@@ -66,7 +48,29 @@ mod tests {
                 preferred_display_key: Some("display-key".to_string()),
             },
             NativePanelRuntimeInputContext {
-                display_count: 3,
+                display_options: vec![
+                    crate::native_panel_scene::panel_display_option_state(
+                        0,
+                        "display-1",
+                        "Built-in",
+                        3024,
+                        1964,
+                    ),
+                    crate::native_panel_scene::panel_display_option_state(
+                        1,
+                        "display-2",
+                        "Studio Display",
+                        2560,
+                        1440,
+                    ),
+                    crate::native_panel_scene::panel_display_option_state(
+                        2,
+                        "display-3",
+                        "Projector",
+                        1920,
+                        1080,
+                    ),
+                ],
                 selected_display_index: 1,
                 screen_frame: Some(PanelRect {
                     x: 20.0,
@@ -78,7 +82,7 @@ mod tests {
         );
 
         assert_eq!(descriptor.selected_display_index(), 1);
-        assert_eq!(descriptor.scene_input.display_count, 3);
+        assert_eq!(descriptor.scene_input.display_options.len(), 3);
         assert!(!descriptor.scene_input.settings.completion_sound_enabled);
         assert!(!descriptor.scene_input.settings.mascot_enabled);
         assert_eq!(
@@ -93,13 +97,13 @@ mod tests {
     }
 
     #[test]
-    fn runtime_input_descriptor_clamps_empty_display_count() {
+    fn runtime_input_descriptor_clamps_empty_display_list() {
         let descriptor = native_panel_runtime_input_descriptor_from_context(
             &AppSettings::default(),
             NativePanelRuntimeInputContext::default(),
         );
 
-        assert_eq!(descriptor.scene_input.display_count, 1);
+        assert_eq!(descriptor.scene_input.display_options.len(), 1);
         assert_eq!(descriptor.selected_display_index(), 0);
         assert_eq!(descriptor.screen_frame, None);
     }

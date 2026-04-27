@@ -5,7 +5,9 @@ use echoisland_paths::{bridge_binary_name, bridge_binary_path, codex_dir};
 use tracing::{info, warn};
 
 use crate::{
-    native_panel_renderer::{NativePanelRuntimeBackend, current_native_panel_runtime_backend},
+    native_panel_renderer::facade::runtime::{
+        NativePanelRuntimeBackend, current_native_panel_runtime_backend,
+    },
     platform::{PlatformBackend, current_platform_capabilities},
     tray::build_tray,
     window_surface_service::WindowSurfaceService,

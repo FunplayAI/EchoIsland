@@ -4,8 +4,22 @@ use echoisland_runtime::RuntimeSnapshot;
 use objc2_foundation::NSRect;
 
 use super::mascot::NativeMascotRuntime;
-use crate::native_panel_renderer::{
-    NativePanelHostWindowDescriptor, NativePanelPointerRegion, NativePanelRuntimeSceneCache,
+use crate::native_panel_renderer::facade::{
+    descriptor::{NativePanelHostWindowDescriptor, NativePanelPointerRegion},
+    host::NativePanelRuntimeHostState,
+    interaction::{
+        NativePanelClickStateBridge, NativePanelCoreStateBridge,
+        NativePanelHostInteractionStateBridge, NativePanelPrimaryPointerStateBridge,
+        record_native_panel_focus_click_session, resolve_native_panel_last_focus_click,
+    },
+    renderer::{
+        NativePanelRuntimeSceneCache, NativePanelRuntimeSceneMutableStateBridge,
+        NativePanelRuntimeSceneStateBridge,
+    },
+    runtime::{
+        NativePanelRuntimeRenderPayloadState, NativePanelRuntimeRenderPayloadStateBridge,
+        resolve_native_panel_runtime_render_payload_for_state,
+    },
 };
 
 #[derive(Clone, Copy)]
@@ -90,6 +104,7 @@ pub(super) type NativeCompletionBadgeItem = crate::native_panel_core::Completion
 pub(super) type NativeStatusQueueSyncResult = crate::native_panel_core::StatusQueueSyncResult;
 
 pub(super) type NativeExpandedSurface = crate::native_panel_core::ExpandedSurface;
+#[cfg(test)]
 pub(super) type NativeHoverTransition = crate::native_panel_core::HoverTransition;
 
 pub(super) struct NativePanelState {
@@ -112,12 +127,33 @@ pub(super) struct NativePanelState {
     pub(super) pointer_inside_since: Option<Instant>,
     pub(super) pointer_outside_since: Option<Instant>,
     pub(super) primary_mouse_down: bool,
+    pub(super) ignores_mouse_events: bool,
     pub(super) last_focus_click: Option<(String, Instant)>,
     pub(super) pointer_regions: Vec<NativePanelPointerRegion>,
     pub(super) mascot_runtime: NativeMascotRuntime,
 }
 
 impl NativePanelState {
+    pub(super) fn render_payload_snapshot(&self) -> Option<RuntimeSnapshot> {
+        self.scene_cache
+            .last_snapshot
+            .clone()
+            .or_else(|| self.last_snapshot.clone())
+    }
+
+    pub(super) fn render_payload(&self) -> Option<NativePanelRenderPayload> {
+        resolve_native_panel_runtime_render_payload_for_state(self, |snapshot, payload_state| {
+            NativePanelRenderPayload {
+                snapshot,
+                expanded: payload_state.expanded,
+                shared_body_height: payload_state.shared_body_height,
+                transitioning: payload_state.transitioning,
+                transition_cards_progress: payload_state.transition_cards_progress,
+                transition_cards_entering: payload_state.transition_cards_entering,
+            }
+        })
+    }
+
     pub(super) fn to_core_panel_state(&self) -> crate::native_panel_core::PanelState {
         crate::native_panel_core::PanelState {
             expanded: self.expanded,
@@ -148,5 +184,99 @@ impl NativePanelState {
         self.surface_mode = core.surface_mode;
         self.pointer_inside_since = core.pointer_inside_since;
         self.pointer_outside_since = core.pointer_outside_since;
+    }
+}
+
+impl NativePanelRuntimeRenderPayloadStateBridge for NativePanelState {
+    fn runtime_render_payload_snapshot(&self) -> Option<RuntimeSnapshot> {
+        self.render_payload_snapshot()
+    }
+
+    fn runtime_render_payload_state(&self) -> NativePanelRuntimeRenderPayloadState {
+        NativePanelRuntimeRenderPayloadState {
+            expanded: self.expanded,
+            shared_body_height: self.shared_body_height,
+            transitioning: self.transitioning,
+            transition_cards_progress: self.transition_cards_progress,
+            transition_cards_entering: self.transition_cards_entering,
+        }
+    }
+}
+
+impl NativePanelRuntimeSceneStateBridge for NativePanelState {
+    fn runtime_scene_cache(&self) -> &NativePanelRuntimeSceneCache {
+        &self.scene_cache
+    }
+
+    fn runtime_scene_current_snapshot(&self) -> Option<&RuntimeSnapshot> {
+        self.last_snapshot.as_ref()
+    }
+}
+
+impl NativePanelRuntimeSceneMutableStateBridge for NativePanelState {
+    fn runtime_scene_cache_mut(&mut self) -> &mut NativePanelRuntimeSceneCache {
+        &mut self.scene_cache
+    }
+
+    fn runtime_pointer_regions_mut(&mut self) -> &mut Vec<NativePanelPointerRegion> {
+        &mut self.pointer_regions
+    }
+}
+
+impl NativePanelCoreStateBridge for NativePanelState {
+    fn snapshot_core_panel_state(&self) -> crate::native_panel_core::PanelState {
+        self.to_core_panel_state()
+    }
+
+    fn apply_core_panel_state(&mut self, core: crate::native_panel_core::PanelState) {
+        NativePanelState::apply_core_panel_state(self, core);
+    }
+}
+
+impl NativePanelClickStateBridge for NativePanelState {
+    fn click_expanded(&self) -> bool {
+        self.expanded
+    }
+
+    fn click_transitioning(&self) -> bool {
+        self.transitioning
+    }
+
+    fn click_last_focus_click(&self) -> Option<crate::native_panel_core::LastFocusClick<'_>> {
+        resolve_native_panel_last_focus_click(self.last_focus_click.as_ref())
+    }
+
+    fn record_click_focus_session(&mut self, session_id: String, now: Instant) {
+        record_native_panel_focus_click_session(&mut self.last_focus_click, session_id, now);
+    }
+}
+
+impl NativePanelPrimaryPointerStateBridge for NativePanelState {
+    fn primary_pointer_down(&self) -> bool {
+        self.primary_mouse_down
+    }
+
+    fn set_primary_pointer_down(&mut self, down: bool) {
+        self.primary_mouse_down = down;
+    }
+}
+
+impl NativePanelHostInteractionStateBridge for NativePanelState {
+    fn host_ignores_mouse_events(&self) -> bool {
+        self.ignores_mouse_events
+    }
+
+    fn set_host_ignores_mouse_events(&mut self, ignores_mouse_events: bool) {
+        self.ignores_mouse_events = ignores_mouse_events;
+    }
+}
+
+impl NativePanelRuntimeHostState for NativePanelState {
+    fn host_window_descriptor_mut(&mut self) -> &mut NativePanelHostWindowDescriptor {
+        &mut self.host_window_descriptor
+    }
+
+    fn pointer_regions_mut(&mut self) -> &mut Vec<NativePanelPointerRegion> {
+        &mut self.pointer_regions
     }
 }

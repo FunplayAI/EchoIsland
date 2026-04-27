@@ -4,7 +4,9 @@ use std::time::Instant;
 use super::mascot::NativeMascotRuntime;
 use super::panel_globals::{ACTIVE_COUNT_SCROLL_TEXT, NATIVE_TEST_PANEL_STATE};
 use super::panel_types::{NativeExpandedSurface, NativePanelState};
-use crate::native_panel_renderer::{NativePanelHostWindowDescriptor, NativePanelRuntimeSceneCache};
+use crate::native_panel_renderer::facade::{
+    descriptor::NativePanelHostWindowDescriptor, renderer::NativePanelRuntimeSceneCache,
+};
 
 pub(super) fn initialize_native_panel_state(
     host_window_descriptor: NativePanelHostWindowDescriptor,
@@ -29,6 +31,7 @@ pub(super) fn initialize_native_panel_state(
         pointer_inside_since: None,
         pointer_outside_since: None,
         primary_mouse_down: false,
+        ignores_mouse_events: true,
         last_focus_click: None,
         pointer_regions: Vec::new(),
         mascot_runtime: NativeMascotRuntime::new(Instant::now()),
