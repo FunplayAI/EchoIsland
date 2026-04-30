@@ -1,7 +1,7 @@
 {
   "name": "echoisland-desktop",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "tauri:dev": "node ./scripts/run-tauri.mjs dev",
