@@ -43,12 +43,43 @@ pub(crate) enum NativePanelVisualPrimitive {
         text: String,
         color: NativePanelVisualColor,
         size: i32,
+        weight: NativePanelVisualTextWeight,
+        alignment: NativePanelVisualTextAlignment,
     },
     MascotDot {
         center: PanelPoint,
         radius: f64,
+        scale_x: f64,
+        scale_y: f64,
         pose: SceneMascotPose,
     },
+    CompactShoulder {
+        frame: PanelRect,
+        side: NativePanelVisualShoulderSide,
+        progress: f64,
+        fill: NativePanelVisualColor,
+        border: NativePanelVisualColor,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NativePanelVisualTextWeight {
+    Normal,
+    Semibold,
+    Bold,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NativePanelVisualTextAlignment {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NativePanelVisualShoulderSide {
+    Left,
+    Right,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -59,7 +90,10 @@ pub(crate) struct NativePanelVisualPlan {
 
 #[cfg(test)]
 mod tests {
-    use super::{NativePanelVisualColor, NativePanelVisualPlan, NativePanelVisualPrimitive};
+    use super::{
+        NativePanelVisualColor, NativePanelVisualPlan, NativePanelVisualPrimitive,
+        NativePanelVisualShoulderSide,
+    };
     use crate::{
         native_panel_core::{PanelPoint, PanelRect},
         native_panel_scene::SceneMascotPose,
@@ -83,12 +117,26 @@ mod tests {
                 NativePanelVisualPrimitive::MascotDot {
                     center: PanelPoint { x: 24.0, y: 24.0 },
                     radius: 10.0,
+                    scale_x: 1.0,
+                    scale_y: 1.0,
                     pose: SceneMascotPose::Complete,
+                },
+                NativePanelVisualPrimitive::CompactShoulder {
+                    frame: PanelRect {
+                        x: -6.0,
+                        y: 31.0,
+                        width: 6.0,
+                        height: 6.0,
+                    },
+                    side: NativePanelVisualShoulderSide::Left,
+                    progress: 0.0,
+                    fill: NativePanelVisualColor::rgb(12, 12, 15),
+                    border: NativePanelVisualColor::rgb(44, 44, 50),
                 },
             ],
         };
 
         assert!(!plan.hidden);
-        assert_eq!(plan.primitives.len(), 2);
+        assert_eq!(plan.primitives.len(), 3);
     }
 }

@@ -7,7 +7,7 @@ use crate::{
 
 use super::descriptors::{
     NativePanelEdgeAction, NativePanelPointerRegion, NativePanelPointerRegionInput,
-    NativePanelPointerRegionKind, resolve_native_panel_pointer_regions,
+    NativePanelPointerRegionKind, resolve_native_panel_interaction_plan,
 };
 use super::presentation_model::estimated_scene_content_height;
 
@@ -38,6 +38,9 @@ pub(crate) struct NativePanelShellCommand {
 #[derive(Clone, Debug)]
 pub(crate) struct NativePanelCompactBarCommand {
     pub(crate) frame: PanelRect,
+    pub(crate) left_shoulder_frame: PanelRect,
+    pub(crate) right_shoulder_frame: PanelRect,
+    pub(crate) shoulder_progress: f64,
     pub(crate) headline: SceneText,
     pub(crate) active_count: String,
     pub(crate) total_count: String,
@@ -80,7 +83,9 @@ pub(crate) fn resolve_native_panel_render_command_bundle(
     render_state: PanelRenderState,
     pointer_region_input: Option<NativePanelPointerRegionInput>,
 ) -> NativePanelRenderCommandBundle {
-    let pointer_regions = resolve_native_panel_pointer_regions(layout, scene, pointer_region_input);
+    let interaction_plan =
+        resolve_native_panel_interaction_plan(layout, scene, pointer_region_input);
+    let pointer_regions = interaction_plan.pointer_regions;
 
     NativePanelRenderCommandBundle {
         scene: scene.clone(),
@@ -94,7 +99,13 @@ pub(crate) fn resolve_native_panel_render_command_bundle(
             separator_visibility: layout.separator_visibility,
             shared_visible: render_state.shared.visible,
         },
-        compact_bar: native_panel_compact_bar_command(scene, layout.pill_frame),
+        compact_bar: native_panel_compact_bar_command(
+            scene,
+            layout.pill_frame,
+            layout.left_shoulder_frame,
+            layout.right_shoulder_frame,
+            render_state.layer_style.shoulder_progress,
+        ),
         card_stack: native_panel_card_stack_command(
             scene,
             layout.cards_frame,
@@ -110,9 +121,15 @@ pub(crate) fn resolve_native_panel_render_command_bundle(
 pub(crate) fn native_panel_compact_bar_command(
     scene: &PanelScene,
     frame: PanelRect,
+    left_shoulder_frame: PanelRect,
+    right_shoulder_frame: PanelRect,
+    shoulder_progress: f64,
 ) -> NativePanelCompactBarCommand {
     NativePanelCompactBarCommand {
         frame,
+        left_shoulder_frame,
+        right_shoulder_frame,
+        shoulder_progress,
         headline: scene.compact_bar.headline.clone(),
         active_count: scene.compact_bar.active_count.clone(),
         total_count: scene.compact_bar.total_count.clone(),
@@ -252,6 +269,7 @@ mod tests {
                 shared_visible: false,
                 bar_progress: 1.0,
                 height_progress: 1.0,
+                shoulder_progress: 0.0,
                 headline_emphasized: false,
                 edge_actions_visible: true,
             },

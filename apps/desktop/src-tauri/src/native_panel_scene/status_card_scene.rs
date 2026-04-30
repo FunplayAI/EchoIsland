@@ -137,6 +137,7 @@ pub(crate) fn build_status_queue_status_card_scene(item: &StatusQueueItem) -> St
         StatusQueuePayload::Approval(pending) => {
             build_pending_permission_status_card_scene(pending)
         }
+        StatusQueuePayload::Question(pending) => build_pending_question_status_card_scene(pending),
         StatusQueuePayload::Completion(session) => build_completion_status_card_scene(session),
     };
     scene.is_live = item.is_live;

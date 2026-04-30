@@ -4,7 +4,13 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
 };
 
-use crate::{constants::MAIN_WINDOW_LABEL, island_window::show_main_window};
+use crate::{
+    constants::MAIN_WINDOW_LABEL,
+    island_window::show_main_window,
+    native_panel_renderer::facade::runtime::{
+        NativePanelRuntimeBackend, current_native_panel_runtime_backend,
+    },
+};
 
 const TRAY_ID: &str = "main-tray";
 const MENU_SHOW: &str = "tray_show";
@@ -36,7 +42,7 @@ pub fn build_tray<R: tauri::Runtime>(app: &mut tauri::App<R>) -> tauri::Result<(
         .on_menu_event(move |app: &AppHandle<_>, event: tauri::menu::MenuEvent| {
             let id = event.id();
             if id == &show_id {
-                let _ = show_main_window(app, MAIN_WINDOW_LABEL);
+                let _ = show_echoisland_surface(app);
             } else if id == &refresh_id {
                 let _ = emit_refresh(app);
             } else if id == &quit_id {
@@ -50,12 +56,21 @@ pub fn build_tray<R: tauri::Runtime>(app: &mut tauri::App<R>) -> tauri::Result<(
                 ..
             } = event
             {
-                let _ = show_main_window(tray.app_handle(), MAIN_WINDOW_LABEL);
+                let _ = show_echoisland_surface(tray.app_handle());
             }
         })
         .build(app)?;
 
     Ok(())
+}
+
+fn show_echoisland_surface<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let native_panel_backend = current_native_panel_runtime_backend();
+    if native_panel_backend.native_ui_enabled() {
+        return native_panel_backend.create_panel();
+    }
+
+    show_main_window(app, MAIN_WINDOW_LABEL).map_err(|error| error.to_string())
 }
 
 fn emit_refresh<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {

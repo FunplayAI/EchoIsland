@@ -2,12 +2,13 @@ use super::{
     draw_presenter::WindowsNativePanelDrawPresenter, host_window::WindowsNativePanelDrawFrame,
 };
 use crate::{
-    native_panel_core::PanelPoint,
+    native_panel_core::{
+        MASCOT_IDLE_LONG_SECONDS, MASCOT_WAKE_ANGRY_SECONDS, PanelPoint, PanelRect,
+    },
     native_panel_renderer::facade::{
         descriptor::{
-            NativePanelHostWindowState, NativePanelPointerInput, NativePanelPointerPointState,
-            NativePanelPointerRegion, native_panel_pointer_inside_for_input,
-            native_panel_pointer_state_at_point,
+            NativePanelHostWindowState, NativePanelInteractionPlan, NativePanelPointerInput,
+            NativePanelPointerPointState, NativePanelPointerRegion,
         },
         interaction::{
             NativePanelHoverFallbackFrames, NativePanelPollingHostFacts,
@@ -80,6 +81,10 @@ pub(super) struct WindowsNativePanelWindowShell {
     paint_pass_count: usize,
     display_snapshot: Option<WindowsNativePanelShellDisplaySnapshot>,
     last_pointer_input: Option<NativePanelPointerInput>,
+    mascot_idle_started_elapsed_ms: Option<u128>,
+    mascot_wake_started_elapsed_ms: Option<u128>,
+    mascot_wake_return_pose: Option<crate::native_panel_scene::SceneMascotPose>,
+    last_mascot_visual_pose: Option<crate::native_panel_scene::SceneMascotPose>,
 }
 
 impl WindowsNativePanelWindowShell {
@@ -135,6 +140,58 @@ impl WindowsNativePanelWindowShell {
         self.last_pointer_input
     }
 
+    pub(super) fn active_count_marquee_needs_refresh(&self) -> bool {
+        self.lightweight_refresh_visible()
+            && self
+                .display_snapshot
+                .as_ref()
+                .is_some_and(|display| display.visual_input.active_count.chars().count() > 1)
+    }
+
+    pub(super) fn refresh_active_count_marquee(&mut self, elapsed_ms: u128) -> bool {
+        let Some(display) = self.display_snapshot.as_mut() else {
+            return false;
+        };
+        if display.visual_input.active_count.chars().count() <= 1 {
+            return false;
+        }
+        display.visual_input.active_count_elapsed_ms = elapsed_ms;
+        self.pending_paint_job = Some(display.visual_input.clone());
+        self.request_redraw();
+        true
+    }
+
+    pub(super) fn mascot_animation_needs_refresh(&self) -> bool {
+        self.lightweight_refresh_visible()
+            && self.display_snapshot.as_ref().is_some_and(|display| {
+                display.visual_input.mascot_pose
+                    != crate::native_panel_scene::SceneMascotPose::Hidden
+            })
+    }
+
+    pub(super) fn refresh_mascot_animation(&mut self, elapsed_ms: u128) -> bool {
+        let Some(display) = self.display_snapshot.as_mut() else {
+            return false;
+        };
+        if display.visual_input.mascot_pose == crate::native_panel_scene::SceneMascotPose::Hidden {
+            return false;
+        }
+        let pose = resolve_windows_shell_mascot_timed_pose(
+            &mut self.mascot_idle_started_elapsed_ms,
+            &mut self.mascot_wake_started_elapsed_ms,
+            &mut self.mascot_wake_return_pose,
+            display.display_mode,
+            display.visual_input.mascot_pose,
+            elapsed_ms,
+        );
+        display.visual_input.mascot_pose = pose.pose;
+        display.visual_input.mascot_elapsed_ms = pose.elapsed_ms;
+        self.last_mascot_visual_pose = Some(pose.pose);
+        self.pending_paint_job = Some(display.visual_input.clone());
+        self.request_redraw();
+        true
+    }
+
     pub(super) fn pointer_regions(&self) -> &[NativePanelPointerRegion] {
         self.last_frame
             .as_ref()
@@ -142,12 +199,31 @@ impl WindowsNativePanelWindowShell {
             .unwrap_or(&[])
     }
 
+    fn lightweight_refresh_visible(&self) -> bool {
+        if matches!(
+            self.lifecycle(),
+            NativePanelHostShellLifecycle::Detached | NativePanelHostShellLifecycle::Hidden
+        ) {
+            return false;
+        }
+
+        self.last_window_state()
+            .map(|window_state| window_state.visible)
+            .unwrap_or_else(|| {
+                self.display_snapshot
+                    .as_ref()
+                    .is_some_and(|display| display.visual_input.window_state.visible)
+            })
+    }
+
     pub(super) fn pointer_state_at_point(&self, point: PanelPoint) -> NativePanelPointerPointState {
-        native_panel_pointer_state_at_point(self.pointer_regions(), point)
+        NativePanelInteractionPlan::from_pointer_regions(self.pointer_regions())
+            .pointer_state_at_point(point)
     }
 
     pub(super) fn hover_inside_for_input(&self, input: NativePanelPointerInput) -> Option<bool> {
-        native_panel_pointer_inside_for_input(self.pointer_regions(), input)
+        NativePanelInteractionPlan::from_pointer_regions(self.pointer_regions())
+            .inside_for_input(input)
     }
 
     pub(super) fn platform_loop_started(&self) -> bool {
@@ -207,8 +283,9 @@ impl WindowsNativePanelWindowShell {
 
     pub(super) fn hover_frames(&self) -> Option<NativePanelHoverFallbackFrames> {
         let display = self.display_snapshot.as_ref()?;
-        Some(resolve_native_panel_hover_fallback_frames(
+        Some(windows_client_hover_fallback_frames(
             &display.visual_input,
+            resolve_native_panel_hover_fallback_frames(&display.visual_input),
         ))
     }
 
@@ -265,9 +342,22 @@ impl WindowsNativePanelWindowShell {
             return WindowsNativePanelShellPresentResult::default();
         };
         self.sync_window_state(frame.window_state);
-        let display_snapshot = build_display_snapshot(&frame);
+        let mut display_snapshot = build_display_snapshot(&frame);
+        let previous_mascot_elapsed_ms = self
+            .display_snapshot
+            .as_ref()
+            .map(|display| display.visual_input.mascot_elapsed_ms);
+        sync_presented_mascot_visual_state(
+            &mut display_snapshot,
+            &mut self.mascot_idle_started_elapsed_ms,
+            &mut self.mascot_wake_started_elapsed_ms,
+            &mut self.mascot_wake_return_pose,
+            self.last_mascot_visual_pose,
+            previous_mascot_elapsed_ms,
+        );
         let paint_job = build_paint_job(&display_snapshot);
         self.last_frame = Some(frame);
+        self.last_mascot_visual_pose = Some(display_snapshot.visual_input.mascot_pose);
         self.display_snapshot = Some(display_snapshot);
         self.pending_paint_job = Some(paint_job);
         self.request_redraw();
@@ -319,12 +409,196 @@ fn build_paint_job(
     display.visual_input.clone()
 }
 
+fn windows_client_hover_fallback_frames(
+    input: &NativePanelVisualPlanInput,
+    frames: NativePanelHoverFallbackFrames,
+) -> NativePanelHoverFallbackFrames {
+    let surface_height = input
+        .window_state
+        .frame
+        .map(|frame| frame.height)
+        .or_else(|| non_zero_rect(input.content_frame).map(|frame| frame.height))
+        .unwrap_or_else(|| {
+            frames
+                .interactive_pill_frame
+                .height
+                .max(frames.hover_pill_frame.height)
+        })
+        .max(1.0);
+    let interactive_pill_frame = windows_client_frame(
+        surface_height,
+        local_visual_frame(input, frames.interactive_pill_frame),
+    );
+    let hover_pill_frame = windows_client_frame(
+        surface_height,
+        stable_compact_hover_frame(local_visual_frame(input, frames.interactive_pill_frame)),
+    );
+    let interactive_expanded_frame = frames
+        .interactive_expanded_frame
+        .map(|frame| windows_client_frame(surface_height, local_visual_frame(input, frame)));
+
+    NativePanelHoverFallbackFrames {
+        interactive_pill_frame,
+        hover_pill_frame,
+        interactive_expanded_frame,
+    }
+}
+
+fn local_visual_frame(input: &NativePanelVisualPlanInput, frame: PanelRect) -> PanelRect {
+    let panel = input.panel_frame;
+    let frame_is_absolute = frame.x >= panel.x
+        && frame.x + frame.width <= panel.x + panel.width
+        && frame.y >= panel.y
+        && frame.y + frame.height <= panel.y + panel.height;
+
+    if frame_is_absolute {
+        return PanelRect {
+            x: frame.x - panel.x,
+            y: frame.y - panel.y,
+            width: frame.width,
+            height: frame.height,
+        };
+    }
+
+    frame
+}
+
+fn stable_compact_hover_frame(compact: PanelRect) -> PanelRect {
+    union_rect(
+        compact,
+        PanelRect {
+            x: compact.x + 20.0,
+            y: compact.y + compact.height - 3.0,
+            width: 30.0,
+            height: 18.0,
+        },
+    )
+}
+
+fn union_rect(left: PanelRect, right: PanelRect) -> PanelRect {
+    let min_x = left.x.min(right.x);
+    let min_y = left.y.min(right.y);
+    let max_x = (left.x + left.width).max(right.x + right.width);
+    let max_y = (left.y + left.height).max(right.y + right.height);
+    PanelRect {
+        x: min_x,
+        y: min_y,
+        width: (max_x - min_x).max(0.0),
+        height: (max_y - min_y).max(0.0),
+    }
+}
+
+fn windows_client_frame(surface_height: f64, frame: PanelRect) -> PanelRect {
+    PanelRect {
+        x: frame.x,
+        y: surface_height - frame.y - frame.height,
+        width: frame.width,
+        height: frame.height,
+    }
+}
+
+fn non_zero_rect(rect: PanelRect) -> Option<PanelRect> {
+    (rect.width > 0.0 && rect.height > 0.0).then_some(rect)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct WindowsShellTimedMascotPose {
+    pose: crate::native_panel_scene::SceneMascotPose,
+    elapsed_ms: u128,
+}
+
+fn sync_presented_mascot_visual_state(
+    display: &mut WindowsNativePanelShellDisplaySnapshot,
+    idle_started_elapsed_ms: &mut Option<u128>,
+    wake_started_elapsed_ms: &mut Option<u128>,
+    wake_return_pose: &mut Option<crate::native_panel_scene::SceneMascotPose>,
+    last_visual_pose: Option<crate::native_panel_scene::SceneMascotPose>,
+    previous_elapsed_ms: Option<u128>,
+) {
+    let base_pose = display.visual_input.mascot_pose;
+    if base_pose == crate::native_panel_scene::SceneMascotPose::Hidden {
+        *idle_started_elapsed_ms = None;
+        *wake_started_elapsed_ms = None;
+        *wake_return_pose = None;
+        return;
+    }
+
+    let wakes_from_sleep = last_visual_pose
+        == Some(crate::native_panel_scene::SceneMascotPose::Sleepy)
+        && (base_pose != crate::native_panel_scene::SceneMascotPose::Idle
+            || display.display_mode == NativePanelVisualDisplayMode::Expanded);
+    if wakes_from_sleep {
+        display.visual_input.mascot_pose = crate::native_panel_scene::SceneMascotPose::WakeAngry;
+        display.visual_input.mascot_elapsed_ms = 0;
+        *idle_started_elapsed_ms = None;
+        *wake_started_elapsed_ms = None;
+        *wake_return_pose = Some(base_pose);
+        return;
+    }
+
+    if last_visual_pose == Some(base_pose) {
+        display.visual_input.mascot_elapsed_ms =
+            previous_elapsed_ms.unwrap_or(display.visual_input.mascot_elapsed_ms);
+    }
+
+    if base_pose != crate::native_panel_scene::SceneMascotPose::Idle
+        || display.display_mode == NativePanelVisualDisplayMode::Expanded
+    {
+        *idle_started_elapsed_ms = None;
+    }
+}
+
+fn resolve_windows_shell_mascot_timed_pose(
+    idle_started_elapsed_ms: &mut Option<u128>,
+    wake_started_elapsed_ms: &mut Option<u128>,
+    wake_return_pose: &mut Option<crate::native_panel_scene::SceneMascotPose>,
+    display_mode: NativePanelVisualDisplayMode,
+    current_pose: crate::native_panel_scene::SceneMascotPose,
+    elapsed_ms: u128,
+) -> WindowsShellTimedMascotPose {
+    if let Some(return_pose) = *wake_return_pose {
+        let started_at = wake_started_elapsed_ms.get_or_insert(elapsed_ms);
+        let wake_elapsed_ms = elapsed_ms.saturating_sub(*started_at);
+        if wake_elapsed_ms < (MASCOT_WAKE_ANGRY_SECONDS * 1000.0) as u128 {
+            return WindowsShellTimedMascotPose {
+                pose: crate::native_panel_scene::SceneMascotPose::WakeAngry,
+                elapsed_ms: wake_elapsed_ms,
+            };
+        }
+        *wake_started_elapsed_ms = None;
+        *wake_return_pose = None;
+        return WindowsShellTimedMascotPose {
+            pose: return_pose,
+            elapsed_ms,
+        };
+    }
+
+    if current_pose == crate::native_panel_scene::SceneMascotPose::Idle
+        && display_mode != NativePanelVisualDisplayMode::Expanded
+    {
+        let started_at = idle_started_elapsed_ms.get_or_insert(elapsed_ms);
+        if elapsed_ms.saturating_sub(*started_at) >= MASCOT_IDLE_LONG_SECONDS as u128 * 1000 {
+            return WindowsShellTimedMascotPose {
+                pose: crate::native_panel_scene::SceneMascotPose::Sleepy,
+                elapsed_ms,
+            };
+        }
+    } else {
+        *idle_started_elapsed_ms = None;
+    }
+
+    WindowsShellTimedMascotPose {
+        pose: current_pose,
+        elapsed_ms,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         WINDOWS_WM_LBUTTONUP, WINDOWS_WM_MOUSELEAVE, WINDOWS_WM_MOUSEMOVE,
         WindowsNativePanelShellCommand, WindowsNativePanelWindowHandle,
-        WindowsNativePanelWindowShell,
+        WindowsNativePanelWindowShell, windows_client_hover_fallback_frames,
     };
     use crate::native_panel_renderer::facade::shell::NativePanelPlatformWindowHandleAdapter;
     use crate::{
@@ -339,7 +613,7 @@ mod tests {
                 NativePanelCompactBarPresentation, NativePanelGlowPresentation,
                 NativePanelMascotPresentation, NativePanelPresentationMetrics,
                 NativePanelPresentationModel, NativePanelShellPresentation,
-                NativePanelVisualDisplayMode,
+                NativePanelVisualDisplayMode, NativePanelVisualPlanInput,
             },
             shell::NativePanelHostShellLifecycle,
         },
@@ -348,6 +622,104 @@ mod tests {
             host_window::WindowsNativePanelDrawFrame,
         },
     };
+
+    fn visible_window_state() -> NativePanelHostWindowState {
+        NativePanelHostWindowState {
+            frame: Some(PanelRect {
+                x: 0.0,
+                y: 0.0,
+                width: 320.0,
+                height: 80.0,
+            }),
+            visible: true,
+            preferred_display_index: 0,
+        }
+    }
+
+    fn presentation_with_mascot(
+        pose: crate::native_panel_scene::SceneMascotPose,
+        shell_visible: bool,
+    ) -> NativePanelPresentationModel {
+        NativePanelPresentationModel {
+            panel_frame: PanelRect {
+                x: 0.0,
+                y: 0.0,
+                width: 320.0,
+                height: 80.0,
+            },
+            content_frame: PanelRect {
+                x: 10.0,
+                y: 40.0,
+                width: 300.0,
+                height: 30.0,
+            },
+            shell: NativePanelShellPresentation {
+                surface: crate::native_panel_core::ExpandedSurface::Default,
+                frame: PanelRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 320.0,
+                    height: 80.0,
+                },
+                visible: shell_visible,
+                separator_visibility: if shell_visible { 1.0 } else { 0.0 },
+                shared_visible: true,
+            },
+            compact_bar: NativePanelCompactBarPresentation {
+                frame: PanelRect {
+                    x: 10.0,
+                    y: 0.0,
+                    width: 300.0,
+                    height: 37.0,
+                },
+                left_shoulder_frame: PanelRect {
+                    x: 4.0,
+                    y: 30.0,
+                    width: 6.0,
+                    height: 6.0,
+                },
+                right_shoulder_frame: PanelRect {
+                    x: 310.0,
+                    y: 30.0,
+                    width: 6.0,
+                    height: 6.0,
+                },
+                shoulder_progress: 0.0,
+                headline: crate::native_panel_scene::SceneText {
+                    text: "Codex ready".to_string(),
+                    emphasized: false,
+                },
+                active_count: "1".to_string(),
+                total_count: "1".to_string(),
+                completion_count: 0,
+                headline_emphasized: false,
+                actions_visible: false,
+            },
+            card_stack: NativePanelCardStackPresentation {
+                frame: PanelRect {
+                    x: 10.0,
+                    y: 40.0,
+                    width: 300.0,
+                    height: 30.0,
+                },
+                surface: crate::native_panel_core::ExpandedSurface::Default,
+                cards: Vec::new(),
+                content_height: 0.0,
+                body_height: 0.0,
+                visible: false,
+            },
+            mascot: NativePanelMascotPresentation { pose },
+            glow: None,
+            action_buttons: NativePanelActionButtonsPresentation {
+                visible: false,
+                buttons: Vec::new(),
+            },
+            metrics: NativePanelPresentationMetrics {
+                expanded_content_height: 0.0,
+                expanded_body_height: 0.0,
+            },
+        }
+    }
 
     #[test]
     fn shell_window_handle_helpers_roundtrip_handle_presence() {
@@ -598,11 +970,24 @@ mod tests {
                         width: 300.0,
                         height: 24.0,
                     },
+                    left_shoulder_frame: PanelRect {
+                        x: 104.0,
+                        y: 78.0,
+                        width: 6.0,
+                        height: 6.0,
+                    },
+                    right_shoulder_frame: PanelRect {
+                        x: 410.0,
+                        y: 78.0,
+                        width: 6.0,
+                        height: 6.0,
+                    },
+                    shoulder_progress: 0.0,
                     headline: crate::native_panel_scene::SceneText {
                         text: "Approval waiting".to_string(),
                         emphasized: true,
                     },
-                    active_count: "1".to_string(),
+                    active_count: "23".to_string(),
                     total_count: "2".to_string(),
                     completion_count: 3,
                     headline_emphasized: true,
@@ -665,6 +1050,151 @@ mod tests {
             snapshot.visual_input.mascot_pose,
             crate::native_panel_scene::SceneMascotPose::Complete
         );
+
+        assert!(shell.active_count_marquee_needs_refresh());
+        assert!(shell.mascot_animation_needs_refresh());
+
+        shell.hide();
+
+        assert!(!shell.active_count_marquee_needs_refresh());
+        assert!(!shell.mascot_animation_needs_refresh());
+    }
+
+    #[test]
+    fn shell_refreshes_idle_mascot_into_sleepy_after_shared_delay() {
+        let mut presenter = WindowsNativePanelDrawPresenter::default();
+        let mut shell = WindowsNativePanelWindowShell::default();
+        presenter.present(WindowsNativePanelDrawFrame {
+            window_state: visible_window_state(),
+            pointer_regions: Vec::new(),
+            presentation_model: None,
+        });
+        shell.consume_presenter(&mut presenter);
+
+        assert!(shell.refresh_mascot_animation(0));
+        assert!(shell.refresh_mascot_animation(
+            crate::native_panel_core::MASCOT_IDLE_LONG_SECONDS as u128 * 1000 + 1
+        ));
+
+        let paint_job = shell.paint_next_frame().expect("paint job");
+        assert_eq!(
+            paint_job.mascot_pose,
+            crate::native_panel_scene::SceneMascotPose::Sleepy
+        );
+    }
+
+    #[test]
+    fn shell_plays_wake_angry_after_sleepy_when_mascot_becomes_active() {
+        let mut presenter = WindowsNativePanelDrawPresenter::default();
+        let mut shell = WindowsNativePanelWindowShell::default();
+        presenter.present(WindowsNativePanelDrawFrame {
+            window_state: visible_window_state(),
+            pointer_regions: Vec::new(),
+            presentation_model: None,
+        });
+        shell.consume_presenter(&mut presenter);
+        shell.refresh_mascot_animation(0);
+        shell.refresh_mascot_animation(
+            crate::native_panel_core::MASCOT_IDLE_LONG_SECONDS as u128 * 1000 + 1,
+        );
+
+        presenter.present(WindowsNativePanelDrawFrame {
+            window_state: visible_window_state(),
+            pointer_regions: Vec::new(),
+            presentation_model: Some(presentation_with_mascot(
+                crate::native_panel_scene::SceneMascotPose::Running,
+                false,
+            )),
+        });
+        shell.consume_presenter(&mut presenter);
+
+        assert_eq!(
+            shell
+                .display_snapshot()
+                .expect("display snapshot")
+                .visual_input
+                .mascot_pose,
+            crate::native_panel_scene::SceneMascotPose::WakeAngry
+        );
+        assert!(shell.refresh_mascot_animation(130_000));
+        assert_eq!(
+            shell.paint_next_frame().expect("wake paint").mascot_pose,
+            crate::native_panel_scene::SceneMascotPose::WakeAngry
+        );
+        assert!(shell.refresh_mascot_animation(131_000));
+        assert_eq!(
+            shell
+                .paint_next_frame()
+                .expect("returned paint")
+                .mascot_pose,
+            crate::native_panel_scene::SceneMascotPose::Running
+        );
+    }
+
+    #[test]
+    fn shell_keeps_sleepy_when_idle_compact_presenter_refreshes() {
+        let mut presenter = WindowsNativePanelDrawPresenter::default();
+        let mut shell = WindowsNativePanelWindowShell::default();
+        presenter.present(WindowsNativePanelDrawFrame {
+            window_state: visible_window_state(),
+            pointer_regions: Vec::new(),
+            presentation_model: None,
+        });
+        shell.consume_presenter(&mut presenter);
+        shell.refresh_mascot_animation(0);
+        shell.refresh_mascot_animation(
+            crate::native_panel_core::MASCOT_IDLE_LONG_SECONDS as u128 * 1000 + 1,
+        );
+
+        presenter.present(WindowsNativePanelDrawFrame {
+            window_state: visible_window_state(),
+            pointer_regions: Vec::new(),
+            presentation_model: None,
+        });
+        shell.consume_presenter(&mut presenter);
+
+        assert!(shell.refresh_mascot_animation(
+            crate::native_panel_core::MASCOT_IDLE_LONG_SECONDS as u128 * 1000 + 16
+        ));
+        assert_eq!(
+            shell.paint_next_frame().expect("sleepy paint").mascot_pose,
+            crate::native_panel_scene::SceneMascotPose::Sleepy
+        );
+    }
+
+    #[test]
+    fn shell_preserves_mascot_elapsed_time_when_expanding_same_pose() {
+        let mut presenter = WindowsNativePanelDrawPresenter::default();
+        let mut shell = WindowsNativePanelWindowShell::default();
+        presenter.present(WindowsNativePanelDrawFrame {
+            window_state: visible_window_state(),
+            pointer_regions: Vec::new(),
+            presentation_model: Some(presentation_with_mascot(
+                crate::native_panel_scene::SceneMascotPose::MessageBubble,
+                false,
+            )),
+        });
+        shell.consume_presenter(&mut presenter);
+        assert!(shell.refresh_mascot_animation(500));
+
+        presenter.present(WindowsNativePanelDrawFrame {
+            window_state: visible_window_state(),
+            pointer_regions: Vec::new(),
+            presentation_model: Some(presentation_with_mascot(
+                crate::native_panel_scene::SceneMascotPose::MessageBubble,
+                true,
+            )),
+        });
+        shell.consume_presenter(&mut presenter);
+
+        assert_eq!(
+            shell
+                .display_snapshot()
+                .expect("display snapshot")
+                .visual_input
+                .mascot_elapsed_ms,
+            500
+        );
     }
 
     #[test]
@@ -718,5 +1248,88 @@ mod tests {
             .polling_host_facts(PanelPoint { x: 120.0, y: 70.0 }, false, None)
             .expect("polling facts");
         assert_eq!(facts.pointer_regions.len(), 1);
+    }
+
+    #[test]
+    fn shell_hover_frames_use_windows_client_coordinates_and_stable_bubble_hover() {
+        let zero = PanelRect {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        };
+        let input = NativePanelVisualPlanInput {
+            window_state: NativePanelHostWindowState {
+                frame: Some(PanelRect {
+                    x: 510.0,
+                    y: 0.0,
+                    width: 420.0,
+                    height: 80.0,
+                }),
+                visible: true,
+                preferred_display_index: 0,
+            },
+            display_mode: NativePanelVisualDisplayMode::Compact,
+            surface: crate::native_panel_core::ExpandedSurface::Default,
+            panel_frame: PanelRect {
+                x: 510.0,
+                y: 0.0,
+                width: 420.0,
+                height: 80.0,
+            },
+            compact_bar_frame: PanelRect {
+                x: 83.5,
+                y: 43.0,
+                width: 253.0,
+                height: 37.0,
+            },
+            left_shoulder_frame: zero,
+            right_shoulder_frame: zero,
+            shoulder_progress: 0.0,
+            content_frame: PanelRect {
+                x: 0.0,
+                y: 0.0,
+                width: 420.0,
+                height: 80.0,
+            },
+            card_stack_frame: zero,
+            card_stack_content_height: 0.0,
+            shell_frame: zero,
+            headline_text: String::new(),
+            headline_emphasized: false,
+            active_count: String::new(),
+            active_count_elapsed_ms: 0,
+            total_count: String::new(),
+            separator_visibility: 0.0,
+            cards_visible: false,
+            card_count: 0,
+            cards: Vec::new(),
+            glow_visible: false,
+            action_buttons_visible: false,
+            action_buttons: Vec::new(),
+            completion_count: 0,
+            mascot_elapsed_ms: 0,
+            mascot_pose: crate::native_panel_scene::SceneMascotPose::Idle,
+        };
+
+        let frames = windows_client_hover_fallback_frames(
+            &input,
+            crate::native_panel_renderer::facade::interaction::resolve_native_panel_hover_fallback_frames(
+                &input,
+            ),
+        );
+
+        assert_eq!(
+            frames.interactive_pill_frame,
+            PanelRect {
+                x: 83.5,
+                y: 0.0,
+                width: 253.0,
+                height: 37.0,
+            }
+        );
+        assert_eq!(frames.hover_pill_frame.x, 83.5);
+        assert!(frames.hover_pill_frame.y < frames.interactive_pill_frame.y);
+        assert!(frames.hover_pill_frame.height > frames.interactive_pill_frame.height);
     }
 }

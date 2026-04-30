@@ -15,7 +15,8 @@ pub(super) const COMPACT_HEADLINE_LABEL_HEIGHT: f64 = 24.0;
 pub(super) const COMPACT_HEADLINE_VERTICAL_NUDGE_Y: f64 = -1.5;
 pub(super) const EXPANDED_PANEL_RADIUS: f64 = crate::native_panel_core::EXPANDED_PANEL_RADIUS;
 pub(super) const CARD_RADIUS: f64 = crate::native_panel_core::CARD_RADIUS;
-pub(super) const SHOULDER_CURVE_FACTOR: f64 = 0.62;
+pub(super) const SHOULDER_CURVE_FACTOR: f64 =
+    crate::native_panel_core::COMPACT_SHOULDER_CURVE_FACTOR;
 pub(super) const EXPANDED_MAX_BODY_HEIGHT: f64 = crate::native_panel_core::EXPANDED_MAX_BODY_HEIGHT;
 pub(super) const EXPANDED_CARD_GAP: f64 = crate::native_panel_core::EXPANDED_CARD_GAP;
 pub(super) const EXPANDED_CONTENT_TOP_GAP: f64 = crate::native_panel_core::EXPANDED_CONTENT_TOP_GAP;

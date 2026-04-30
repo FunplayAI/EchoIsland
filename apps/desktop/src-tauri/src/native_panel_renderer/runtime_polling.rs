@@ -4,7 +4,7 @@ use std::time::Instant;
 use crate::native_panel_core::{PanelPoint, PanelRect, point_in_rect};
 
 use super::descriptors::{
-    NativePanelPlatformEvent, NativePanelPointerPointState, native_panel_pointer_state_at_point,
+    NativePanelInteractionPlan, NativePanelPlatformEvent, NativePanelPointerPointState,
 };
 use super::runtime_click::resolve_native_panel_click_command_for_pointer_state;
 use super::runtime_hover::sync_native_panel_hover_interaction_for_state;
@@ -112,8 +112,9 @@ pub(crate) fn native_panel_polling_interaction_input(
 pub(crate) fn native_panel_polling_interaction_input_from_host_facts(
     facts: NativePanelPollingHostFacts<'_>,
 ) -> NativePanelPollingInteractionInput {
+    let interaction_plan = NativePanelInteractionPlan::from_pointer_regions(facts.pointer_regions);
     native_panel_polling_interaction_input(
-        native_panel_pointer_state_at_point(facts.pointer_regions, facts.pointer),
+        interaction_plan.pointer_state_at_point(facts.pointer),
         !facts.pointer_regions.is_empty(),
         resolve_native_panel_hover_fallback_state(facts.pointer, facts.hover_frames),
         facts.primary_mouse_down,
@@ -190,6 +191,7 @@ where
         if let Some(snapshot) = input.snapshot.clone() {
             (Some(request), Some(snapshot))
         } else {
+            state.apply_core_panel_state(previous_core);
             (None, None)
         }
     } else {

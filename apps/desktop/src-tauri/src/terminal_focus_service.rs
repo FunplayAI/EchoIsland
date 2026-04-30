@@ -29,6 +29,10 @@ impl<'a> TerminalFocusService<'a> {
         &self,
         snapshot: &RuntimeSnapshot,
     ) -> Result<(), String> {
+        if cfg!(target_os = "windows") {
+            return Ok(());
+        }
+
         observe_foreground_terminal_tab(&self.app_runtime.recent_foreground_tab).await;
         if let Some((session_id, tab)) = learn_newly_active_session_tabs(
             snapshot,

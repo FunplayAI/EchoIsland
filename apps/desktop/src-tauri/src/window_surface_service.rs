@@ -25,7 +25,8 @@ impl<'a, R: tauri::Runtime> WindowSurfaceService<'a, R> {
             return Ok(());
         }
         let window = self.main_window()?;
-        apply_island_window_mode(&window, false).map_err(|error| error.to_string())
+        apply_island_window_mode(&window, false).map_err(|error| error.to_string())?;
+        window.show().map_err(|error| error.to_string())
     }
 
     pub fn set_expanded_passive(&self, expanded: bool) -> Result<(), String> {

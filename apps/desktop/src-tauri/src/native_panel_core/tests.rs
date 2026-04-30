@@ -1,7 +1,9 @@
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use echoisland_runtime::{PendingPermissionView, RuntimeSnapshot, SessionSnapshotView};
+use echoisland_runtime::{
+    PendingPermissionView, PendingQuestionView, RuntimeSnapshot, SessionSnapshotView,
+};
 
 use super::*;
 
@@ -69,6 +71,28 @@ fn snapshot_with_permission(request_id: &str, session_id: &str) -> RuntimeSnapsh
     snapshot.pending_permission = Some(pending.clone());
     snapshot.pending_permissions = vec![pending];
     snapshot.sessions = vec![session("WaitingApproval")];
+    snapshot
+}
+
+fn pending_question(request_id: &str, session_id: &str) -> PendingQuestionView {
+    PendingQuestionView {
+        request_id: request_id.to_string(),
+        session_id: session_id.to_string(),
+        source: "claude".to_string(),
+        header: Some("Pick one".to_string()),
+        text: "Choose the deployment target".to_string(),
+        options: vec!["Local".to_string(), "Staging".to_string()],
+        requested_at: Utc::now(),
+    }
+}
+
+fn snapshot_with_question(request_id: &str, session_id: &str) -> RuntimeSnapshot {
+    let mut snapshot = snapshot(1, 1);
+    let pending = pending_question(request_id, session_id);
+    snapshot.pending_question_count = 1;
+    snapshot.pending_question = Some(pending.clone());
+    snapshot.pending_questions = vec![pending];
+    snapshot.sessions = vec![session("WaitingQuestion")];
     snapshot
 }
 
@@ -158,6 +182,7 @@ fn status_surface_transition_switches_expanded_panel_into_status_mode() {
         &mut state,
         StatusQueueSyncResult {
             added_approvals: 1,
+            added_questions: 0,
             added_completions: 0,
         },
     );
@@ -166,6 +191,66 @@ fn status_surface_transition_switches_expanded_panel_into_status_mode() {
     assert!(transition.surface_transition);
     assert!(state.status_auto_expanded);
     assert_eq!(state.surface_mode, ExpandedSurface::Status);
+}
+
+#[test]
+fn status_surface_policy_marks_new_status_for_reopen_during_close_transition() {
+    let mut state = PanelState {
+        expanded: false,
+        transitioning: true,
+        status_queue: vec![StatusQueueItem {
+            key: "approval:request-1".to_string(),
+            session_id: "session-1".to_string(),
+            sort_time: Utc::now(),
+            expires_at: Instant::now() + Duration::from_secs(STATUS_APPROVAL_VISIBLE_SECONDS),
+            is_live: true,
+            is_removing: false,
+            remove_after: None,
+            payload: StatusQueuePayload::Approval(pending_permission("request-1", "session-1")),
+        }],
+        surface_mode: ExpandedSurface::Default,
+        ..PanelState::default()
+    };
+
+    let transition = sync_status_surface_policy(
+        &mut state,
+        StatusQueueSyncResult {
+            added_approvals: 1,
+            added_questions: 0,
+            added_completions: 0,
+        },
+    );
+
+    assert_eq!(transition.panel_transition, None);
+    assert!(!transition.surface_transition);
+    assert!(!state.expanded);
+    assert!(state.status_auto_expanded);
+    assert_eq!(state.surface_mode, ExpandedSurface::Status);
+}
+
+#[test]
+fn pending_status_reopen_after_transition_expands_auto_status_surface_once() {
+    let mut state = PanelState {
+        expanded: false,
+        transitioning: false,
+        status_auto_expanded: true,
+        surface_mode: ExpandedSurface::Status,
+        status_queue: vec![StatusQueueItem {
+            key: "question:question-1".to_string(),
+            session_id: "session-1".to_string(),
+            sort_time: Utc::now(),
+            expires_at: Instant::now() + Duration::from_secs(STATUS_APPROVAL_VISIBLE_SECONDS),
+            is_live: true,
+            is_removing: false,
+            remove_after: None,
+            payload: StatusQueuePayload::Question(pending_question("question-1", "session-1")),
+        }],
+        ..PanelState::default()
+    };
+
+    assert!(take_pending_status_reopen_after_transition(&mut state));
+    assert!(state.expanded);
+    assert!(!take_pending_status_reopen_after_transition(&mut state));
 }
 
 #[test]
@@ -182,6 +267,25 @@ fn snapshot_sync_emits_message_sound_and_panel_transition_for_new_status() {
     assert_eq!(result.displayed_snapshot.pending_permission_count, 1);
     assert!(state.last_raw_snapshot.is_some());
     assert_eq!(state.surface_mode, ExpandedSurface::Status);
+}
+
+#[test]
+fn snapshot_sync_auto_expands_status_surface_for_new_question() {
+    let mut state = PanelState::default();
+    let raw_snapshot = snapshot_with_question("question-1", "session-1");
+
+    let result = sync_panel_snapshot_state(&mut state, &raw_snapshot, Utc::now());
+
+    assert!(result.reminder.play_sound);
+    assert!(result.reminder.show_status_card);
+    assert_eq!(result.panel_transition, Some(true));
+    assert_eq!(state.surface_mode, ExpandedSurface::Status);
+    assert!(state.status_queue.iter().any(|item| {
+        matches!(
+            &item.payload,
+            StatusQueuePayload::Question(question) if question.request_id == "question-1"
+        )
+    }));
 }
 
 #[test]
@@ -303,6 +407,49 @@ fn click_action_prioritizes_settings_before_quit_and_cards() {
 }
 
 #[test]
+fn click_action_allows_edge_actions_during_open_transition() {
+    let now = Instant::now();
+    let settings = resolve_panel_click_action(PanelClickInput {
+        primary_click_started: true,
+        expanded: true,
+        transitioning: true,
+        settings_button_hit: true,
+        quit_button_hit: false,
+        cards_visible: true,
+        card_target: Some(PanelHitTarget {
+            action: PanelHitAction::FocusSession,
+            value: "session-1".to_string(),
+        }),
+        last_focus_click: None,
+        now,
+        focus_debounce_ms: 600,
+    });
+    let card = resolve_panel_click_action(PanelClickInput {
+        primary_click_started: true,
+        expanded: true,
+        transitioning: true,
+        settings_button_hit: false,
+        quit_button_hit: false,
+        cards_visible: true,
+        card_target: Some(PanelHitTarget {
+            action: PanelHitAction::FocusSession,
+            value: "session-1".to_string(),
+        }),
+        last_focus_click: None,
+        now,
+        focus_debounce_ms: 600,
+    });
+
+    assert_eq!(
+        settings.command,
+        PanelInteractionCommand::ToggleSettingsSurface
+    );
+    assert_eq!(settings.focus_click_to_record, None);
+    assert_eq!(card.command, PanelInteractionCommand::None);
+    assert_eq!(card.focus_click_to_record, None);
+}
+
+#[test]
 fn click_action_records_focus_session_and_suppresses_duplicates() {
     let now = Instant::now();
     let target = PanelHitTarget {
@@ -390,6 +537,38 @@ fn hover_state_collapses_after_outside_delay_when_not_transitioning() {
 }
 
 #[test]
+fn hover_state_reopens_during_close_transition_after_inside_delay() {
+    let now = Instant::now();
+    let mut state = PanelState {
+        expanded: false,
+        transitioning: true,
+        pointer_inside_since: Some(now - Duration::from_millis(600)),
+        ..PanelState::default()
+    };
+
+    let transition = sync_hover_expansion_state(&mut state, true, now, 500);
+
+    assert_eq!(transition, Some(HoverTransition::Expand));
+    assert!(state.expanded);
+}
+
+#[test]
+fn hover_state_recloses_during_open_transition_after_outside_delay() {
+    let now = Instant::now();
+    let mut state = PanelState {
+        expanded: true,
+        transitioning: true,
+        pointer_outside_since: Some(now - Duration::from_millis(600)),
+        ..PanelState::default()
+    };
+
+    let transition = sync_hover_expansion_state(&mut state, false, now, 500);
+
+    assert_eq!(transition, Some(HoverTransition::Collapse));
+    assert!(!state.expanded);
+}
+
+#[test]
 fn hover_state_keeps_auto_status_surface_open_outside() {
     let now = Instant::now();
     let mut state = PanelState {
@@ -414,6 +593,42 @@ fn hover_state_keeps_auto_status_surface_open_outside() {
 
     assert_eq!(transition, None);
     assert!(state.expanded);
+    assert_eq!(state.surface_mode, ExpandedSurface::Status);
+}
+
+#[test]
+fn status_surface_policy_switches_hover_expanded_panel_to_new_status_message() {
+    let now = Instant::now();
+    let mut state = PanelState {
+        expanded: true,
+        pointer_inside_since: Some(now - Duration::from_millis(HOVER_DELAY_MS + 100)),
+        surface_mode: ExpandedSurface::Default,
+        status_queue: vec![StatusQueueItem {
+            key: "completion:session-1".to_string(),
+            session_id: "session-1".to_string(),
+            sort_time: Utc::now(),
+            expires_at: now + Duration::from_secs(STATUS_COMPLETION_VISIBLE_SECONDS),
+            is_live: true,
+            is_removing: false,
+            remove_after: None,
+            payload: StatusQueuePayload::Completion(session("Idle")),
+        }],
+        ..PanelState::default()
+    };
+
+    let transition = sync_status_surface_policy(
+        &mut state,
+        StatusQueueSyncResult {
+            added_approvals: 0,
+            added_questions: 0,
+            added_completions: 1,
+        },
+    );
+
+    assert_eq!(transition.panel_transition, None);
+    assert!(transition.surface_transition);
+    assert!(state.expanded);
+    assert!(state.status_auto_expanded);
     assert_eq!(state.surface_mode, ExpandedSurface::Status);
 }
 
@@ -753,6 +968,181 @@ fn expanded_body_frames_match_insets() {
 }
 
 #[test]
+fn compact_bar_content_layout_centers_headline_and_keeps_counts_trailing() {
+    let compact = resolve_compact_bar_content_layout(CompactBarContentLayoutInput {
+        bar_width: 253.0,
+        bar_height: 37.0,
+    });
+    let expanded = resolve_compact_bar_content_layout(CompactBarContentLayoutInput {
+        bar_width: 283.0,
+        bar_height: 37.0,
+    });
+
+    assert_eq!(compact.mascot_center_x, 22.0);
+    assert_eq!(compact.headline_x, 48.5);
+    assert_eq!(compact.headline_width, 156.0);
+    assert_eq!(compact.headline_center_x, 126.5);
+    assert_eq!(compact.active_x, 208.0);
+    assert_eq!(compact.slash_x, 217.0);
+    assert_eq!(compact.total_x, 229.0);
+
+    assert_eq!(expanded.headline_x, 63.5);
+    assert_eq!(expanded.headline_width, 156.0);
+    assert_eq!(expanded.headline_center_x, 141.5);
+    assert_eq!(expanded.active_x, 238.0);
+    assert_eq!(expanded.slash_x, 247.0);
+    assert_eq!(expanded.total_x, 259.0);
+}
+
+#[test]
+fn active_count_marquee_keeps_single_digit_static() {
+    let frame = resolve_active_count_marquee_frame(ActiveCountMarqueeInput {
+        text: "7",
+        elapsed_ms: ACTIVE_COUNT_SCROLL_HOLD_MS + 120,
+    });
+
+    assert_eq!(frame.current, "7");
+    assert_eq!(frame.next, "7");
+    assert!(!frame.show_next);
+    assert_eq!(frame.scroll_offset, 0.0);
+}
+
+#[test]
+fn active_count_marquee_holds_then_scrolls_between_digits() {
+    let held = resolve_active_count_marquee_frame(ActiveCountMarqueeInput {
+        text: "23",
+        elapsed_ms: ACTIVE_COUNT_SCROLL_HOLD_MS - 1,
+    });
+    let moving = resolve_active_count_marquee_frame(ActiveCountMarqueeInput {
+        text: "23",
+        elapsed_ms: ACTIVE_COUNT_SCROLL_HOLD_MS + (ACTIVE_COUNT_SCROLL_MOVE_MS / 2),
+    });
+    let moved = resolve_active_count_marquee_frame(ActiveCountMarqueeInput {
+        text: "23",
+        elapsed_ms: ACTIVE_COUNT_SCROLL_HOLD_MS + ACTIVE_COUNT_SCROLL_MOVE_MS + 1,
+    });
+
+    assert_eq!(held.current, "2");
+    assert_eq!(held.next, "3");
+    assert!(held.show_next);
+    assert_eq!(held.scroll_offset, 0.0);
+    assert_eq!(moving.current, "2");
+    assert_eq!(moving.next, "3");
+    assert!(moving.scroll_offset > 0.0);
+    assert!(moving.scroll_offset < ACTIVE_COUNT_SCROLL_TRAVEL);
+    assert_eq!(moved.scroll_offset, ACTIVE_COUNT_SCROLL_TRAVEL);
+}
+
+#[test]
+fn mascot_visual_frame_animates_idle_breath_and_blink() {
+    let idle = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Idle,
+        elapsed_ms: 0,
+    });
+    let breathing = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Idle,
+        elapsed_ms: 900,
+    });
+    let blinking = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Idle,
+        elapsed_ms: 4535,
+    });
+
+    assert_eq!(idle.offset_y, 0.0);
+    assert!(breathing.scale_x > idle.scale_x);
+    assert!(blinking.eye_open < idle.eye_open);
+}
+
+#[test]
+fn mascot_visual_frame_gives_message_bubble_a_visible_bob() {
+    let start = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::MessageBubble,
+        elapsed_ms: 0,
+    });
+    let bobbing = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::MessageBubble,
+        elapsed_ms: 480,
+    });
+
+    assert!(bobbing.offset_y > start.offset_y);
+    assert!(bobbing.scale_x >= 1.0);
+    assert_eq!(bobbing.eye_open, 1.0);
+}
+
+#[test]
+fn mascot_visual_frame_matches_mac_motion_phase_and_horizontal_sway() {
+    let running = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Running,
+        elapsed_ms: 250,
+    });
+    let message = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::MessageBubble,
+        elapsed_ms: 0,
+    });
+
+    assert!(running.offset_x.abs() > 0.01);
+    assert!((message.offset_y - 0.8).abs() < 0.001);
+}
+
+#[test]
+fn mascot_visual_frame_uses_mac_style_state_specific_blink_floor() {
+    let elapsed_ms = 4535;
+    let idle = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Idle,
+        elapsed_ms,
+    });
+    let running = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Running,
+        elapsed_ms,
+    });
+    let approval = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Approval,
+        elapsed_ms,
+    });
+    let question = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Question,
+        elapsed_ms,
+    });
+    let complete = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Complete,
+        elapsed_ms,
+    });
+
+    assert!(idle.eye_open < 0.2);
+    assert!(running.eye_open >= 0.72);
+    assert!(approval.eye_open >= 0.34);
+    assert!(question.eye_open >= 0.48);
+    assert!(complete.eye_open >= 0.72);
+}
+
+#[test]
+fn mascot_visual_frame_supports_mac_sleepy_and_wake_angry_states() {
+    let sleepy_start = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Sleepy,
+        elapsed_ms: 0,
+    });
+    let sleepy_nod = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Sleepy,
+        elapsed_ms: 4550,
+    });
+    let wake_start = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::WakeAngry,
+        elapsed_ms: 0,
+    });
+    let wake_faded = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::WakeAngry,
+        elapsed_ms: 900,
+    });
+
+    assert!(sleepy_start.scale_y < 0.96);
+    assert!(sleepy_start.eye_open < 1.0);
+    assert!(sleepy_nod.offset_y < 0.0);
+    assert!(wake_start.offset_x.abs() < 0.001);
+    assert!(wake_start.scale_x > 1.04);
+    assert!(wake_faded.scale_x < wake_start.scale_x);
+}
+
+#[test]
 fn panel_layout_clamps_visible_height_and_resolves_child_frames() {
     let layout = resolve_panel_layout(PanelLayoutInput {
         screen_frame: PanelRect {
@@ -1089,6 +1479,7 @@ fn panel_render_layer_style_state_preserves_render_flags() {
         shared_visible: false,
         bar_progress: 0.7,
         height_progress: 0.8,
+        shoulder_progress: 0.25,
         headline_emphasized: true,
         edge_actions_visible: true,
     });
@@ -1101,6 +1492,7 @@ fn panel_render_layer_style_state_preserves_render_flags() {
             shared_visible: false,
             bar_progress: 0.7,
             height_progress: 0.8,
+            shoulder_progress: 0.25,
             headline_emphasized: true,
             edge_actions_visible: true,
         }
@@ -1115,6 +1507,7 @@ fn panel_render_state_combines_shared_visibility_and_layer_style() {
         separator_visibility: 0.42,
         bar_progress: 1.0,
         height_progress: 1.0,
+        shoulder_progress: 0.0,
         cards_height: 120.0,
         status_surface_active: false,
         content_visibility: 1.0,
@@ -1139,6 +1532,7 @@ fn panel_render_state_combines_shared_visibility_and_layer_style() {
             shared_visible: true,
             bar_progress: 1.0,
             height_progress: 1.0,
+            shoulder_progress: 0.0,
             headline_emphasized: true,
             edge_actions_visible: true,
         }
@@ -1203,6 +1597,7 @@ fn shared_body_height_decision_clamps_and_rerenders_when_snapshot_exists() {
 fn status_queue_sorting_keeps_approvals_first_and_completions_after() {
     let now = Instant::now();
     let earlier = Utc::now() - chrono::Duration::seconds(10);
+    let middle = Utc::now() - chrono::Duration::seconds(5);
     let later = Utc::now();
     let mut items = vec![
         StatusQueueItem {
@@ -1226,6 +1621,16 @@ fn status_queue_sorting_keeps_approvals_first_and_completions_after() {
             payload: StatusQueuePayload::Approval(pending_permission("request-2", "session-2")),
         },
         StatusQueueItem {
+            key: "question:question-1".to_string(),
+            session_id: "session-3".to_string(),
+            sort_time: middle,
+            expires_at: now,
+            is_live: true,
+            is_removing: false,
+            remove_after: None,
+            payload: StatusQueuePayload::Question(pending_question("question-1", "session-3")),
+        },
+        StatusQueueItem {
             key: "approval:request-1".to_string(),
             session_id: "session-1".to_string(),
             sort_time: earlier,
@@ -1240,9 +1645,10 @@ fn status_queue_sorting_keeps_approvals_first_and_completions_after() {
     items.sort_by(compare_status_queue_items);
 
     assert_eq!(items[0].key, "approval:request-1");
-    assert_eq!(items[1].key, "approval:request-2");
+    assert_eq!(items[1].key, "question:question-1");
+    assert_eq!(items[2].key, "approval:request-2");
     assert!(matches!(
-        items[2].payload,
+        items[3].payload,
         StatusQueuePayload::Completion(_)
     ));
 }
@@ -1346,4 +1752,38 @@ fn animation_descriptor_clamps_transition_values_and_preserves_kind() {
     assert_eq!(descriptor.shoulder_progress, 0.5);
     assert_eq!(descriptor.drop_progress, 1.0);
     assert_eq!(descriptor.cards_progress, 0.0);
+}
+
+#[test]
+fn panel_cards_visibility_progress_treats_close_progress_as_exit_progress() {
+    let close = resolve_panel_animation_descriptor(
+        PanelAnimationKind::Close,
+        PanelTransitionFrame {
+            canvas_height: 180.0,
+            visible_height: 140.0,
+            bar_progress: 1.0,
+            height_progress: 1.0,
+            shoulder_progress: 1.0,
+            drop_progress: 1.0,
+            cards_progress: 0.25,
+        },
+    );
+    let open = resolve_panel_animation_descriptor(
+        PanelAnimationKind::Open,
+        PanelTransitionFrame {
+            cards_progress: 0.25,
+            ..PanelTransitionFrame {
+                canvas_height: 180.0,
+                visible_height: 140.0,
+                bar_progress: 1.0,
+                height_progress: 1.0,
+                shoulder_progress: 1.0,
+                drop_progress: 1.0,
+                cards_progress: 0.0,
+            }
+        },
+    );
+
+    assert_eq!(resolve_panel_cards_visibility_progress(close), 0.75);
+    assert_eq!(resolve_panel_cards_visibility_progress(open), 0.25);
 }

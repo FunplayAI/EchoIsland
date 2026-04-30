@@ -103,9 +103,10 @@ fn install_settings_json(paths: &ClaudePaths) -> Result<()> {
 }
 
 fn hook_script_command(paths: &ClaudePaths) -> String {
-    let hook_script = paths.hook_script_path.display().to_string();
-    if hook_script.starts_with(&paths.home_dir.display().to_string()) {
-        hook_script.replacen(&paths.home_dir.display().to_string(), "~", 1)
+    let hook_script = bash_path_string(&paths.hook_script_path);
+    let home_dir = bash_path_string(&paths.home_dir);
+    if hook_script.starts_with(&home_dir) {
+        hook_script.replacen(&home_dir, "~", 1)
     } else {
         hook_script
     }
@@ -130,8 +131,12 @@ fn install_hook_script(paths: &ClaudePaths) -> Result<()> {
 fn render_hook_script(paths: &ClaudePaths) -> String {
     format!(
         "#!/bin/bash\nBRIDGE=\"{}\"\nif [ -x \"$BRIDGE\" ]; then\n  exec \"$BRIDGE\" --source claude \"$@\"\nfi\nexit 0\n",
-        paths.bridge_path.display()
+        bash_path_string(&paths.bridge_path)
     )
+}
+
+fn bash_path_string(path: &Path) -> String {
+    path.display().to_string().replace('\\', "/")
 }
 
 fn hooks_have_echoisland_entries(paths: &ClaudePaths) -> Result<bool> {
@@ -156,4 +161,42 @@ fn hooks_have_echoisland_entries(paths: &ClaudePaths) -> Result<bool> {
 
 fn entry_contains_echoisland(entry: &Value) -> bool {
     crate::install_support::entry_contains_echoisland(entry)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{bash_path_string, hook_script_command, render_hook_script};
+    use crate::claude::ClaudePaths;
+
+    #[test]
+    fn claude_hook_command_uses_bash_safe_forward_slashes() {
+        let paths = ClaudePaths {
+            home_dir: PathBuf::from(r"C:\Users\Adim"),
+            claude_dir: PathBuf::from(r"C:\Users\Adim\.claude"),
+            settings_path: PathBuf::from(r"C:\Users\Adim\.claude\settings.json"),
+            projects_dir: PathBuf::from(r"C:\Users\Adim\.claude\projects"),
+            hook_script_path: PathBuf::from(r"C:\Users\Adim\.claude\hooks\codeisland-hook.sh"),
+            bridge_install_dir: PathBuf::from(r"C:\Users\Adim\.codeisland\bin"),
+            bridge_path: PathBuf::from(r"C:\Users\Adim\.codeisland\bin\codeisland-hook-bridge.exe"),
+        };
+
+        assert_eq!(
+            hook_script_command(&paths),
+            "~/.claude/hooks/codeisland-hook.sh"
+        );
+        assert!(
+            render_hook_script(&paths)
+                .contains(r#"BRIDGE="C:/Users/Adim/.codeisland/bin/codeisland-hook-bridge.exe""#)
+        );
+    }
+
+    #[test]
+    fn bash_path_string_preserves_posix_paths() {
+        assert_eq!(
+            bash_path_string(PathBuf::from("/tmp/.claude/hooks/hook.sh").as_path()),
+            "/tmp/.claude/hooks/hook.sh"
+        );
+    }
 }

@@ -8,18 +8,7 @@ pub fn direct_bridge_command(bridge_path: &Path, source: &str) -> String {
 }
 
 pub fn platform_bridge_command(bridge_path: &Path, source: &str) -> String {
-    if cfg!(target_os = "windows") {
-        powershell_bridge_command(bridge_path, source)
-    } else {
-        direct_bridge_command(bridge_path, source)
-    }
-}
-
-pub fn powershell_bridge_command(bridge_path: &Path, source: &str) -> String {
-    let escaped = bridge_path.display().to_string().replace('\'', "''");
-    format!(
-        "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command \"& '{escaped}' --source {source}\""
-    )
+    direct_bridge_command(bridge_path, source)
 }
 
 pub fn load_json_object(path: &Path) -> Result<Map<String, Value>> {
@@ -93,7 +82,7 @@ mod tests {
 
     use super::{
         direct_bridge_command, entry_contains_echoisland, platform_bridge_command,
-        powershell_bridge_command, remove_echoisland_entries,
+        remove_echoisland_entries,
     };
 
     #[test]
@@ -101,12 +90,11 @@ mod tests {
         let path_string = format!("C:/CodeIsland/{}", bridge_binary_name());
         let path = std::path::Path::new(&path_string);
         let direct = direct_bridge_command(path, "codex");
-        let powershell = powershell_bridge_command(path, "claude");
+        let platform = platform_bridge_command(path, "claude");
 
         assert!(direct.contains("--source codex"));
-        assert!(powershell.contains("powershell.exe"));
-        assert!(powershell.contains("--source claude"));
-        assert!(platform_bridge_command(path, "claude").contains("--source claude"));
+        assert!(platform.contains("--source claude"));
+        assert!(!platform.contains("powershell.exe"));
     }
 
     #[test]

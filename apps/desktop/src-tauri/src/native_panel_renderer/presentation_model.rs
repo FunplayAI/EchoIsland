@@ -28,7 +28,7 @@ use super::render_commands::{
 };
 use super::visual_plan::{
     NativePanelVisualActionButtonInput, NativePanelVisualDisplayMode, NativePanelVisualPlanInput,
-    native_panel_visual_card_input_from_scene_card,
+    native_panel_visual_card_input_from_scene_card_with_height,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -45,6 +45,7 @@ pub(crate) struct NativePanelCompactBarPresentationInput {
     pub(crate) completion_count: usize,
     pub(crate) headline_emphasized: bool,
     pub(crate) actions_visible: bool,
+    pub(crate) shoulder_progress: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -90,6 +91,9 @@ impl NativePanelShellPresentation {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NativePanelCompactBarPresentation {
     pub(crate) frame: PanelRect,
+    pub(crate) left_shoulder_frame: PanelRect,
+    pub(crate) right_shoulder_frame: PanelRect,
+    pub(crate) shoulder_progress: f64,
     pub(crate) headline: SceneText,
     pub(crate) active_count: String,
     pub(crate) total_count: String,
@@ -102,6 +106,9 @@ impl NativePanelCompactBarPresentation {
     pub(crate) fn command(&self, frame: PanelRect) -> NativePanelCompactBarCommand {
         NativePanelCompactBarCommand {
             frame,
+            left_shoulder_frame: self.left_shoulder_frame,
+            right_shoulder_frame: self.right_shoulder_frame,
+            shoulder_progress: self.shoulder_progress,
             headline: self.headline.clone(),
             active_count: self.active_count.clone(),
             total_count: self.total_count.clone(),
@@ -303,6 +310,8 @@ pub(crate) fn resolve_native_panel_presentation_model(
         bundle.layout.content_frame,
         bundle.shell.frame,
         bundle.compact_bar.frame,
+        bundle.compact_bar.left_shoulder_frame,
+        bundle.compact_bar.right_shoulder_frame,
         bundle.card_stack.frame,
     )
 }
@@ -344,9 +353,24 @@ pub(crate) fn native_panel_visual_plan_input_from_presentation(
         compact_bar_frame: presentation
             .map(|presentation| presentation.compact_bar.frame)
             .unwrap_or(zero),
+        left_shoulder_frame: presentation
+            .map(|presentation| presentation.compact_bar.left_shoulder_frame)
+            .unwrap_or(zero),
+        right_shoulder_frame: presentation
+            .map(|presentation| presentation.compact_bar.right_shoulder_frame)
+            .unwrap_or(zero),
+        shoulder_progress: presentation
+            .map(|presentation| presentation.compact_bar.shoulder_progress)
+            .unwrap_or(0.0),
         content_frame: presentation
             .map(|presentation| presentation.content_frame)
             .unwrap_or(zero),
+        card_stack_frame: presentation
+            .map(|presentation| presentation.card_stack.frame)
+            .unwrap_or(zero),
+        card_stack_content_height: presentation
+            .map(|presentation| presentation.card_stack.content_height)
+            .unwrap_or(0.0),
         shell_frame: presentation
             .map(|presentation| presentation.shell.frame)
             .unwrap_or(zero),
@@ -356,6 +380,13 @@ pub(crate) fn native_panel_visual_plan_input_from_presentation(
         headline_emphasized: presentation
             .map(|presentation| presentation.compact_bar.headline_emphasized)
             .unwrap_or(false),
+        active_count: presentation
+            .map(|presentation| presentation.compact_bar.active_count.clone())
+            .unwrap_or_default(),
+        active_count_elapsed_ms: 0,
+        total_count: presentation
+            .map(|presentation| presentation.compact_bar.total_count.clone())
+            .unwrap_or_default(),
         separator_visibility: presentation
             .map(|presentation| presentation.shell.separator_visibility)
             .unwrap_or(0.0),
@@ -371,7 +402,12 @@ pub(crate) fn native_panel_visual_plan_input_from_presentation(
                     .card_stack
                     .cards
                     .iter()
-                    .map(native_panel_visual_card_input_from_scene_card)
+                    .map(|card| {
+                        native_panel_visual_card_input_from_scene_card_with_height(
+                            card,
+                            estimated_scene_card_height(card),
+                        )
+                    })
                     .collect()
             })
             .unwrap_or_default(),
@@ -389,7 +425,10 @@ pub(crate) fn native_panel_visual_plan_input_from_presentation(
                     .iter()
                     .map(|button| NativePanelVisualActionButtonInput {
                         action: button.action,
-                        frame: button.frame,
+                        frame: local_visual_frame_from_panel_frame(
+                            presentation.panel_frame,
+                            button.frame,
+                        ),
                     })
                     .collect()
             })
@@ -397,9 +436,28 @@ pub(crate) fn native_panel_visual_plan_input_from_presentation(
         completion_count: presentation
             .map(|presentation| presentation.compact_bar.completion_count)
             .unwrap_or(0),
+        mascot_elapsed_ms: 0,
         mascot_pose: presentation
             .map(|presentation| presentation.mascot.pose)
             .unwrap_or(crate::native_panel_scene::SceneMascotPose::Idle),
+    }
+}
+
+fn local_visual_frame_from_panel_frame(panel_frame: PanelRect, frame: PanelRect) -> PanelRect {
+    let frame_is_absolute = frame.x >= panel_frame.x
+        && frame.x + frame.width <= panel_frame.x + panel_frame.width
+        && frame.y >= panel_frame.y
+        && frame.y + frame.height <= panel_frame.y + panel_frame.height;
+
+    if frame_is_absolute {
+        PanelRect {
+            x: frame.x - panel_frame.x,
+            y: frame.y - panel_frame.y,
+            width: frame.width,
+            height: frame.height,
+        }
+    } else {
+        frame
     }
 }
 
@@ -464,6 +522,8 @@ pub(crate) fn build_native_panel_presentation_model(
         zero,
         zero,
         zero,
+        zero,
+        zero,
     )
 }
 
@@ -509,6 +569,8 @@ pub(crate) fn native_panel_presentation_model_from_input(
     content_frame: PanelRect,
     shell_frame: PanelRect,
     compact_bar_frame: PanelRect,
+    left_shoulder_frame: PanelRect,
+    right_shoulder_frame: PanelRect,
     card_stack_frame: PanelRect,
 ) -> NativePanelPresentationModel {
     NativePanelPresentationModel {
@@ -518,6 +580,8 @@ pub(crate) fn native_panel_presentation_model_from_input(
         compact_bar: native_panel_compact_bar_presentation_from_input(
             input.compact_bar,
             compact_bar_frame,
+            left_shoulder_frame,
+            right_shoulder_frame,
         ),
         card_stack: native_panel_card_stack_presentation_from_input(
             input.card_stack,
@@ -568,14 +632,17 @@ pub(crate) fn native_panel_shell_presentation_from_input(
 pub(crate) fn native_panel_compact_bar_presentation(
     scene: &PanelScene,
 ) -> NativePanelCompactBarPresentation {
+    let zero = PanelRect {
+        x: 0.0,
+        y: 0.0,
+        width: 0.0,
+        height: 0.0,
+    };
     native_panel_compact_bar_presentation_from_input(
         compact_bar_presentation_input_from_scene(scene),
-        PanelRect {
-            x: 0.0,
-            y: 0.0,
-            width: 0.0,
-            height: 0.0,
-        },
+        zero,
+        zero,
+        zero,
     )
 }
 
@@ -589,6 +656,7 @@ pub(crate) fn compact_bar_presentation_input_from_scene(
         completion_count: scene.compact_bar.completion_count,
         headline_emphasized: scene.compact_bar.headline.emphasized,
         actions_visible: scene.compact_bar.actions_visible,
+        shoulder_progress: 0.0,
     }
 }
 
@@ -698,15 +766,21 @@ pub(crate) fn compact_bar_presentation_input_from_command(
         completion_count: command.completion_count,
         headline_emphasized: command.headline_emphasized,
         actions_visible: command.actions_visible,
+        shoulder_progress: command.shoulder_progress,
     }
 }
 
 pub(crate) fn native_panel_compact_bar_presentation_from_input(
     input: NativePanelCompactBarPresentationInput,
     frame: PanelRect,
+    left_shoulder_frame: PanelRect,
+    right_shoulder_frame: PanelRect,
 ) -> NativePanelCompactBarPresentation {
     NativePanelCompactBarPresentation {
         frame,
+        left_shoulder_frame,
+        right_shoulder_frame,
+        shoulder_progress: input.shoulder_progress,
         headline: input.headline,
         active_count: input.active_count,
         total_count: input.total_count,
@@ -797,6 +871,7 @@ pub(crate) fn estimated_scene_card_height(card: &SceneCard) -> f64 {
 fn status_queue_card_height(item: &StatusQueueItem) -> f64 {
     match &item.payload {
         StatusQueuePayload::Approval(pending) => pending_permission_card_height(pending),
+        StatusQueuePayload::Question(pending) => pending_question_card_height(pending),
         StatusQueuePayload::Completion(session) => completion_card_height(session),
     }
 }
@@ -900,7 +975,9 @@ mod tests {
             resolve_panel_render_state,
         },
         native_panel_renderer::{
-            descriptors::{NativePanelHostWindowState, NativePanelPointerRegionInput},
+            descriptors::{
+                NativePanelEdgeAction, NativePanelHostWindowState, NativePanelPointerRegionInput,
+            },
             render_commands::resolve_native_panel_render_command_bundle,
             visual_plan::NativePanelVisualDisplayMode,
         },
@@ -1001,6 +1078,7 @@ mod tests {
                 separator_visibility: layout.separator_visibility,
                 bar_progress: 1.0,
                 height_progress: 1.0,
+                shoulder_progress: 0.0,
                 cards_height: layout.cards_frame.height,
                 status_surface_active: false,
                 content_visibility: 1.0,
@@ -1029,6 +1107,96 @@ mod tests {
             resolved.presentation.card_stack.cards.len(),
             resolved.bundle.card_stack.cards.len()
         );
+    }
+
+    #[test]
+    fn visual_plan_action_button_frames_are_local_to_panel_canvas() {
+        let scene = build_panel_scene(
+            &crate::native_panel_core::PanelState {
+                expanded: true,
+                ..Default::default()
+            },
+            &snapshot("running"),
+            &PanelSceneBuildInput::default(),
+        );
+        let layout = resolve_panel_layout(PanelLayoutInput {
+            screen_frame: PanelRect {
+                x: 320.0,
+                y: 120.0,
+                width: 1440.0,
+                height: 900.0,
+            },
+            metrics: PanelGeometryMetrics {
+                compact_height: crate::native_panel_core::DEFAULT_COMPACT_PILL_HEIGHT,
+                compact_width: crate::native_panel_core::DEFAULT_COMPACT_PILL_WIDTH,
+                expanded_width: crate::native_panel_core::DEFAULT_EXPANDED_PILL_WIDTH,
+                panel_width: crate::native_panel_core::DEFAULT_PANEL_CANVAS_WIDTH,
+            },
+            canvas_height: 180.0,
+            visible_height: 180.0,
+            bar_progress: 1.0,
+            height_progress: 1.0,
+            drop_progress: 1.0,
+            content_visibility: 1.0,
+            collapsed_height: crate::native_panel_core::COLLAPSED_PANEL_HEIGHT,
+            drop_distance: crate::native_panel_core::PANEL_DROP_DISTANCE,
+            content_top_gap: crate::native_panel_core::EXPANDED_CONTENT_TOP_GAP,
+            content_bottom_inset: crate::native_panel_core::EXPANDED_CONTENT_BOTTOM_INSET,
+            cards_side_inset: crate::native_panel_core::EXPANDED_CARDS_SIDE_INSET,
+            shoulder_size: crate::native_panel_core::COMPACT_SHOULDER_SIZE,
+            separator_side_inset: crate::native_panel_core::EXPANDED_SEPARATOR_SIDE_INSET,
+        });
+        let render_state =
+            resolve_panel_render_state(crate::native_panel_core::PanelRenderStateInput {
+                shared_expanded_enabled: false,
+                shell_visible: layout.shell_visible,
+                separator_visibility: layout.separator_visibility,
+                bar_progress: 1.0,
+                height_progress: 1.0,
+                shoulder_progress: 0.0,
+                cards_height: layout.cards_frame.height,
+                status_surface_active: false,
+                content_visibility: 1.0,
+                transitioning: false,
+                headline_emphasized: scene.compact_bar.headline.emphasized,
+                edge_actions_visible: scene.compact_bar.actions_visible,
+            });
+        let resolved = resolve_native_panel_presentation(
+            layout,
+            &scene,
+            PanelRuntimeRenderState::default(),
+            render_state,
+            Some(NativePanelPointerRegionInput::default()),
+        );
+        let window_state = NativePanelHostWindowState {
+            frame: Some(resolved.presentation.panel_frame),
+            visible: true,
+            preferred_display_index: 0,
+        };
+        let visual_input = native_panel_visual_plan_input_from_presentation(
+            window_state,
+            NativePanelVisualDisplayMode::Expanded,
+            Some(&resolved.presentation),
+        );
+        let settings_frame = visual_input
+            .action_buttons
+            .iter()
+            .find(|button| button.action == NativePanelEdgeAction::Settings)
+            .expect("settings button")
+            .frame;
+        let quit_frame = visual_input
+            .action_buttons
+            .iter()
+            .find(|button| button.action == NativePanelEdgeAction::Quit)
+            .expect("quit button")
+            .frame;
+
+        for frame in [settings_frame, quit_frame] {
+            assert!(frame.x >= 0.0);
+            assert!(frame.x + frame.width <= visual_input.content_frame.width);
+            assert!(frame.y >= 0.0);
+            assert!(frame.y + frame.height <= visual_input.content_frame.height);
+        }
     }
 
     #[test]
@@ -1075,6 +1243,7 @@ mod tests {
                 separator_visibility: layout.separator_visibility,
                 bar_progress: 1.0,
                 height_progress: 1.0,
+                shoulder_progress: 0.0,
                 cards_height: layout.cards_frame.height,
                 status_surface_active: false,
                 content_visibility: 1.0,
@@ -1153,6 +1322,7 @@ mod tests {
                 separator_visibility: layout.separator_visibility,
                 bar_progress: 1.0,
                 height_progress: 1.0,
+                shoulder_progress: 0.0,
                 cards_height: layout.cards_frame.height,
                 status_surface_active: false,
                 content_visibility: 1.0,

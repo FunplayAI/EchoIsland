@@ -10,6 +10,7 @@ use super::PanelReminderState;
 #[derive(Clone, Debug)]
 pub(crate) enum StatusQueuePayload {
     Approval(PendingPermissionView),
+    Question(PendingQuestionView),
     Completion(SessionSnapshotView),
 }
 
@@ -54,6 +55,7 @@ pub(crate) struct CompletionBadgeItem {
 #[derive(Clone, Copy, Default)]
 pub(crate) struct StatusQueueSyncResult {
     pub(crate) added_approvals: usize,
+    pub(crate) added_questions: usize,
     pub(crate) added_completions: usize,
 }
 
@@ -90,6 +92,8 @@ pub(crate) enum PanelMascotBaseState {
     Question,
     MessageBubble,
     Complete,
+    Sleepy,
+    WakeAngry,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

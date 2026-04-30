@@ -6,6 +6,7 @@ pub(crate) const DEFAULT_EXPANDED_PILL_WIDTH: f64 =
     DEFAULT_COMPACT_PILL_WIDTH + EXPANDED_PILL_WIDTH_DELTA;
 pub(crate) const DEFAULT_COMPACT_PILL_HEIGHT: f64 = 37.0;
 pub(crate) const COMPACT_SHOULDER_SIZE: f64 = 6.0;
+pub(crate) const COMPACT_SHOULDER_CURVE_FACTOR: f64 = 0.62;
 pub(crate) const COMPACT_PILL_RADIUS: f64 = 12.5;
 pub(crate) const EXPANDED_PANEL_RADIUS: f64 = 12.0;
 pub(crate) const CARD_RADIUS: f64 = 9.0;

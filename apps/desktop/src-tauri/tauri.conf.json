@@ -42,6 +42,7 @@
         "height": 80,
         "minWidth": 420,
         "minHeight": 80,
+        "visible": false,
         "resizable": false,
         "decorations": false,
         "transparent": true,

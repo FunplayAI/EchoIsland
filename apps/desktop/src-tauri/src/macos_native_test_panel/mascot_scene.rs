@@ -79,5 +79,7 @@ fn native_mascot_state_from_core(
             NativeMascotState::MessageBubble
         }
         crate::native_panel_core::PanelMascotBaseState::Complete => NativeMascotState::Complete,
+        crate::native_panel_core::PanelMascotBaseState::Sleepy => NativeMascotState::Sleepy,
+        crate::native_panel_core::PanelMascotBaseState::WakeAngry => NativeMascotState::WakeAngry,
     }
 }

@@ -7,10 +7,9 @@ use crate::native_panel_core::{
 };
 
 use super::descriptors::{
-    NativePanelPlatformEvent, NativePanelPointerInput, NativePanelPointerPointState,
-    NativePanelPointerRegion, NativePanelRuntimeCommandHandler, NativePanelRuntimeInputDescriptor,
-    native_panel_platform_event_at_point, native_panel_pointer_inside_for_input,
-    native_panel_pointer_state_at_point, queue_native_panel_platform_event,
+    NativePanelInteractionPlan, NativePanelPlatformEvent, NativePanelPointerInput,
+    NativePanelPointerPointState, NativePanelPointerRegion, NativePanelRuntimeCommandHandler,
+    NativePanelRuntimeInputDescriptor, queue_native_panel_platform_event,
     queue_native_panel_platform_event_for_pointer_region,
 };
 use super::runtime_scene_cache::NativePanelRuntimeSceneCache;
@@ -181,7 +180,8 @@ pub(crate) trait NativePanelQueuedPlatformEventBridge {
         &mut self,
         point: PanelPoint,
     ) -> Option<NativePanelPlatformEvent> {
-        let event = native_panel_platform_event_at_point(self.queued_pointer_regions(), point);
+        let plan = NativePanelInteractionPlan::from_pointer_regions(self.queued_pointer_regions());
+        let event = plan.platform_event_at_point(point);
         queue_native_panel_platform_event(self.queued_platform_events_mut(), event)
     }
 }
@@ -191,7 +191,8 @@ where
     T: NativePanelPointerRegionInteractionBridge,
 {
     fn click_pointer_state_at_point(&self, point: PanelPoint) -> NativePanelPointerPointState {
-        native_panel_pointer_state_at_point(self.interaction_pointer_regions(), point)
+        NativePanelInteractionPlan::from_pointer_regions(self.interaction_pointer_regions())
+            .pointer_state_at_point(point)
     }
 
     fn click_cards_visible(&self) -> bool {
@@ -204,11 +205,14 @@ where
     T: NativePanelPointerRegionInteractionBridge,
 {
     fn hover_inside_at_point(&self, point: PanelPoint) -> bool {
-        native_panel_pointer_state_at_point(self.interaction_pointer_regions(), point).inside
+        NativePanelInteractionPlan::from_pointer_regions(self.interaction_pointer_regions())
+            .pointer_state_at_point(point)
+            .inside
     }
 
     fn hover_inside_for_input(&self, input: NativePanelPointerInput) -> Option<bool> {
-        native_panel_pointer_inside_for_input(self.interaction_pointer_regions(), input)
+        NativePanelInteractionPlan::from_pointer_regions(self.interaction_pointer_regions())
+            .inside_for_input(input)
     }
 }
 

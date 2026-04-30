@@ -1,9 +1,9 @@
 use crate::native_panel_core::{
     ExpandedSurface, PanelHitAction, PanelMascotBaseState, PanelSettingsState, PanelState,
-    StatusQueuePayload, compact_active_session_count, displayed_default_pending_permissions,
-    displayed_default_pending_questions, displayed_prompt_assist_sessions, displayed_sessions,
-    format_status, normalize_status, resolve_panel_reminder_state, session_title,
-    sync_panel_snapshot_state,
+    StatusQueuePayload, compact_active_session_count, display_snippet,
+    displayed_default_pending_permissions, displayed_default_pending_questions,
+    displayed_prompt_assist_sessions, displayed_sessions, format_status, normalize_status,
+    resolve_panel_reminder_state, session_title, sync_panel_snapshot_state,
 };
 use chrono::{DateTime, Utc};
 use echoisland_runtime::RuntimeSnapshot;
@@ -84,6 +84,13 @@ pub(crate) fn build_panel_scene(
                 match &item.payload {
                     StatusQueuePayload::Approval(_) => {
                         cards.push(SceneCard::StatusApproval { item: item.clone() });
+                        hit_targets.push(SceneHitTarget {
+                            action: PanelHitAction::FocusSession,
+                            value: item.session_id.clone(),
+                        });
+                    }
+                    StatusQueuePayload::Question(_) => {
+                        cards.push(SceneCard::StatusQuestion { item: item.clone() });
                         hit_targets.push(SceneHitTarget {
                             action: PanelHitAction::FocusSession,
                             value: item.session_id.clone(),
@@ -401,6 +408,8 @@ pub(crate) fn fallback_panel_display_option() -> PanelDisplayOptionState {
 fn build_compact_bar_scene(state: &PanelState, snapshot: &RuntimeSnapshot) -> CompactBarScene {
     let active_count = compact_active_session_count(snapshot);
     let reminder = resolve_panel_reminder_state(state, Some(snapshot));
+    let actions_visible =
+        (state.expanded || state.transitioning) && state.surface_mode != ExpandedSurface::Status;
     CompactBarScene {
         headline: SceneText {
             text: compact_headline(state, snapshot),
@@ -413,7 +422,7 @@ fn build_compact_bar_scene(state: &PanelState, snapshot: &RuntimeSnapshot) -> Co
         },
         total_count: snapshot.total_session_count.to_string(),
         completion_count: reminder.completion_badge_count,
-        actions_visible: state.expanded || state.transitioning,
+        actions_visible,
     }
 }
 
@@ -442,6 +451,8 @@ fn build_mascot_pose(
         PanelMascotBaseState::Question => SceneMascotPose::Question,
         PanelMascotBaseState::MessageBubble => SceneMascotPose::MessageBubble,
         PanelMascotBaseState::Complete => SceneMascotPose::Complete,
+        PanelMascotBaseState::Sleepy => SceneMascotPose::Sleepy,
+        PanelMascotBaseState::WakeAngry => SceneMascotPose::WakeAngry,
     }
 }
 
@@ -485,13 +496,21 @@ fn compact_headline(state: &PanelState, snapshot: &RuntimeSnapshot) -> String {
     let approval_count = state
         .status_queue
         .iter()
-        .filter(|item| matches!(item.payload, StatusQueuePayload::Approval(_)))
+        .filter(|item| {
+            matches!(
+                item.payload,
+                StatusQueuePayload::Approval(_) | StatusQueuePayload::Question(_)
+            )
+        })
         .count();
     if approval_count > 0 {
         return if approval_count > 1 {
-            "Approvals waiting".to_string()
+            "Requests waiting".to_string()
         } else {
-            "Approval waiting".to_string()
+            match state.status_queue.first().map(|item| &item.payload) {
+                Some(StatusQueuePayload::Question(_)) => "Question waiting".to_string(),
+                _ => "Approval waiting".to_string(),
+            }
         };
     }
 
@@ -507,10 +526,7 @@ fn compact_headline(state: &PanelState, snapshot: &RuntimeSnapshot) -> String {
         if let Some(StatusQueuePayload::Completion(session)) =
             state.status_queue.first().map(|item| &item.payload)
         {
-            return session
-                .last_assistant_message
-                .clone()
-                .filter(|message| !message.trim().is_empty())
+            return display_snippet(session.last_assistant_message.as_deref(), 42)
                 .unwrap_or_else(|| "Task complete".to_string());
         }
     }

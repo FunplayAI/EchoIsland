@@ -1,10 +1,5 @@
 use std::path::Path;
 
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-#[cfg(target_os = "windows")]
-use std::process::Command;
-
 use echoisland_paths::user_home_dir;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,18 +9,9 @@ pub struct LiveCaptureSupport {
 }
 
 pub fn codex_live_capture_support() -> LiveCaptureSupport {
-    if cfg!(target_os = "windows") {
-        LiveCaptureSupport {
-            supported: false,
-            note: Some(
-                "Current Codex CLI Windows builds disable hooks.json lifecycle hooks at runtime, so EchoIsland cannot receive live Codex hook events yet.".to_string(),
-            ),
-        }
-    } else {
-        LiveCaptureSupport {
-            supported: true,
-            note: None,
-        }
+    LiveCaptureSupport {
+        supported: true,
+        note: None,
     }
 }
 
@@ -51,31 +37,68 @@ fn should_limit_to_current_user_home(home_dir: &Path) -> bool {
 fn active_codex_process_count() -> Option<usize> {
     #[cfg(target_os = "windows")]
     {
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-        let mut command = Command::new("powershell.exe");
-        command.creation_flags(CREATE_NO_WINDOW).args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-WindowStyle",
-            "Hidden",
-            "-Command",
-            "(Get-Process codex -ErrorAction SilentlyContinue | Measure-Object).Count",
-        ]);
-        let output = command.output().ok()?;
-
-        if !output.status.success() {
-            return None;
-        }
-
-        let raw = String::from_utf8_lossy(&output.stdout);
-        raw.trim().parse::<usize>().ok()
+        windows_codex_process_count()
     }
 
     #[cfg(not(target_os = "windows"))]
     {
         None
     }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_codex_process_count() -> Option<usize> {
+    use std::mem::size_of;
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
+        System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+            TH32CS_SNAPPROCESS,
+        },
+    };
+
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == INVALID_HANDLE_VALUE {
+            return None;
+        }
+
+        let mut entry = std::mem::zeroed::<PROCESSENTRY32W>();
+        entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
+
+        let mut count = 0;
+        if Process32FirstW(snapshot, &mut entry) == 0 {
+            CloseHandle(snapshot);
+            return None;
+        }
+
+        loop {
+            if process_entry_name(&entry).eq_ignore_ascii_case("codex.exe")
+                || process_entry_name(&entry).eq_ignore_ascii_case("codex")
+            {
+                count += 1;
+            }
+
+            if Process32NextW(snapshot, &mut entry) == 0 {
+                break;
+            }
+        }
+
+        CloseHandle(snapshot);
+        Some(count)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn process_entry_name(
+    entry: &windows_sys::Win32::System::Diagnostics::ToolHelp::PROCESSENTRY32W,
+) -> String {
+    let len = entry
+        .szExeFile
+        .iter()
+        .position(|ch| *ch == 0)
+        .unwrap_or(entry.szExeFile.len());
+    String::from_utf16_lossy(&entry.szExeFile[..len])
 }
 
 #[cfg(test)]
@@ -100,17 +123,8 @@ mod tests {
     fn codex_support_matches_current_platform() {
         let support = codex_live_capture_support();
 
-        #[cfg(target_os = "windows")]
-        {
-            assert!(!support.supported);
-            assert!(support.note.is_some());
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            assert!(support.supported);
-            assert!(support.note.is_none());
-        }
+        assert!(support.supported);
+        assert!(support.note.is_none());
     }
 
     #[test]

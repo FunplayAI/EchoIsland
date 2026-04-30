@@ -7,6 +7,7 @@ use crate::native_panel_renderer::facade::{
 use std::sync::{Arc, Mutex, OnceLock};
 
 use tokio::sync::Notify;
+use tracing::warn;
 
 use super::{
     WindowsNativePanelRuntime,
@@ -31,6 +32,9 @@ pub(super) fn pump_windows_native_panel_runtime_once() -> Result<(), String> {
             .map_err(|_| "windows native panel runtime poisoned".to_string())?;
         runtime.pump_platform_loop()
     };
+    if let Err(error) = &result {
+        warn!(error = %error, "windows native panel platform pump failed");
+    }
     notify_windows_native_panel_event_dispatcher();
     result
 }

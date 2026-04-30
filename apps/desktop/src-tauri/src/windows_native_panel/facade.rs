@@ -18,6 +18,7 @@ use crate::{
         env::native_panel_enabled_from_env_value,
         host::{NativePanelHost, hide_main_webview_window_when_native_ui_enabled},
     },
+    notification_sound::play_message_card_sound,
 };
 
 use super::runtime_entry::{
@@ -80,9 +81,13 @@ pub(crate) fn update_native_panel_snapshot<R: tauri::Runtime>(
     app: &AppHandle<R>,
     snapshot: &RuntimeSnapshot,
 ) -> Result<(), String> {
-    with_windows_native_panel_runtime_input(app, |runtime, input| {
+    let sync = with_windows_native_panel_runtime_input(app, |runtime, input| {
         runtime.sync_snapshot_bundle(snapshot, input)
-    })
+    })?;
+    if sync.is_some_and(|sync| sync.reminder.play_sound) {
+        play_message_card_sound();
+    }
+    Ok(())
 }
 
 pub(crate) fn hide_native_panel<R: tauri::Runtime>(_: &AppHandle<R>) -> Result<(), String> {

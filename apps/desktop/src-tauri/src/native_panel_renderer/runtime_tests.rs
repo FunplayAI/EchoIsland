@@ -66,6 +66,7 @@ use super::runtime_settings_surface::{
     toggle_native_panel_settings_surface_transition_request_for_state,
 };
 use super::runtime_transition_slots::{
+    apply_native_panel_hover_sync_result_slot,
     apply_native_panel_runtime_scene_sync_result_with_transition_slot,
     apply_native_panel_settings_surface_toggle_result_slot,
 };
@@ -77,11 +78,11 @@ mod tests {
     use super::{
         NativePanelClickInteractionHost, NativePanelClickStateBridge, NativePanelCoreStateBridge,
         NativePanelHostInteractionStateBridge, NativePanelHoverFallbackFrames,
-        NativePanelHoverFallbackState, NativePanelHoverInteractionHost,
+        NativePanelHoverFallbackState, NativePanelHoverInteractionHost, NativePanelHoverSyncResult,
         NativePanelPointerInputRuntimeBridge, NativePanelPointerRegionInteractionBridge,
         NativePanelPollingHostFacts, NativePanelPollingInteractionInput,
         NativePanelPrimaryPointerStateBridge, NativePanelQueuedPlatformEventBridge,
-        NativePanelQueuedPlatformEventSource,
+        NativePanelQueuedPlatformEventSource, apply_native_panel_hover_sync_result_slot,
         dispatch_native_panel_click_command_at_point_with_handler,
         dispatch_native_panel_click_command_with_handler,
         dispatch_queued_native_panel_platform_events_with_handler,
@@ -94,6 +95,7 @@ mod tests {
         resolve_native_panel_settings_surface_snapshot_update_for_state,
         sync_native_panel_host_polling_interaction_for_state,
         sync_native_panel_hover_interaction_and_rerender_at_point_with_input_descriptor,
+        sync_native_panel_hover_interaction_and_rerender_for_inside_with_input_descriptor,
         sync_native_panel_hover_interaction_and_rerender_for_pointer_input_with_input_descriptor,
         sync_native_panel_hover_interaction_at_point_for_state,
         sync_native_panel_hover_interaction_for_pointer_input_for_state,
@@ -121,6 +123,7 @@ mod tests {
     use crate::native_panel_scene::{
         PanelRuntimeRenderState, PanelScene, PanelSceneBuildInput, SceneMascotPose,
     };
+    use chrono::Utc;
     use std::time::{Duration, Instant};
 
     #[derive(Default)]
@@ -190,12 +193,32 @@ mod tests {
                 width: 240.0,
                 height: 36.0,
             },
+            left_shoulder_frame: PanelRect {
+                x: 34.0,
+                y: 42.0,
+                width: 6.0,
+                height: 6.0,
+            },
+            right_shoulder_frame: PanelRect {
+                x: 280.0,
+                y: 42.0,
+                width: 6.0,
+                height: 6.0,
+            },
+            shoulder_progress: 0.0,
             content_frame: PanelRect {
                 x: 0.0,
                 y: 0.0,
                 width: 320.0,
                 height: 160.0,
             },
+            card_stack_frame: PanelRect {
+                x: 0.0,
+                y: 0.0,
+                width: 320.0,
+                height: 160.0,
+            },
+            card_stack_content_height: 160.0,
             shell_frame: PanelRect {
                 x: 20.0,
                 y: 0.0,
@@ -204,6 +227,9 @@ mod tests {
             },
             headline_text: "EchoIsland".to_string(),
             headline_emphasized: false,
+            active_count: "1".to_string(),
+            active_count_elapsed_ms: 0,
+            total_count: "3".to_string(),
             separator_visibility: 0.0,
             cards_visible: false,
             card_count: 0,
@@ -212,6 +238,7 @@ mod tests {
             action_buttons_visible: false,
             action_buttons: Vec::new(),
             completion_count: 0,
+            mascot_elapsed_ms: 0,
             mascot_pose: SceneMascotPose::Idle,
         }
     }
@@ -239,6 +266,7 @@ mod tests {
         rerender_count: usize,
         last_scene: Option<PanelScene>,
         host_descriptor: NativePanelHostWindowDescriptor,
+        render_error: Option<String>,
     }
 
     impl Default for TestInteractionHost {
@@ -255,6 +283,7 @@ mod tests {
                 rerender_count: 0,
                 last_scene: None,
                 host_descriptor: NativePanelHostWindowDescriptor::default(),
+                render_error: None,
             }
         }
     }
@@ -316,6 +345,9 @@ mod tests {
             scene: &PanelScene,
             _runtime: PanelRuntimeRenderState,
         ) -> Result<(), Self::Error> {
+            if let Some(error) = self.render_error.clone() {
+                return Err(error);
+            }
             self.rerender_count += 1;
             self.last_scene = Some(scene.clone());
             Ok(())
@@ -651,6 +683,21 @@ mod tests {
     }
 
     #[test]
+    fn shared_hover_sync_without_transition_preserves_pending_open_request() {
+        let mut request_slot = Some(NativePanelTransitionRequest::Open);
+        let result = apply_native_panel_hover_sync_result_slot(
+            &mut request_slot,
+            NativePanelHoverSyncResult {
+                transition: None,
+                request: None,
+            },
+        );
+
+        assert_eq!(result, None);
+        assert_eq!(request_slot, Some(NativePanelTransitionRequest::Open));
+    }
+
+    #[test]
     fn shared_hover_sync_at_point_uses_host_hover_resolution() {
         let now = Instant::now();
         let mut state = PanelState {
@@ -747,6 +794,96 @@ mod tests {
         assert_eq!(result.request, Some(NativePanelTransitionRequest::Open));
         assert_eq!(host.rerender_count, 1);
         assert!(host.last_scene.is_some());
+    }
+
+    #[test]
+    fn shared_hover_rerender_without_snapshot_does_not_clear_badge_or_expand() {
+        let now = Instant::now();
+        let mut state = PanelState {
+            expanded: false,
+            pointer_inside_since: Some(now - Duration::from_millis(700)),
+            completion_badge_items: vec![crate::native_panel_core::CompletionBadgeItem {
+                session_id: "session-1".to_string(),
+                completed_at: Utc::now(),
+                last_user_prompt: Some("prompt".to_string()),
+                last_assistant_message: Some("done".to_string()),
+            }],
+            ..PanelState::default()
+        };
+        let mut host = TestInteractionHost {
+            hover_inside: true,
+            ..TestInteractionHost::default()
+        };
+        let mut cache = NativePanelRuntimeSceneCache::default();
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+
+        let result =
+            sync_native_panel_hover_interaction_and_rerender_at_point_with_input_descriptor(
+                &mut host,
+                &mut cache,
+                &mut state,
+                PanelPoint { x: 10.0, y: 10.0 },
+                now,
+                600,
+                &input,
+            )
+            .expect("hover without snapshot");
+
+        assert_eq!(result.transition, None);
+        assert_eq!(result.request, None);
+        assert_eq!(host.rerender_count, 0);
+        assert!(!state.expanded);
+        assert_eq!(state.completion_badge_items.len(), 1);
+    }
+
+    #[test]
+    fn shared_hover_close_rerender_error_restores_previous_panel_state() {
+        let now = Instant::now();
+        let mut state = PanelState {
+            expanded: true,
+            pointer_outside_since: Some(now - Duration::from_millis(700)),
+            ..PanelState::default()
+        };
+        let original = state.clone();
+        let mut host = TestInteractionHost {
+            render_error: Some("render failed".to_string()),
+            ..TestInteractionHost::default()
+        };
+        let mut cache = NativePanelRuntimeSceneCache::default();
+        cache.last_snapshot = Some(echoisland_runtime::RuntimeSnapshot {
+            status: "idle".to_string(),
+            primary_source: "codex".to_string(),
+            active_session_count: 0,
+            total_session_count: 0,
+            pending_permission_count: 0,
+            pending_question_count: 0,
+            pending_permission: None,
+            pending_question: None,
+            pending_permissions: vec![],
+            pending_questions: vec![],
+            sessions: vec![],
+        });
+        let input = NativePanelRuntimeInputDescriptor {
+            scene_input: PanelSceneBuildInput::default(),
+            screen_frame: None,
+        };
+
+        let error =
+            sync_native_panel_hover_interaction_and_rerender_for_inside_with_input_descriptor(
+                &mut host, &mut cache, &mut state, false, now, 600, &input,
+            )
+            .expect_err("render error should propagate");
+
+        assert_eq!(error, "render failed");
+        assert_eq!(state.expanded, original.expanded);
+        assert_eq!(state.transitioning, original.transitioning);
+        assert_eq!(state.status_auto_expanded, original.status_auto_expanded);
+        assert_eq!(state.surface_mode, original.surface_mode);
+        assert_eq!(state.pointer_inside_since, original.pointer_inside_since);
+        assert_eq!(state.pointer_outside_since, original.pointer_outside_since);
     }
 
     #[test]
@@ -1157,6 +1294,98 @@ mod tests {
         );
         assert_eq!(result.transition_snapshot, Some(snapshot));
         assert!(polling_state.core.expanded);
+    }
+
+    #[test]
+    fn shared_polling_interaction_does_not_commit_hover_transition_without_snapshot() {
+        let now = Instant::now();
+
+        #[derive(Default)]
+        struct TestPollingState {
+            core: PanelState,
+            primary_mouse_down: bool,
+            last_focus_click: Option<(String, Instant)>,
+        }
+
+        impl NativePanelCoreStateBridge for TestPollingState {
+            fn snapshot_core_panel_state(&self) -> PanelState {
+                self.core.clone()
+            }
+
+            fn apply_core_panel_state(&mut self, core: PanelState) {
+                self.core = core;
+            }
+        }
+
+        impl NativePanelClickStateBridge for TestPollingState {
+            fn click_expanded(&self) -> bool {
+                self.core.expanded
+            }
+
+            fn click_transitioning(&self) -> bool {
+                self.core.transitioning
+            }
+
+            fn click_last_focus_click(&self) -> Option<LastFocusClick<'_>> {
+                resolve_native_panel_last_focus_click(self.last_focus_click.as_ref())
+            }
+
+            fn record_click_focus_session(&mut self, session_id: String, now: Instant) {
+                record_native_panel_focus_click_session(
+                    &mut self.last_focus_click,
+                    session_id,
+                    now,
+                );
+            }
+        }
+
+        impl NativePanelPrimaryPointerStateBridge for TestPollingState {
+            fn primary_pointer_down(&self) -> bool {
+                self.primary_mouse_down
+            }
+
+            fn set_primary_pointer_down(&mut self, down: bool) {
+                self.primary_mouse_down = down;
+            }
+        }
+
+        let mut polling_state = TestPollingState {
+            core: PanelState {
+                expanded: false,
+                pointer_inside_since: Some(now - Duration::from_millis(700)),
+                ..PanelState::default()
+            },
+            ..TestPollingState::default()
+        };
+
+        let result = sync_native_panel_polling_interaction_for_state(
+            &mut polling_state,
+            native_panel_polling_interaction_input(
+                NativePanelPointerPointState {
+                    inside: true,
+                    platform_event: None,
+                    hit_target: None,
+                },
+                true,
+                NativePanelHoverFallbackState::default(),
+                false,
+                false,
+                None,
+            ),
+            now,
+            600,
+            500,
+        );
+
+        assert_eq!(result.transition_request, None);
+        assert_eq!(result.transition_snapshot, None);
+        assert!(!polling_state.core.expanded);
+        assert!(
+            polling_state
+                .core
+                .pointer_inside_since
+                .is_some_and(|entered_at| now.duration_since(entered_at).as_millis() >= 600)
+        );
     }
 
     #[test]

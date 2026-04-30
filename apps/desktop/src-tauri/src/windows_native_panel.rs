@@ -6,10 +6,16 @@
 
 use crate::native_panel_core::PanelRect;
 
+mod d2d_painter;
+mod direct2d;
+mod directwrite;
+mod dpi;
 mod draw_presenter;
 mod facade;
+mod hit_region;
 mod host_runtime;
 mod host_window;
+mod layered_window;
 mod message_dispatch;
 mod paint_backend;
 mod paint_bridge;
@@ -42,7 +48,7 @@ pub(crate) use runtime_backend::WindowsNativePanelRuntimeBackendFacade;
 
 #[cfg(test)]
 use platform_loop::{
-    queue_windows_native_panel_window_message,
+    clear_windows_native_panel_window_messages, queue_windows_native_panel_window_message,
     wait_windows_native_platform_loop_processed_at_least, windows_native_platform_loop_generations,
 };
 #[cfg(test)]

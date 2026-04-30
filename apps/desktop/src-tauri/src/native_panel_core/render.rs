@@ -1,4 +1,9 @@
-use super::{PanelAnimationDescriptor, PanelTransitionFrame};
+use super::{
+    ACTIVE_COUNT_SCROLL_HOLD_MS, ACTIVE_COUNT_SCROLL_MOVE_MS, ACTIVE_COUNT_SCROLL_STEP_MS,
+    ACTIVE_COUNT_SCROLL_TRAVEL, ACTIVE_COUNT_SLOT_NUDGE_X, ACTIVE_COUNT_SLOT_WIDTH,
+    MASCOT_WAKE_ANGRY_SECONDS, PanelAnimationDescriptor, PanelAnimationKind, PanelMascotBaseState,
+    PanelTransitionFrame,
+};
 
 const SHARED_CONTENT_REVEAL_PROGRESS: f64 = 0.94;
 const SHARED_CONTENT_INTERACTIVE_PROGRESS: f64 = 0.985;
@@ -54,6 +59,7 @@ pub(crate) struct PanelRenderLayerStyleInput {
     pub(crate) shared_visible: bool,
     pub(crate) bar_progress: f64,
     pub(crate) height_progress: f64,
+    pub(crate) shoulder_progress: f64,
     pub(crate) headline_emphasized: bool,
     pub(crate) edge_actions_visible: bool,
 }
@@ -65,6 +71,7 @@ pub(crate) struct PanelRenderLayerStyleState {
     pub(crate) shared_visible: bool,
     pub(crate) bar_progress: f64,
     pub(crate) height_progress: f64,
+    pub(crate) shoulder_progress: f64,
     pub(crate) headline_emphasized: bool,
     pub(crate) edge_actions_visible: bool,
 }
@@ -76,6 +83,7 @@ pub(crate) struct PanelRenderStateInput {
     pub(crate) separator_visibility: f64,
     pub(crate) bar_progress: f64,
     pub(crate) height_progress: f64,
+    pub(crate) shoulder_progress: f64,
     pub(crate) cards_height: f64,
     pub(crate) status_surface_active: bool,
     pub(crate) content_visibility: f64,
@@ -184,6 +192,279 @@ pub(crate) struct PanelLayout {
     pub(crate) separator_visibility: f64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CompactBarContentLayoutInput {
+    pub(crate) bar_width: f64,
+    pub(crate) bar_height: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CompactBarContentLayout {
+    pub(crate) mascot_center_x: f64,
+    pub(crate) headline_x: f64,
+    pub(crate) headline_width: f64,
+    pub(crate) headline_center_x: f64,
+    pub(crate) active_x: f64,
+    pub(crate) slash_x: f64,
+    pub(crate) total_x: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CompactActionButtonLayout {
+    pub(crate) settings: PanelRect,
+    pub(crate) quit: PanelRect,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ActiveCountMarqueeInput<'a> {
+    pub(crate) text: &'a str,
+    pub(crate) elapsed_ms: u128,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ActiveCountMarqueeFrame {
+    pub(crate) current: String,
+    pub(crate) next: String,
+    pub(crate) show_next: bool,
+    pub(crate) scroll_offset: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct MascotVisualFrameInput {
+    pub(crate) state: PanelMascotBaseState,
+    pub(crate) elapsed_ms: u128,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct MascotVisualFrame {
+    pub(crate) offset_x: f64,
+    pub(crate) offset_y: f64,
+    pub(crate) scale_x: f64,
+    pub(crate) scale_y: f64,
+    pub(crate) eye_open: f64,
+}
+
+pub(crate) fn resolve_compact_bar_content_layout(
+    input: CompactBarContentLayoutInput,
+) -> CompactBarContentLayout {
+    let mascot_size = (input.bar_height - 9.0).clamp(24.0, 28.0);
+    let left_inset = ((input.bar_height - mascot_size) / 2.0).clamp(8.0, 12.0);
+    let headline_width = 156.0;
+    let headline_x = ((input.bar_width - headline_width) / 2.0).max(44.0);
+    let total_width = 24.0;
+    let slash_width = 12.0;
+    let active_width = ACTIVE_COUNT_SLOT_WIDTH;
+    let group_right = input.bar_width.max(208.0);
+    let total_x = group_right - total_width;
+    let slash_x = total_x - slash_width;
+    let active_x = (slash_x - active_width + ACTIVE_COUNT_SLOT_NUDGE_X).max(168.0);
+
+    CompactBarContentLayout {
+        mascot_center_x: left_inset + mascot_size / 2.0,
+        headline_x,
+        headline_width,
+        headline_center_x: headline_x + headline_width / 2.0,
+        active_x,
+        slash_x,
+        total_x,
+    }
+}
+
+pub(crate) fn resolve_compact_action_button_layout(
+    compact_frame: PanelRect,
+) -> CompactActionButtonLayout {
+    let action_size = 26.0;
+    let mascot_size = (compact_frame.height - 9.0).clamp(24.0, 28.0);
+    let left_inset = ((compact_frame.height - mascot_size) / 2.0).clamp(8.0, 12.0);
+    let settings_x = left_inset + mascot_size + 14.0;
+    let active_width = ACTIVE_COUNT_SLOT_WIDTH;
+    let slash_width = 10.0;
+    let total_width = 24.0;
+    let group_right = (compact_frame.width - 4.0).max(208.0);
+    let total_x = group_right - total_width;
+    let slash_x = total_x - slash_width;
+    let right_start = (slash_x - active_width + ACTIVE_COUNT_SLOT_NUDGE_X).max(168.0);
+    let quit_x = (right_start - 6.0 - action_size).max(0.0);
+    let y = ((compact_frame.height - action_size) / 2.0).round();
+
+    CompactActionButtonLayout {
+        settings: PanelRect {
+            x: compact_frame.x + settings_x,
+            y: compact_frame.y + y,
+            width: action_size,
+            height: action_size,
+        },
+        quit: PanelRect {
+            x: compact_frame.x + quit_x,
+            y: compact_frame.y + y,
+            width: action_size,
+            height: action_size,
+        },
+    }
+}
+
+pub(crate) fn resolve_active_count_marquee_frame(
+    input: ActiveCountMarqueeInput<'_>,
+) -> ActiveCountMarqueeFrame {
+    let chars = input.text.chars().collect::<Vec<_>>();
+    if chars.is_empty() {
+        return ActiveCountMarqueeFrame {
+            current: "0".to_string(),
+            next: "0".to_string(),
+            show_next: false,
+            scroll_offset: 0.0,
+        };
+    }
+
+    let current = chars[0].to_string();
+    let next = chars.get(1).copied().unwrap_or(chars[0]).to_string();
+    let show_next = chars.len() > 1;
+    let phase = if !show_next {
+        0.0
+    } else {
+        let step_elapsed = input.elapsed_ms % ACTIVE_COUNT_SCROLL_STEP_MS;
+        if step_elapsed < ACTIVE_COUNT_SCROLL_HOLD_MS {
+            0.0
+        } else if step_elapsed < ACTIVE_COUNT_SCROLL_HOLD_MS + ACTIVE_COUNT_SCROLL_MOVE_MS {
+            ((step_elapsed - ACTIVE_COUNT_SCROLL_HOLD_MS) as f64
+                / ACTIVE_COUNT_SCROLL_MOVE_MS as f64)
+                .clamp(0.0, 1.0)
+        } else {
+            1.0
+        }
+    };
+
+    ActiveCountMarqueeFrame {
+        current,
+        next,
+        show_next,
+        scroll_offset: (ACTIVE_COUNT_SCROLL_TRAVEL * phase).round(),
+    }
+}
+
+pub(crate) fn resolve_mascot_visual_frame(input: MascotVisualFrameInput) -> MascotVisualFrame {
+    let t = input.elapsed_ms as f64 / 1000.0;
+    let (offset_x, offset_y, scale_x, scale_y) = match input.state {
+        PanelMascotBaseState::Running => {
+            let bounce = (t * 5.8).sin().abs();
+            let hang = bounce.powf(0.72);
+            let landing = (1.0 - bounce).powf(3.2);
+            (
+                (t * 3.1).sin() * 0.28,
+                hang * 5.6,
+                1.0 + landing * 0.18 + hang * 0.018,
+                1.0 - landing * 0.16 + hang * 0.018,
+            )
+        }
+        PanelMascotBaseState::Approval => {
+            let pulse = ((t * 7.2).sin() + 1.0) * 0.5;
+            (
+                (t * 9.0).sin() * 0.34,
+                0.0,
+                1.0 + pulse * 0.025,
+                1.0 - pulse * 0.018,
+            )
+        }
+        PanelMascotBaseState::Question => {
+            let tilt = (t * 4.4).sin();
+            (
+                tilt * 0.28,
+                (t * 5.1).sin() * 0.55,
+                1.0 + tilt.abs() * 0.012,
+                1.0,
+            )
+        }
+        PanelMascotBaseState::MessageBubble => {
+            let bob = ((t * 3.2).sin() + 1.0) * 0.5;
+            (0.0, bob * 1.6, 1.0 + bob * 0.012, 1.0 - bob * 0.008)
+        }
+        PanelMascotBaseState::Complete => {
+            let bob = ((t * 2.4).sin() + 1.0) * 0.5;
+            (0.0, bob * 0.8, 1.0 + bob * 0.010, 1.0 - bob * 0.006)
+        }
+        PanelMascotBaseState::Sleepy => {
+            let breath = ((t * 0.9).sin() + 1.0) * 0.5;
+            let sleepy_phase = (t + 0.9).rem_euclid(7.6);
+            let nod = if sleepy_phase > 5.1 && sleepy_phase < 5.95 {
+                (((sleepy_phase - 5.1) / 0.85) * std::f64::consts::PI).sin()
+            } else {
+                0.0
+            };
+            (
+                0.0,
+                nod * -0.7,
+                1.0 + breath * 0.012,
+                0.96 - breath * 0.012 + nod * 0.01,
+            )
+        }
+        PanelMascotBaseState::WakeAngry => {
+            let fade = 1.0 - smoothstep_range(0.52, MASCOT_WAKE_ANGRY_SECONDS, t);
+            (
+                (t * 30.0).sin() * 1.85 * fade,
+                0.0,
+                1.0 + 0.045 * fade,
+                1.0 - 0.04 * fade,
+            )
+        }
+        PanelMascotBaseState::Idle => {
+            let breath = ((t * 1.1).sin() + 1.0) * 0.5;
+            (0.0, 0.0, 1.0 + breath * 0.006, 1.0 - breath * 0.004)
+        }
+    };
+
+    MascotVisualFrame {
+        offset_x,
+        offset_y,
+        scale_x,
+        scale_y,
+        eye_open: resolve_mascot_eye_open(input.state, input.elapsed_ms),
+    }
+}
+
+fn resolve_mascot_eye_open(state: PanelMascotBaseState, elapsed_ms: u128) -> f64 {
+    let phase = ((elapsed_ms as f64 / 1000.0) + 0.35).rem_euclid(4.8);
+    let scale = if phase < 0.09 {
+        1.0 - (phase / 0.09) * 0.9
+    } else if phase < 0.18 {
+        0.1 + ((phase - 0.09) / 0.09) * 0.9
+    } else {
+        1.0
+    };
+
+    let floor = match state {
+        PanelMascotBaseState::Approval => 0.34,
+        PanelMascotBaseState::Question => 0.48,
+        PanelMascotBaseState::Running | PanelMascotBaseState::Complete => 0.72,
+        PanelMascotBaseState::Sleepy => 0.16,
+        PanelMascotBaseState::WakeAngry => 1.0,
+        PanelMascotBaseState::Idle | PanelMascotBaseState::MessageBubble => 0.12,
+    };
+    let scale = scale.clamp(floor, 1.0);
+    if state == PanelMascotBaseState::Sleepy {
+        let t = elapsed_ms as f64 / 1000.0;
+        let sleepy_phase = (t + 1.1).rem_euclid(7.4);
+        let mut sleepy_scale = scale * 0.72;
+        if sleepy_phase > 4.7 && sleepy_phase < 5.45 {
+            let pct = (sleepy_phase - 4.7) / 0.75;
+            sleepy_scale = if pct < 0.5 {
+                0.18
+            } else {
+                0.18 + (pct - 0.5) * 0.36
+            };
+        }
+        return sleepy_scale.max(0.16);
+    }
+    scale
+}
+
+fn smoothstep_range(edge0: f64, edge1: f64, value: f64) -> f64 {
+    if (edge1 - edge0).abs() <= f64::EPSILON {
+        return if value >= edge1 { 1.0 } else { 0.0 };
+    }
+    let progress = ((value - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    progress * progress * (3.0 - (2.0 * progress))
+}
+
 pub(crate) fn resolve_panel_render_progress(frame: PanelTransitionFrame) -> PanelRenderProgress {
     PanelRenderProgress {
         bar: frame.bar_progress.clamp(0.0, 1.0),
@@ -242,6 +523,7 @@ pub(crate) fn resolve_panel_render_layer_style_state(
         shared_visible: input.shared_visible,
         bar_progress: input.bar_progress,
         height_progress: input.height_progress,
+        shoulder_progress: input.shoulder_progress,
         headline_emphasized: input.headline_emphasized,
         edge_actions_visible: input.edge_actions_visible,
     }
@@ -264,6 +546,7 @@ pub(crate) fn resolve_panel_render_state(input: PanelRenderStateInput) -> PanelR
         shared_visible: shared.visible,
         bar_progress: input.bar_progress,
         height_progress: input.height_progress,
+        shoulder_progress: input.shoulder_progress,
         headline_emphasized: input.headline_emphasized,
         edge_actions_visible: input.edge_actions_visible,
     });
@@ -618,6 +901,14 @@ pub(crate) fn resolve_expanded_total_height(
         .unwrap_or(estimated_body_height)
         .min(max_body_height);
     compact_height + top_gap + bottom_inset + body_height
+}
+
+pub(crate) fn resolve_panel_cards_visibility_progress(descriptor: PanelAnimationDescriptor) -> f64 {
+    match descriptor.kind {
+        PanelAnimationKind::Close => 1.0 - descriptor.cards_progress,
+        PanelAnimationKind::Open | PanelAnimationKind::SurfaceSwitch => descriptor.cards_progress,
+    }
+    .clamp(0.0, 1.0)
 }
 
 pub(crate) fn resolve_panel_transition_canvas_height(

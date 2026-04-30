@@ -5,7 +5,9 @@ use echoisland_runtime::RuntimeSnapshot;
 use super::{
     host_runtime::{WindowsNativePanelHost, WindowsNativePanelRuntime},
     paint_backend::paint_windows_native_panel_job,
-    platform_loop::take_windows_native_panel_window_messages,
+    platform_loop::{
+        sync_windows_native_panel_hit_regions, take_windows_native_panel_window_messages,
+    },
     window_shell::WINDOWS_WM_PAINT,
 };
 use crate::{
@@ -134,6 +136,10 @@ impl NativePanelHostShellRuntimePump for WindowsNativePanelRuntime {
 
     fn consume_presenter_into_shell_for_pump(&mut self) {
         let _ = self.host.consume_presenter_into_shell_result();
+        sync_windows_native_panel_hit_regions(
+            self.host.shell.raw_window_handle(),
+            self.host.shell.pointer_regions(),
+        );
     }
 
     fn raw_shell_window_handle(&self) -> Option<Self::RawWindowHandle> {
@@ -155,6 +161,10 @@ impl NativePanelHostShellRuntimePump for WindowsNativePanelRuntime {
 
     fn sync_raw_shell_window_handle(&mut self, raw_window_handle: Option<Self::RawWindowHandle>) {
         self.host.shell.set_raw_window_handle(raw_window_handle);
+        sync_windows_native_panel_hit_regions(
+            self.host.shell.raw_window_handle(),
+            self.host.shell.pointer_regions(),
+        );
     }
 
     fn pump_platform_window_messages(&mut self) -> Result<(), Self::Error> {
@@ -221,6 +231,8 @@ impl NativePanelPlatformWindowMessagePump for WindowsNativePanelRuntime {
 
     fn dispatch_platform_paint_message(&mut self) -> Result<(), String> {
         if let Some(job) = self.host.shell.paint_next_frame() {
+            self.platform_loop
+                .sync_paint_surface_resources_for_current_revision();
             let paint_plan =
                 paint_windows_native_panel_job(self.host.shell.raw_window_handle(), &job)?;
             self.platform_loop.paint_dispatch_count += 1;

@@ -7,9 +7,11 @@ use super::runtime_interaction::{
     NativePanelCoreStateBridge, NativePanelHoverInteractionHost, NativePanelHoverSyncResult,
 };
 use super::runtime_scene_cache::NativePanelRuntimeSceneCache;
-use super::runtime_scene_sync::rerender_runtime_scene_sync_result_to_host_on_transition_for_state_with_input_descriptor;
+use super::runtime_scene_sync::rerender_runtime_scene_sync_result_to_host_for_state_with_input_descriptor;
 use super::traits::NativePanelSceneHost;
-use super::transition_controller::native_panel_transition_request_for_hover_transition;
+use super::transition_controller::{
+    NativePanelTransitionRequest, native_panel_transition_request_for_hover_transition,
+};
 
 pub(crate) fn sync_native_panel_hover_expansion_state_for_state<S>(
     state: &mut S,
@@ -94,16 +96,32 @@ where
     S: NativePanelCoreStateBridge,
     H: NativePanelSceneHost,
 {
+    let original_core = state.snapshot_core_panel_state();
     let hover_sync =
         sync_native_panel_hover_interaction_for_state(state, inside, now, hover_delay_ms);
-    let _ =
-        rerender_runtime_scene_sync_result_to_host_on_transition_for_state_with_input_descriptor(
-            host,
-            cache,
-            state,
-            hover_sync.transition,
-            input,
-        )?;
+    if hover_sync.request == Some(NativePanelTransitionRequest::Close) {
+        let mut core = state.snapshot_core_panel_state();
+        core.transitioning = true;
+        state.apply_core_panel_state(core);
+    }
+    if hover_sync.transition.is_some() {
+        match rerender_runtime_scene_sync_result_to_host_for_state_with_input_descriptor(
+            host, cache, state, input,
+        ) {
+            Ok(true) => {}
+            Ok(false) => {
+                state.apply_core_panel_state(original_core);
+                return Ok(NativePanelHoverSyncResult {
+                    transition: None,
+                    request: None,
+                });
+            }
+            Err(error) => {
+                state.apply_core_panel_state(original_core);
+                return Err(error);
+            }
+        }
+    }
     Ok(hover_sync)
 }
 

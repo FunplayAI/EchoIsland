@@ -40,7 +40,10 @@ pub(crate) fn sync_panel_snapshot_state(
     sync_completion_badge(state, raw_snapshot, &completed_session_ids);
     let status_queue_sync = sync_status_queue(state, raw_snapshot);
     let status_surface_transition = sync_status_surface_policy(state, status_queue_sync);
-    let play_sound = status_queue_sync.added_approvals + status_queue_sync.added_completions > 0;
+    let play_sound = status_queue_sync.added_approvals
+        + status_queue_sync.added_questions
+        + status_queue_sync.added_completions
+        > 0;
     let reminder =
         super::resolve_panel_sync_reminder_state(state, Some(&displayed_snapshot), play_sound);
     state.last_raw_snapshot = Some(raw_snapshot.clone());
@@ -51,6 +54,12 @@ pub(crate) fn sync_panel_snapshot_state(
         panel_transition: status_surface_transition.panel_transition,
         surface_transition: status_surface_transition.surface_transition,
     }
+}
+
+pub(crate) fn panel_state_needs_status_queue_refresh(state: &PanelState) -> bool {
+    !state.status_queue.is_empty()
+        || state.pending_permission_card.is_some()
+        || state.pending_question_card.is_some()
 }
 
 pub(crate) fn sync_pending_card_visibility(
@@ -205,6 +214,12 @@ pub(crate) fn sync_status_queue(
         .into_iter()
         .map(|pending| pending.request_id)
         .collect::<HashSet<_>>();
+    let previous_live_question_ids = previous_snapshot
+        .map(displayed_pending_questions)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|pending| pending.request_id)
+        .collect::<HashSet<_>>();
     let mut existing_items = state
         .status_queue
         .drain(..)
@@ -220,6 +235,7 @@ pub(crate) fn sync_status_queue(
         .collect::<HashMap<_, _>>();
     let mut next_items = Vec::new();
     let mut added_approvals = 0;
+    let mut added_questions = 0;
     let mut added_completions = 0;
 
     for pending in displayed_pending_permissions(snapshot) {
@@ -263,6 +279,50 @@ pub(crate) fn sync_status_queue(
             is_removing: false,
             remove_after: None,
             payload: StatusQueuePayload::Approval(pending),
+        });
+    }
+
+    for pending in displayed_pending_questions(snapshot) {
+        let key = format!("question:{}", pending.request_id);
+        let existing = existing_items.remove(&key);
+        let is_new_live_question = !previous_live_question_ids.contains(&pending.request_id);
+        if let Some(existing_item) = existing.as_ref() {
+            if existing_item.is_removing
+                && existing_item
+                    .remove_after
+                    .is_some_and(|remove_after| remove_after > now)
+            {
+                next_items.push(StatusQueueItem {
+                    key,
+                    session_id: pending.session_id.clone(),
+                    sort_time: pending.requested_at,
+                    expires_at: existing_item.expires_at,
+                    is_live: false,
+                    is_removing: true,
+                    remove_after: existing_item.remove_after,
+                    payload: StatusQueuePayload::Question(pending),
+                });
+                continue;
+            }
+        }
+        if existing.is_none() && !is_new_live_question {
+            continue;
+        }
+        if existing.is_none() && is_new_live_question {
+            added_questions += 1;
+        }
+        next_items.push(StatusQueueItem {
+            key,
+            session_id: pending.session_id.clone(),
+            sort_time: pending.requested_at,
+            expires_at: existing
+                .as_ref()
+                .map(|item| item.expires_at)
+                .unwrap_or_else(|| now + Duration::from_secs(STATUS_APPROVAL_VISIBLE_SECONDS)),
+            is_live: true,
+            is_removing: false,
+            remove_after: None,
+            payload: StatusQueuePayload::Question(pending),
         });
     }
 
@@ -315,7 +375,7 @@ pub(crate) fn sync_status_queue(
         }
 
         match &mut item.payload {
-            StatusQueuePayload::Approval(_) => {
+            StatusQueuePayload::Approval(_) | StatusQueuePayload::Question(_) => {
                 item.is_live = false;
                 item.is_removing = true;
                 item.remove_after = Some(now + status_queue_exit_duration());
@@ -351,6 +411,7 @@ pub(crate) fn sync_status_queue(
 
     StatusQueueSyncResult {
         added_approvals,
+        added_questions,
         added_completions,
     }
 }
@@ -408,8 +469,9 @@ pub(crate) fn sync_status_surface_policy(
 ) -> StatusSurfaceTransition {
     let was_status_surface =
         state.surface_mode == ExpandedSurface::Status && !state.status_queue.is_empty();
-    let added_status_items =
-        status_queue_sync.added_approvals + status_queue_sync.added_completions;
+    let added_status_items = status_queue_sync.added_approvals
+        + status_queue_sync.added_questions
+        + status_queue_sync.added_completions;
     let mut panel_transition = None;
 
     if added_status_items > 0 && !state.expanded && !state.transitioning {
@@ -417,11 +479,10 @@ pub(crate) fn sync_status_surface_policy(
         state.status_auto_expanded = true;
         state.surface_mode = ExpandedSurface::Status;
         panel_transition = Some(true);
-    } else if added_status_items > 0
-        && state.expanded
-        && !state.transitioning
-        && state.pointer_inside_since.is_none()
-    {
+    } else if added_status_items > 0 && !state.expanded && state.transitioning {
+        state.status_auto_expanded = true;
+        state.surface_mode = ExpandedSurface::Status;
+    } else if added_status_items > 0 && state.expanded && !state.transitioning {
         state.status_auto_expanded = true;
         state.surface_mode = ExpandedSurface::Status;
     } else if state.status_auto_expanded
@@ -449,6 +510,20 @@ pub(crate) fn sync_status_surface_policy(
             && state.expanded
             && !state.transitioning,
     }
+}
+
+pub(crate) fn take_pending_status_reopen_after_transition(state: &mut PanelState) -> bool {
+    if state.transitioning
+        || state.expanded
+        || !state.status_auto_expanded
+        || state.surface_mode != ExpandedSurface::Status
+        || state.status_queue.is_empty()
+    {
+        return false;
+    }
+
+    state.expanded = true;
+    true
 }
 
 fn session_has_new_dialogue_after_completion(
@@ -507,7 +582,10 @@ pub(crate) fn compare_status_queue_items(
     right_priority
         .cmp(&left_priority)
         .then_with(|| match (&left.payload, &right.payload) {
-            (StatusQueuePayload::Approval(_), StatusQueuePayload::Approval(_)) => {
+            (StatusQueuePayload::Approval(_), StatusQueuePayload::Approval(_))
+            | (StatusQueuePayload::Question(_), StatusQueuePayload::Question(_))
+            | (StatusQueuePayload::Approval(_), StatusQueuePayload::Question(_))
+            | (StatusQueuePayload::Question(_), StatusQueuePayload::Approval(_)) => {
                 left.sort_time.cmp(&right.sort_time)
             }
             _ => right.sort_time.cmp(&left.sort_time),
@@ -517,7 +595,7 @@ pub(crate) fn compare_status_queue_items(
 
 pub(crate) fn status_queue_priority(item: &StatusQueueItem) -> u8 {
     match &item.payload {
-        StatusQueuePayload::Approval(_) => 2,
+        StatusQueuePayload::Approval(_) | StatusQueuePayload::Question(_) => 2,
         StatusQueuePayload::Completion(_) => 1,
     }
 }

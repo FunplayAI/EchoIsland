@@ -55,7 +55,7 @@ EchoIsland is a **lightweight desktop aggregation layer** — not another editor
 
 | Area | Status | Notes |
 |:---|:---|:---|
-| **Windows desktop** | ✅ Primary target | Tauri/Web UI, shaped floating island, installer packaging |
+| **Windows desktop** | ✅ Primary target | Native Direct2D/DirectWrite island enabled by default, installer and portable packaging |
 | **macOS native island** | 🧪 Active migration | Native panel, notch-aware layout, terminal jump-back, shared runtime |
 | **Linux desktop** | 🧭 Not packaged yet | Rust core is portable; desktop shell work is not prioritized yet |
 | **Local-first runtime** | ✅ Available | TCP IPC, HTTP receiver, persistence, blocking request cleanup |
@@ -115,6 +115,7 @@ Two ingestion paths:
 - Codex and Claude Code session scanning with adaptive polling
 - Approval cards, question cards, completion reminders, and message queues
 - Terminal jump-back on Windows and experimental macOS terminal focus
+- Native Windows island panel with Direct2D/DirectWrite rendering enabled by default
 - Native macOS island panel with notch-aware compact layout (experimental)
 - `desktop-host` debug CLI and `hook-bridge` bridge program
 - NSIS and MSI installer packaging for Windows
@@ -177,8 +178,14 @@ npm run desktop:build
 ```
 
 Produces:
-- `EchoIsland Windows_0.1.0_x64-setup.exe` (NSIS)
-- `EchoIsland Windows_0.1.0_x64_en-US.msi` (MSI)
+- `EchoIsland Windows_0.2.0_x64-setup.exe` (NSIS)
+- `EchoIsland Windows_0.2.0_x64_en-US.msi` (MSI)
+
+Build the Windows portable executable:
+
+```bash
+npm --workspace apps/desktop run tauri:portable
+```
 
 ## Repository Layout
 

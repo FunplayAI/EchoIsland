@@ -218,7 +218,78 @@ fn scene_builder_emits_shared_surface_scene_state() {
     assert_eq!(status_scene.surface_scene.mode, SurfaceSceneMode::Status);
     assert_eq!(status_scene.surface_scene.headline_text, "Approval waiting");
     assert!(status_scene.surface_scene.headline_emphasized);
-    assert!(status_scene.surface_scene.edge_actions_visible);
+    assert!(!status_scene.surface_scene.edge_actions_visible);
+}
+
+#[test]
+fn scene_builder_uses_request_headline_for_mixed_approval_and_question_queue() {
+    let snapshot = snapshot(1, 1);
+    let scene = build_panel_scene(
+        &PanelState {
+            expanded: true,
+            surface_mode: ExpandedSurface::Status,
+            status_queue: vec![
+                StatusQueueItem {
+                    key: "approval:request-1".to_string(),
+                    session_id: "session-1".to_string(),
+                    sort_time: Utc::now(),
+                    expires_at: Instant::now(),
+                    is_live: true,
+                    is_removing: false,
+                    remove_after: None,
+                    payload: StatusQueuePayload::Approval(pending_permission(
+                        "request-1",
+                        "session-1",
+                    )),
+                },
+                StatusQueueItem {
+                    key: "question:question-1".to_string(),
+                    session_id: "session-2".to_string(),
+                    sort_time: Utc::now(),
+                    expires_at: Instant::now(),
+                    is_live: true,
+                    is_removing: false,
+                    remove_after: None,
+                    payload: StatusQueuePayload::Question(pending_question("session-2")),
+                },
+            ],
+            ..PanelState::default()
+        },
+        &snapshot,
+        &PanelSceneBuildInput::default(),
+    );
+
+    assert_eq!(scene.compact_bar.headline.text, "Requests waiting");
+    assert_eq!(scene.surface_scene.headline_text, "Requests waiting");
+    assert_eq!(scene.cards.len(), 2);
+    assert!(matches!(scene.cards[0], SceneCard::StatusApproval { .. }));
+    assert!(matches!(scene.cards[1], SceneCard::StatusQuestion { .. }));
+}
+
+#[test]
+fn scene_builder_hides_edge_actions_for_status_message_surface() {
+    let scene = build_panel_scene(
+        &PanelState {
+            expanded: true,
+            surface_mode: ExpandedSurface::Status,
+            status_queue: vec![StatusQueueItem {
+                key: "completion:session-1".to_string(),
+                session_id: "session-1".to_string(),
+                sort_time: Utc::now(),
+                expires_at: Instant::now(),
+                is_live: true,
+                is_removing: false,
+                remove_after: None,
+                payload: StatusQueuePayload::Completion(session("Idle")),
+            }],
+            ..PanelState::default()
+        },
+        &snapshot(1, 1),
+        &PanelSceneBuildInput::default(),
+    );
+
+    assert!(!scene.compact_bar.actions_visible);
+    assert!(!scene.surface_scene.edge_actions_visible);
 }
 
 #[test]
@@ -269,6 +340,40 @@ fn scene_builder_emits_queue_status_surface_scene_state() {
     assert_eq!(scene.status_surface.queue_state.removing_count, 1);
     assert_eq!(scene.status_surface.completion_badge_count, 1);
     assert!(scene.status_surface.show_completion_glow);
+}
+
+#[test]
+fn scene_builder_sanitizes_completion_message_for_compact_headline() {
+    let mut completion = session("Idle");
+    completion.last_assistant_message = Some(
+        "apps/desktop/src-tauri/src/windows_native_panel/host_runtime.rs\nsrc/native_panel_renderer"
+            .to_string(),
+    );
+    let state = PanelState {
+        status_queue: vec![StatusQueueItem {
+            key: "completion:session-1".to_string(),
+            session_id: "session-1".to_string(),
+            sort_time: Utc::now(),
+            expires_at: Instant::now(),
+            is_live: true,
+            is_removing: false,
+            remove_after: None,
+            payload: StatusQueuePayload::Completion(completion),
+        }],
+        ..PanelState::default()
+    };
+
+    let scene = build_panel_scene(&state, &snapshot(0, 1), &PanelSceneBuildInput::default());
+
+    assert!(!scene.compact_bar.headline.text.contains('\n'));
+    assert!(
+        scene
+            .compact_bar
+            .headline
+            .text
+            .starts_with("apps/desktop/src-tauri")
+    );
+    assert!(scene.compact_bar.headline.text.chars().count() <= 42);
 }
 
 #[test]
@@ -370,7 +475,7 @@ fn shell_scene_state_exposes_compact_bar_runtime_semantics() {
     let shell = resolve_panel_shell_scene_state(&scene);
 
     assert!(shell.headline_emphasized);
-    assert!(shell.edge_actions_visible);
+    assert!(!shell.edge_actions_visible);
 }
 
 #[test]

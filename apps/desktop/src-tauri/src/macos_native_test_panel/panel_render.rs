@@ -214,6 +214,7 @@ fn native_panel_render_state(
         separator_visibility: layout.separator_visibility,
         bar_progress: progress.bar,
         height_progress: progress.height,
+        shoulder_progress: progress.shoulder,
         cards_height: layout.cards_frame.size.height,
         status_surface_active,
         content_visibility,

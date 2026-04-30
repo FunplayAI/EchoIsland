@@ -1410,6 +1410,7 @@ mod tests {
                 separator_visibility: layout.separator_visibility,
                 bar_progress: 1.0,
                 height_progress: 1.0,
+                shoulder_progress: 0.0,
                 cards_height: layout.cards_frame.height,
                 status_surface_active: false,
                 content_visibility: 1.0,

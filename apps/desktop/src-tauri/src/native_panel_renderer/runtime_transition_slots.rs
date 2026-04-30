@@ -1,4 +1,4 @@
-use crate::native_panel_core::HoverTransition;
+use crate::native_panel_core::{HoverTransition, PanelSnapshotSyncResult};
 
 use super::descriptors::NativePanelRuntimeInputDescriptor;
 use super::host_runtime_facade::NativePanelRuntimeDispatchMode;
@@ -66,7 +66,7 @@ pub(crate) fn apply_native_panel_runtime_scene_sync_result_with_transition_slot<
     cache: &mut NativePanelRuntimeSceneCache,
     sync_result: NativePanelRuntimeSceneSyncResult,
     input: &NativePanelRuntimeInputDescriptor,
-) -> Result<(), H::Error>
+) -> Result<PanelSnapshotSyncResult, H::Error>
 where
     H: NativePanelSceneHost,
 {
@@ -74,7 +74,7 @@ where
         request_slot,
         native_panel_transition_request_for_snapshot_sync(&sync_result.snapshot_sync),
     );
-    apply_runtime_scene_sync_result_to_host(host, cache, sync_result, input).map(|_| ())
+    apply_runtime_scene_sync_result_to_host(host, cache, sync_result, input)
 }
 
 pub(crate) fn apply_native_panel_settings_surface_toggle_result_slot(
@@ -92,18 +92,21 @@ pub(crate) fn apply_native_panel_hover_sync_result_slot(
     request_slot: &mut Option<NativePanelTransitionRequest>,
     hover_sync: NativePanelHoverSyncResult,
 ) -> Option<HoverTransition> {
-    apply_native_panel_transition_result_slot(
-        request_slot,
-        hover_sync.request,
-        hover_sync.transition,
-    )
+    if let Some(request) = hover_sync.request {
+        dispatch_native_panel_transition_request_slot(
+            request_slot,
+            request,
+            NativePanelRuntimeDispatchMode::Immediate,
+        );
+    }
+    hover_sync.transition
 }
 
 pub(crate) fn apply_native_panel_runtime_scene_sync_result_for_runtime<R>(
     runtime: &mut R,
     sync_result: NativePanelRuntimeSceneSyncResult,
     input: &NativePanelRuntimeInputDescriptor,
-) -> Result<(), <R::Host as NativePanelHost>::Error>
+) -> Result<PanelSnapshotSyncResult, <R::Host as NativePanelHost>::Error>
 where
     R: NativePanelSceneRuntimeBridge,
 {

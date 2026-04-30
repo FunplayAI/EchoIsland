@@ -127,6 +127,9 @@ pub(crate) enum SceneCard {
     StatusApproval {
         item: StatusQueueItem,
     },
+    StatusQuestion {
+        item: StatusQueueItem,
+    },
     StatusCompletion {
         item: StatusQueueItem,
     },
@@ -157,9 +160,9 @@ pub(crate) fn resolve_scene_card_height_input(card: &SceneCard) -> SceneCardHeig
         }
         SceneCard::PromptAssist { session } => SceneCardHeightInput::PromptAssist(session),
         SceneCard::Session { session, .. } => SceneCardHeightInput::Session(session),
-        SceneCard::StatusApproval { item } | SceneCard::StatusCompletion { item } => {
-            SceneCardHeightInput::StatusItem(item)
-        }
+        SceneCard::StatusApproval { item }
+        | SceneCard::StatusQuestion { item }
+        | SceneCard::StatusCompletion { item } => SceneCardHeightInput::StatusItem(item),
         SceneCard::Empty => SceneCardHeightInput::Empty,
     }
 }
@@ -209,6 +212,8 @@ pub(crate) enum SceneMascotPose {
     Question,
     MessageBubble,
     Complete,
+    Sleepy,
+    WakeAngry,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

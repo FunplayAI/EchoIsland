@@ -1,8 +1,13 @@
 #![allow(dead_code, unused_imports)]
 
+mod action_button_visual_spec;
+mod animation_plan;
+mod animation_scheduler;
+mod card_visual_spec;
 mod descriptors;
 mod env_flags;
 mod host_runtime_facade;
+mod mascot_visual_spec;
 mod platform_adapter;
 mod presentation_model;
 mod render_commands;
@@ -53,13 +58,15 @@ pub(crate) mod facade {
     pub(crate) mod descriptor {
         pub(crate) use super::super::descriptors::{
             NativePanelEdgeAction, NativePanelEdgeActionFrames, NativePanelHostWindowDescriptor,
-            NativePanelHostWindowState, NativePanelPointerInput, NativePanelPointerPointState,
-            NativePanelPointerRegion, NativePanelPointerRegionInput, NativePanelPointerRegionKind,
-            NativePanelRuntimeInputContext, NativePanelRuntimeInputDescriptor,
-            NativePanelTimelineDescriptor, native_panel_host_window_descriptor,
-            native_panel_host_window_frame, native_panel_pointer_inside_for_input,
+            NativePanelHostWindowState, NativePanelInteractionPlan, NativePanelPointerInput,
+            NativePanelPointerPointState, NativePanelPointerRegion, NativePanelPointerRegionInput,
+            NativePanelPointerRegionKind, NativePanelRuntimeInputContext,
+            NativePanelRuntimeInputDescriptor, NativePanelTimelineDescriptor,
+            native_panel_host_window_descriptor, native_panel_host_window_frame,
+            native_panel_pointer_inside_for_input, native_panel_pointer_inside_regions,
             native_panel_pointer_state_at_point, native_panel_timeline_descriptor,
-            native_panel_timeline_descriptor_for_animation, resolve_native_panel_pointer_regions,
+            native_panel_timeline_descriptor_for_animation, resolve_native_panel_interaction_plan,
+            resolve_native_panel_pointer_regions,
         };
         pub(crate) use super::super::host_runtime_facade::NativePanelComputedHostWindow;
     }
@@ -129,6 +136,12 @@ pub(crate) mod facade {
     }
 
     pub(crate) mod presentation {
+        pub(crate) use super::super::card_visual_spec::{
+            CardVisualAnimationSpec, CardVisualBadgeRole, CardVisualBadgeSpec, CardVisualBodyRole,
+            CardVisualBodySpec, CardVisualColorSpec, CardVisualRowSpec, CardVisualShellSpec,
+            CardVisualSpec, CardVisualStyle, card_visual_shell_border_color,
+            card_visual_shell_fill_color, card_visual_spec_from_scene_card_with_height,
+        };
         pub(crate) use super::super::presentation_model::{
             NativePanelActionButtonsPresentation, NativePanelCardStackPresentation,
             NativePanelCompactBarPresentation, NativePanelGlowPresentation,
@@ -145,13 +158,24 @@ pub(crate) mod facade {
         };
         pub(crate) use super::super::visual_plan::{
             NativePanelVisualActionButtonInput, NativePanelVisualCardBadgeInput,
-            NativePanelVisualCardInput, NativePanelVisualCardRowInput,
+            NativePanelVisualCardBodyLineInput, NativePanelVisualCardBodyRole,
+            NativePanelVisualCardInput, NativePanelVisualCardRowInput, NativePanelVisualCardStyle,
             NativePanelVisualDisplayMode, NativePanelVisualPlanInput,
             native_panel_visual_card_input_from_scene_card,
         };
     }
 
     pub(crate) mod renderer {
+        pub(crate) use super::super::animation_plan::{
+            NativePanelAnimationPlan, NativePanelCardStackAnimationPlan,
+            NativePanelStatusClosePreservationInput, NativePanelStatusClosePreservationPlan,
+            resolve_native_panel_animation_plan,
+            resolve_native_panel_status_close_preservation_plan,
+        };
+        pub(crate) use super::super::animation_scheduler::{
+            NativePanelAnimationFrame, NativePanelAnimationFrameScheduler,
+            NativePanelAnimationTarget,
+        };
         pub(crate) use super::super::render_commands::{
             NativePanelRenderCommandBundle, resolve_native_panel_render_command_bundle,
         };
@@ -200,6 +224,7 @@ pub(crate) mod facade {
         pub(crate) use super::super::runtime_render_payload::{
             NativePanelRuntimeRenderPayloadState, NativePanelRuntimeRenderPayloadStateBridge,
             dispatch_native_panel_runtime_render_payload_if_available,
+            native_panel_runtime_render_payload_state_from_animation_plan,
             resolve_native_panel_runtime_render_payload_for_state,
         };
         pub(crate) use super::super::runtime_scene_sync::{
@@ -249,6 +274,8 @@ pub(crate) mod facade {
         pub(crate) use super::super::visual_plan::resolve_native_panel_visual_plan;
         pub(crate) use super::super::visual_primitives::{
             NativePanelVisualColor, NativePanelVisualPlan, NativePanelVisualPrimitive,
+            NativePanelVisualShoulderSide, NativePanelVisualTextAlignment,
+            NativePanelVisualTextWeight,
         };
     }
 }

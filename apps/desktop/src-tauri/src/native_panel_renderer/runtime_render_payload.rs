@@ -1,6 +1,8 @@
 use echoisland_runtime::RuntimeSnapshot;
 use tauri::AppHandle;
 
+use super::animation_plan::NativePanelAnimationPlan;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct NativePanelRuntimeRenderPayloadState {
     pub(crate) expanded: bool,
@@ -27,6 +29,21 @@ where
     Some(build(snapshot, state.runtime_render_payload_state()))
 }
 
+pub(crate) fn native_panel_runtime_render_payload_state_from_animation_plan(
+    expanded: bool,
+    shared_body_height: Option<f64>,
+    transitioning: bool,
+    animation: NativePanelAnimationPlan,
+) -> NativePanelRuntimeRenderPayloadState {
+    NativePanelRuntimeRenderPayloadState {
+        expanded,
+        shared_body_height,
+        transitioning,
+        transition_cards_progress: animation.card_stack.transition_progress,
+        transition_cards_entering: animation.card_stack.entering,
+    }
+}
+
 pub(crate) fn dispatch_native_panel_runtime_render_payload_if_available<R, P>(
     app: &AppHandle<R>,
     payload: Option<P>,
@@ -47,7 +64,15 @@ where
 mod tests {
     use super::{
         NativePanelRuntimeRenderPayloadState, NativePanelRuntimeRenderPayloadStateBridge,
+        native_panel_runtime_render_payload_state_from_animation_plan,
         resolve_native_panel_runtime_render_payload_for_state,
+    };
+    use crate::{
+        native_panel_core::{PanelAnimationDescriptor, PanelAnimationKind},
+        native_panel_renderer::facade::{
+            descriptor::native_panel_timeline_descriptor_for_animation,
+            renderer::resolve_native_panel_animation_plan,
+        },
     };
     use chrono::Utc;
     use echoisland_runtime::{RuntimeSnapshot, SessionSnapshotView};
@@ -135,6 +160,37 @@ mod tests {
                 transitioning: true,
                 transition_cards_progress: 0.42,
                 transition_cards_entering: true,
+            }
+        );
+    }
+
+    #[test]
+    fn runtime_render_payload_state_can_be_built_from_shared_animation_plan() {
+        let timeline = native_panel_timeline_descriptor_for_animation(PanelAnimationDescriptor {
+            kind: PanelAnimationKind::Close,
+            canvas_height: 180.0,
+            visible_height: 120.0,
+            width_progress: 0.4,
+            height_progress: 0.3,
+            shoulder_progress: 0.2,
+            drop_progress: 0.1,
+            cards_progress: 0.35,
+        });
+        let animation = resolve_native_panel_animation_plan(timeline, 2);
+
+        assert_eq!(
+            native_panel_runtime_render_payload_state_from_animation_plan(
+                false,
+                Some(160.0),
+                true,
+                animation
+            ),
+            NativePanelRuntimeRenderPayloadState {
+                expanded: false,
+                shared_body_height: Some(160.0),
+                transitioning: true,
+                transition_cards_progress: 0.35,
+                transition_cards_entering: false,
             }
         );
     }

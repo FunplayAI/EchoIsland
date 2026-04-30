@@ -43,7 +43,7 @@ pub(crate) struct PanelClickResolution {
 }
 
 pub(crate) fn resolve_panel_click_action(input: PanelClickInput<'_>) -> PanelClickResolution {
-    if !input.primary_click_started || !input.expanded || input.transitioning {
+    if !input.primary_click_started || !input.expanded {
         return PanelClickResolution::none();
     }
 
@@ -59,6 +59,10 @@ pub(crate) fn resolve_panel_click_action(input: PanelClickInput<'_>) -> PanelCli
             command: PanelInteractionCommand::QuitApplication,
             focus_click_to_record: None,
         };
+    }
+
+    if input.transitioning {
+        return PanelClickResolution::none();
     }
 
     if !input.cards_visible {
@@ -101,7 +105,6 @@ pub(crate) fn sync_hover_expansion_state(
         state.pointer_outside_since = None;
         state.pointer_inside_since.get_or_insert(now);
         if !state.expanded
-            && !state.transitioning
             && state.pointer_inside_since.is_some_and(|entered_at| {
                 now.duration_since(entered_at).as_millis() >= hover_delay_ms as u128
             })
@@ -119,7 +122,6 @@ pub(crate) fn sync_hover_expansion_state(
             && state.surface_mode == ExpandedSurface::Status
             && !state.status_queue.is_empty();
         if state.expanded
-            && !state.transitioning
             && !keep_open_for_status
             && state.pointer_outside_since.is_some_and(|left_at| {
                 now.duration_since(left_at).as_millis() >= hover_delay_ms as u128

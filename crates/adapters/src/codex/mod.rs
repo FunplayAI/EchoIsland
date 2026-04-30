@@ -179,6 +179,23 @@ mod tests {
         let root = temp_root();
         let codex_dir = root.join(".codex");
         fs::create_dir_all(&codex_dir).unwrap();
+        fs::write(
+            codex_dir.join("config.toml"),
+            "[features]\ncodex_hooks = true\n",
+        )
+        .unwrap();
+        fs::write(
+            codex_dir.join("hooks.json"),
+            r#"{
+              "hooks": {
+                "UserPromptSubmit": [
+                  { "hooks": [{ "command": "\"C:\\Users\\Adim\\.codeisland\\bin\\codeisland-hook-bridge.exe\" --source codex" }] },
+                  { "hooks": [{ "command": "echo keep" }] }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
         let bridge_source = root.join(bridge_binary_name());
         fs::write(&bridge_source, b"bridge-binary").unwrap();
 
@@ -189,13 +206,13 @@ mod tests {
         assert!(status.bridge_exists);
         assert!(status.hooks_installed);
         assert!(status.codex_hooks_enabled);
-        assert_eq!(status.live_capture_ready, !cfg!(target_os = "windows"));
-        let hooks_raw = fs::read_to_string(paths.hooks_path.clone()).unwrap();
-        if cfg!(target_os = "windows") {
-            assert!(hooks_raw.contains("powershell.exe"));
-        } else {
-            assert!(hooks_raw.contains("--source codex"));
-        }
+        assert!(status.live_capture_ready);
+        let hooks_raw = fs::read_to_string(paths.hooks_path.clone()).unwrap_or_default();
+        assert!(hooks_raw.contains("--source codex"));
+        assert!(!hooks_raw.contains("powershell.exe"));
+        assert!(hooks_raw.contains("echo keep"));
+        let config_raw = fs::read_to_string(paths.config_path.clone()).unwrap();
+        assert!(config_raw.contains("codex_hooks = true"));
 
         let status2 = get_codex_status(&paths).unwrap();
         assert!(status2.hooks_installed);

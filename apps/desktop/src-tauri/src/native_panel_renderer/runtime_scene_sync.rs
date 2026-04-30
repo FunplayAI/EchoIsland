@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use echoisland_runtime::RuntimeSnapshot;
 
-use crate::native_panel_core::PanelState;
+use crate::native_panel_core::{PanelSnapshotSyncResult, PanelState};
 
 use super::descriptors::NativePanelRuntimeInputDescriptor;
 use super::runtime_backend::{
@@ -43,7 +43,7 @@ pub(crate) fn sync_runtime_scene_bundle_for_runtime_with_input<R>(
     runtime: &mut R,
     raw_snapshot: &RuntimeSnapshot,
     input: &NativePanelRuntimeInputDescriptor,
-) -> Result<(), <R::Host as NativePanelHost>::Error>
+) -> Result<PanelSnapshotSyncResult, <R::Host as NativePanelHost>::Error>
 where
     R: NativePanelSceneRuntimeBridge,
 {

@@ -1,8 +1,9 @@
 use crate::{
     native_panel_core::{
         HoverTransition, PanelAnimationDescriptor, PanelHitTarget, PanelInteractionCommand,
-        PanelLayout, PanelPoint, PanelRect, point_in_rect, resolve_native_panel_host_frame,
-        resolve_settings_surface_card_height, settings_surface_row_frame,
+        PanelLayout, PanelPoint, PanelRect, point_in_rect, resolve_compact_action_button_layout,
+        resolve_native_panel_host_frame, resolve_settings_surface_card_height,
+        settings_surface_row_frame,
     },
     native_panel_scene::{
         PanelDisplayOptionState, PanelScene, PanelSceneBuildInput, SceneCard, SceneHitTarget,
@@ -234,6 +235,64 @@ pub(crate) enum NativePanelEdgeAction {
 pub(crate) struct NativePanelPointerRegion {
     pub(crate) frame: PanelRect,
     pub(crate) kind: NativePanelPointerRegionKind,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct NativePanelInteractionPlan {
+    pub(crate) pointer_regions: Vec<NativePanelPointerRegion>,
+}
+
+impl NativePanelInteractionPlan {
+    pub(crate) fn from_pointer_regions(regions: &[NativePanelPointerRegion]) -> Self {
+        Self {
+            pointer_regions: regions.to_vec(),
+        }
+    }
+
+    pub(crate) fn pointer_region_at_point(
+        &self,
+        point: PanelPoint,
+    ) -> Option<&NativePanelPointerRegion> {
+        native_panel_pointer_region_at_point(&self.pointer_regions, point)
+    }
+
+    pub(crate) fn inside_regions(&self, point: PanelPoint) -> bool {
+        self.pointer_region_at_point(point).is_some()
+    }
+
+    pub(crate) fn pointer_state_at_point(&self, point: PanelPoint) -> NativePanelPointerPointState {
+        native_panel_pointer_state_at_point(&self.pointer_regions, point)
+    }
+
+    pub(crate) fn platform_event_at_point(
+        &self,
+        point: PanelPoint,
+    ) -> Option<NativePanelPlatformEvent> {
+        native_panel_platform_event_at_point(&self.pointer_regions, point)
+    }
+
+    pub(crate) fn input_outcome(
+        &self,
+        input: NativePanelPointerInput,
+    ) -> NativePanelPointerInputOutcome {
+        native_panel_pointer_input_outcome(&self.pointer_regions, input)
+    }
+
+    pub(crate) fn inside_for_input(&self, input: NativePanelPointerInput) -> Option<bool> {
+        native_panel_pointer_inside_for_input(&self.pointer_regions, input)
+    }
+
+    pub(crate) fn hit_target_at_point(&self, point: PanelPoint) -> Option<PanelHitTarget> {
+        native_panel_hit_target_at_point(&self.pointer_regions, point)
+    }
+
+    pub(crate) fn queue_platform_event_at_point(
+        &self,
+        events: &mut Vec<NativePanelPlatformEvent>,
+        point: PanelPoint,
+    ) -> Option<NativePanelPlatformEvent> {
+        queue_native_panel_platform_event(events, self.platform_event_at_point(point))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -687,6 +746,14 @@ pub(crate) fn resolve_native_panel_pointer_regions(
     scene: &PanelScene,
     input: Option<NativePanelPointerRegionInput>,
 ) -> Vec<NativePanelPointerRegion> {
+    resolve_native_panel_interaction_plan(layout, scene, input).pointer_regions
+}
+
+pub(crate) fn resolve_native_panel_interaction_plan(
+    layout: PanelLayout,
+    scene: &PanelScene,
+    input: Option<NativePanelPointerRegionInput>,
+) -> NativePanelInteractionPlan {
     let mut regions = Vec::new();
 
     push_region(
@@ -694,6 +761,7 @@ pub(crate) fn resolve_native_panel_pointer_regions(
         absolute_panel_rect(layout, layout.pill_frame),
         NativePanelPointerRegionKind::CompactBar,
     );
+    push_mascot_bubble_hover_region(&mut regions, layout, scene);
 
     if layout.shell_visible {
         push_region(
@@ -701,6 +769,7 @@ pub(crate) fn resolve_native_panel_pointer_regions(
             absolute_panel_rect(layout, layout.expanded_frame),
             NativePanelPointerRegionKind::Shell,
         );
+        push_expanded_top_gap_region(&mut regions, layout);
         push_region(
             &mut regions,
             absolute_panel_rect(layout, layout.cards_frame),
@@ -716,7 +785,54 @@ pub(crate) fn resolve_native_panel_pointer_regions(
         push_scene_hit_target_regions(&mut regions, layout, scene);
     }
 
-    regions
+    NativePanelInteractionPlan {
+        pointer_regions: regions,
+    }
+}
+
+fn push_expanded_top_gap_region(regions: &mut Vec<NativePanelPointerRegion>, layout: PanelLayout) {
+    let gap_y = layout.expanded_frame.y + layout.expanded_frame.height;
+    let gap_height = (layout.content_frame.height - gap_y).max(0.0);
+    if gap_height <= 0.0 {
+        return;
+    }
+    push_region(
+        regions,
+        absolute_panel_rect(
+            layout,
+            PanelRect {
+                x: layout.expanded_frame.x,
+                y: gap_y,
+                width: layout.expanded_frame.width,
+                height: gap_height,
+            },
+        ),
+        NativePanelPointerRegionKind::Shell,
+    );
+}
+
+fn push_mascot_bubble_hover_region(
+    regions: &mut Vec<NativePanelPointerRegion>,
+    layout: PanelLayout,
+    scene: &PanelScene,
+) {
+    let has_bubble = scene.compact_bar.completion_count > 0
+        || scene.mascot_pose == crate::native_panel_scene::SceneMascotPose::MessageBubble;
+    if !has_bubble {
+        return;
+    }
+
+    let pill = absolute_panel_rect(layout, layout.pill_frame);
+    push_region(
+        regions,
+        PanelRect {
+            x: pill.x + 20.0,
+            y: pill.y + pill.height - 3.0,
+            width: 30.0,
+            height: 18.0,
+        },
+        NativePanelPointerRegionKind::CompactBar,
+    );
 }
 
 fn push_edge_action_regions(
@@ -725,23 +841,13 @@ fn push_edge_action_regions(
     edge_action_frames: NativePanelEdgeActionFrames,
 ) {
     let pill = absolute_panel_rect(layout, layout.pill_frame);
-    let action_width = (pill.width * 0.18).clamp(36.0, 58.0);
+    let action_layout = resolve_compact_action_button_layout(pill);
     let settings_frame = edge_action_frames
         .edge_action_frame(NativePanelEdgeAction::Settings)
-        .unwrap_or(PanelRect {
-            x: pill.x,
-            y: pill.y,
-            width: action_width,
-            height: pill.height,
-        });
+        .unwrap_or_else(|| edge_action_hit_frame(action_layout.settings, pill));
     let quit_frame = edge_action_frames
         .edge_action_frame(NativePanelEdgeAction::Quit)
-        .unwrap_or(PanelRect {
-            x: pill.x + pill.width - action_width,
-            y: pill.y,
-            width: action_width,
-            height: pill.height,
-        });
+        .unwrap_or_else(|| edge_action_hit_frame(action_layout.quit, pill));
     push_region(
         regions,
         settings_frame,
@@ -752,6 +858,16 @@ fn push_edge_action_regions(
         quit_frame,
         NativePanelPointerRegionKind::EdgeAction(NativePanelEdgeAction::Quit),
     );
+}
+
+fn edge_action_hit_frame(icon_frame: PanelRect, pill: PanelRect) -> PanelRect {
+    let horizontal_padding = 5.0;
+    PanelRect {
+        x: icon_frame.x - horizontal_padding,
+        y: pill.y,
+        width: icon_frame.width + horizontal_padding * 2.0,
+        height: pill.height,
+    }
 }
 
 fn push_scene_hit_target_regions(
@@ -853,7 +969,8 @@ mod tests {
         native_panel_runtime_command_for_platform_event, native_panel_timeline_descriptor,
         native_panel_timeline_descriptor_for_animation, patch_native_panel_host_window_descriptor,
         queue_native_panel_platform_event_at_point,
-        queue_native_panel_platform_event_for_pointer_region, resolve_native_panel_pointer_regions,
+        queue_native_panel_platform_event_for_pointer_region,
+        resolve_native_panel_interaction_plan, resolve_native_panel_pointer_regions,
         sync_native_panel_host_window_screen_frame,
         sync_native_panel_host_window_shared_body_height, sync_native_panel_host_window_timeline,
         sync_native_panel_host_window_visibility,
@@ -1264,15 +1381,85 @@ mod tests {
             .expect("settings pointer region");
 
         let pill = crate::native_panel_core::absolute_rect(layout.panel_frame, layout.pill_frame);
-        let action_width = (pill.width * 0.18).clamp(36.0, 58.0);
+        let action_layout = crate::native_panel_core::resolve_compact_action_button_layout(pill);
         assert_eq!(
             settings_frame,
             PanelRect {
-                x: pill.x,
+                x: action_layout.settings.x - 5.0,
                 y: pill.y,
-                width: action_width,
+                width: action_layout.settings.width + 10.0,
                 height: pill.height,
             }
+        );
+    }
+
+    #[test]
+    fn interaction_plan_carries_shared_pointer_regions() {
+        let layout = pointer_test_layout();
+        let scene = pointer_test_scene();
+
+        let plan = resolve_native_panel_interaction_plan(layout, &scene, None);
+        let regions = resolve_native_panel_pointer_regions(layout, &scene, None);
+
+        assert_eq!(plan.pointer_regions, regions);
+        assert!(
+            plan.pointer_regions
+                .iter()
+                .any(|region| matches!(region.kind, NativePanelPointerRegionKind::CompactBar))
+        );
+    }
+
+    #[test]
+    fn interaction_plan_resolves_pointer_semantics() {
+        let layout = pointer_test_layout();
+        let scene = pointer_test_scene();
+
+        let plan = resolve_native_panel_interaction_plan(layout, &scene, None);
+        let settings = plan
+            .pointer_regions
+            .iter()
+            .find(|region| {
+                matches!(
+                    region.kind,
+                    NativePanelPointerRegionKind::EdgeAction(NativePanelEdgeAction::Settings)
+                )
+            })
+            .expect("settings region")
+            .frame;
+        let point = PanelPoint {
+            x: settings.x + settings.width / 2.0,
+            y: settings.y + settings.height / 2.0,
+        };
+
+        assert_eq!(
+            plan.platform_event_at_point(point),
+            Some(NativePanelPlatformEvent::ToggleSettingsSurface)
+        );
+        assert_eq!(
+            plan.input_outcome(NativePanelPointerInput::Click(point)),
+            NativePanelPointerInputOutcome::Click(Some(
+                NativePanelPlatformEvent::ToggleSettingsSurface
+            ))
+        );
+        assert!(plan.pointer_state_at_point(point).inside);
+        assert_eq!(
+            plan.inside_for_input(NativePanelPointerInput::Move(point)),
+            Some(true)
+        );
+        assert_eq!(
+            plan.inside_for_input(NativePanelPointerInput::Leave),
+            Some(false)
+        );
+        assert!(plan.hit_target_at_point(point).is_none());
+
+        let mut events = Vec::new();
+        assert_eq!(
+            plan.queue_platform_event_at_point(&mut events, point),
+            Some(NativePanelPlatformEvent::ToggleSettingsSurface)
+        );
+        assert_eq!(
+            events,
+            vec![NativePanelPlatformEvent::ToggleSettingsSurface]
         );
     }
 
@@ -1423,6 +1610,48 @@ mod tests {
             PanelPoint {
                 x: layout.panel_frame.x + layout.pill_frame.x + 20.0,
                 y: layout.panel_frame.y + layout.pill_frame.y + 20.0,
+            }
+        ));
+    }
+
+    #[test]
+    fn pointer_regions_claim_expanded_top_gap_without_claiming_side_margins() {
+        let layout = pointer_test_layout();
+        let scene = pointer_test_scene();
+        let regions = resolve_native_panel_pointer_regions(layout, &scene, None);
+        let shell = absolute_panel_rect(layout, layout.expanded_frame);
+
+        assert!(native_panel_pointer_inside_regions(
+            &regions,
+            PanelPoint {
+                x: shell.x + shell.width / 2.0,
+                y: shell.y + shell.height + 1.0,
+            }
+        ));
+        assert!(!native_panel_pointer_inside_regions(
+            &regions,
+            PanelPoint {
+                x: layout.panel_frame.x + 10.0,
+                y: shell.y + shell.height + 1.0,
+            }
+        ));
+    }
+
+    #[test]
+    fn pointer_regions_include_mascot_bubble_hover_overhang() {
+        let layout = pointer_test_layout();
+        let mut scene = pointer_test_scene();
+        scene.compact_bar.completion_count = 2;
+        scene.mascot_pose = crate::native_panel_scene::SceneMascotPose::Complete;
+
+        let regions = resolve_native_panel_pointer_regions(layout, &scene, None);
+        let pill = absolute_panel_rect(layout, layout.pill_frame);
+
+        assert!(native_panel_pointer_inside_regions(
+            &regions,
+            PanelPoint {
+                x: pill.x + 42.0,
+                y: pill.y + pill.height + 4.0,
             }
         ));
     }

@@ -58,7 +58,10 @@ impl<'a, R: tauri::Runtime> AppStartupService<'a, R> {
     fn initialize_window_surface(&self) -> Result<(), String> {
         let native_panel_backend = current_native_panel_runtime_backend();
         if native_panel_backend.native_ui_enabled() {
-            info!("skipping webview window surface initialization in native macOS UI mode");
+            info!(
+                backend = ?self.policy.platform_backend,
+                "skipping webview window surface initialization because native panel backend is enabled"
+            );
             return Ok(());
         }
 
