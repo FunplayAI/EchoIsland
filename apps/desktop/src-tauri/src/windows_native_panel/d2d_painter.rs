@@ -1109,7 +1109,7 @@ mod tests {
                 NativePanelVisualCardInput {
                     style: crate::native_panel_renderer::facade::presentation::NativePanelVisualCardStyle::Settings,
                     title: "Settings".to_string(),
-                    subtitle: Some("EchoIsland v0.2.0".to_string()),
+                    subtitle: Some("EchoIsland v0.5.0".to_string()),
                     body: None,
                     badge: None,
                     source_badge: None,

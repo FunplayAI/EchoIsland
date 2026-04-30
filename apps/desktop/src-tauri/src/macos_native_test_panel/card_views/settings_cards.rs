@@ -234,7 +234,7 @@ mod tests {
         let card = SceneCard::Settings {
             title: "Settings".to_string(),
             version: SceneBadge {
-                text: "v0.2.0".to_string(),
+                text: "v0.5.0".to_string(),
                 emphasized: false,
             },
             rows: vec![
@@ -261,7 +261,7 @@ mod tests {
             settings_surface_card_content_from_scene_card(&card).expect("settings content");
 
         assert_eq!(content.title, "Settings");
-        assert_eq!(content.version_text, "v0.2.0");
+        assert_eq!(content.version_text, "v0.5.0");
         assert_eq!(content.rows.len(), 2);
         assert_eq!(content.rows[0].title, "Mute Sound");
         assert_eq!(content.rows[0].value, "On");

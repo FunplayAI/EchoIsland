@@ -5,6 +5,7 @@
 ## Core Information
 
 - Name: EchoIsland
+- Version: 0.5.0
 - Developer: FunplayAI
 - License: MIT
 - Platform: Windows

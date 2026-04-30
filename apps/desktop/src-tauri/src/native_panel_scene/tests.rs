@@ -428,7 +428,7 @@ fn scene_builder_emits_settings_rows_and_value_badges() {
             completion_sound_enabled: false,
             mascot_enabled: true,
         },
-        app_version: "0.2.0".to_string(),
+        app_version: "0.5.0".to_string(),
     };
 
     let scene = build_panel_scene(&state, &snapshot(0, 0), &input);
@@ -437,14 +437,14 @@ fn scene_builder_emits_settings_rows_and_value_badges() {
         panic!("expected settings card");
     };
     assert!(scene.compact_bar.actions_visible);
-    assert_eq!(version.text, "v0.2.0");
+    assert_eq!(version.text, "v0.5.0");
     assert_eq!(rows.len(), 4);
     assert_eq!(rows[0].value.text, "Studio Display · 2560×1440");
     assert_eq!(rows[1].value.text, "Off");
     assert_eq!(rows[2].value.text, "On");
     assert_eq!(rows[3].action, PanelHitAction::OpenReleasePage);
     assert_eq!(scene.settings_surface.title, "Settings");
-    assert_eq!(scene.settings_surface.version_text, "EchoIsland v0.2.0");
+    assert_eq!(scene.settings_surface.version_text, "EchoIsland v0.5.0");
     assert_eq!(scene.settings_surface.rows[0].id, "island_display");
     assert_eq!(scene.settings_surface.rows[1].label, "Mute Sound");
     assert_eq!(scene.settings_surface.rows[1].checked, Some(true));
@@ -693,7 +693,7 @@ fn scene_card_height_input_preserves_variant_payload_semantics() {
         resolve_scene_card_height_input(&SceneCard::Settings {
             title: "Settings".to_string(),
             version: SceneBadge {
-                text: "v0.2.0".to_string(),
+                text: "v0.5.0".to_string(),
                 emphasized: false,
             },
             rows: Vec::new(),

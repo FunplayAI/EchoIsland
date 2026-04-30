@@ -178,8 +178,8 @@ npm run desktop:build
 ```
 
 生成的安装包：
-- `EchoIsland Windows_0.2.0_x64-setup.exe`（NSIS）
-- `EchoIsland Windows_0.2.0_x64_en-US.msi`（MSI）
+- `EchoIsland_0.5.0_x64-setup.exe`（NSIS）
+- `EchoIsland_0.5.0_x64_en-US.msi`（MSI）
 
 构建 Windows 便携版可执行文件：
 

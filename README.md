@@ -178,8 +178,8 @@ npm run desktop:build
 ```
 
 Produces:
-- `EchoIsland Windows_0.2.0_x64-setup.exe` (NSIS)
-- `EchoIsland Windows_0.2.0_x64_en-US.msi` (MSI)
+- `EchoIsland_0.5.0_x64-setup.exe` (NSIS)
+- `EchoIsland_0.5.0_x64_en-US.msi` (MSI)
 
 Build the Windows portable executable:
 
