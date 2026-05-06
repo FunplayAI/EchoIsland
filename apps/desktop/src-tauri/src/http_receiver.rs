@@ -170,7 +170,7 @@ fn decode_http_request(request_bytes: &[u8], auth: &IpcAuth) -> DecodedHttpReque
     if request.method == "GET" && request.path == "/health" {
         return DecodedHttpRequest::Immediate(ok_json_bytes(serde_json::json!({
             "ok": true,
-            "service": "codeisland-http-receiver",
+            "service": "echoisland-http-receiver",
             "event_path": "/event"
         })));
     }
@@ -187,7 +187,6 @@ fn decode_http_request(request_bytes: &[u8], auth: &IpcAuth) -> DecodedHttpReque
         .get("authorization")
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(str::to_string)
-        .or_else(|| request.headers.get("x-codeisland-token").cloned())
         .or_else(|| request.headers.get("x-echoisland-token").cloned())
         .or_else(|| {
             serde_json::from_slice::<serde_json::Value>(&request.body)
@@ -437,12 +436,12 @@ mod tests {
 
     #[test]
     fn parses_http_request_with_headers() {
-        let request = b"POST /event HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2\r\nX-CodeIsland-Token: secret\r\n\r\n{}";
+        let request = b"POST /event HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2\r\nX-EchoIsland-Token: secret\r\n\r\n{}";
         let parsed = parse_http_request(request).unwrap();
         assert_eq!(parsed.method, "POST");
         assert_eq!(parsed.path, "/event");
         assert_eq!(
-            parsed.headers.get("x-codeisland-token").map(String::as_str),
+            parsed.headers.get("x-echoisland-token").map(String::as_str),
             Some("secret")
         );
         assert_eq!(parsed.body, b"{}");

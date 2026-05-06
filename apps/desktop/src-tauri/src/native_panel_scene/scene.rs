@@ -18,6 +18,7 @@ pub(crate) struct PanelScene {
     pub(crate) cards: Vec<SceneCard>,
     pub(crate) glow: Option<SceneGlow>,
     pub(crate) mascot_pose: SceneMascotPose,
+    pub(crate) debug_mode_enabled: bool,
     pub(crate) hit_targets: Vec<SceneHitTarget>,
     pub(crate) nodes: Vec<SceneNode>,
 }

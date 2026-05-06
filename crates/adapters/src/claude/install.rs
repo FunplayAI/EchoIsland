@@ -177,18 +177,18 @@ mod tests {
             claude_dir: PathBuf::from(r"C:\Users\Adim\.claude"),
             settings_path: PathBuf::from(r"C:\Users\Adim\.claude\settings.json"),
             projects_dir: PathBuf::from(r"C:\Users\Adim\.claude\projects"),
-            hook_script_path: PathBuf::from(r"C:\Users\Adim\.claude\hooks\codeisland-hook.sh"),
-            bridge_install_dir: PathBuf::from(r"C:\Users\Adim\.codeisland\bin"),
-            bridge_path: PathBuf::from(r"C:\Users\Adim\.codeisland\bin\codeisland-hook-bridge.exe"),
+            hook_script_path: PathBuf::from(r"C:\Users\Adim\.claude\hooks\echoisland-hook.sh"),
+            bridge_install_dir: PathBuf::from(r"C:\Users\Adim\.echoisland\bin"),
+            bridge_path: PathBuf::from(r"C:\Users\Adim\.echoisland\bin\echoisland-hook-bridge.exe"),
         };
 
         assert_eq!(
             hook_script_command(&paths),
-            "~/.claude/hooks/codeisland-hook.sh"
+            "~/.claude/hooks/echoisland-hook.sh"
         );
         assert!(
             render_hook_script(&paths)
-                .contains(r#"BRIDGE="C:/Users/Adim/.codeisland/bin/codeisland-hook-bridge.exe""#)
+                .contains(r#"BRIDGE="C:/Users/Adim/.echoisland/bin/echoisland-hook-bridge.exe""#)
         );
     }
 

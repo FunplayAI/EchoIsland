@@ -42,6 +42,7 @@ pub(super) struct NativeMascotFrame {
     pub(super) color: [f64; 4],
     pub(super) completion_count: usize,
     pub(super) mascot_hidden: bool,
+    pub(super) debug_mode_enabled: bool,
     pub(super) completion_glow_opacity: f64,
 }
 
@@ -124,6 +125,7 @@ impl NativeMascotRuntime {
             color: native_mascot_color(visual_state, t, self.wake_started_at, now),
             completion_count,
             mascot_hidden: false,
+            debug_mode_enabled: false,
             completion_glow_opacity: 0.0,
         }
     }
@@ -201,6 +203,7 @@ pub(super) unsafe fn sync_native_mascot(handles: NativePanelHandles) {
             now,
         );
         frame.mascot_hidden = input.mascot_hidden;
+        frame.debug_mode_enabled = input.debug_mode_enabled;
         frame.completion_glow_opacity = input.completion_glow_opacity;
         frame
     };

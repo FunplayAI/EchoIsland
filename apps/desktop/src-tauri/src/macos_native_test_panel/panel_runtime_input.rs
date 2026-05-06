@@ -59,6 +59,7 @@ mod tests {
             &AppSettings {
                 completion_sound_enabled: false,
                 mascot_enabled: false,
+                debug_mode_enabled: false,
                 preferred_display_index: 3,
                 preferred_display_key: Some("display-2".to_string()),
             },

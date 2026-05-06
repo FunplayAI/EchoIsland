@@ -5,6 +5,7 @@ pub(crate) struct PanelSettingsState {
     pub(crate) selected_display_index: usize,
     pub(crate) completion_sound_enabled: bool,
     pub(crate) mascot_enabled: bool,
+    pub(crate) debug_mode_enabled: bool,
 }
 
 impl Default for PanelSettingsState {
@@ -13,6 +14,7 @@ impl Default for PanelSettingsState {
             selected_display_index: 0,
             completion_sound_enabled: true,
             mascot_enabled: true,
+            debug_mode_enabled: false,
         }
     }
 }

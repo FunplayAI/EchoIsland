@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use echoisland_adapters::{ClaudeAdapter, CodexAdapter, InstallableAdapter, claude_default_paths};
-use echoisland_paths::{bridge_binary_name, bridge_binary_path, codex_dir};
+use echoisland_paths::{bridge_binary_name, codex_dir};
 use tracing::{info, warn};
 
 use crate::{
@@ -164,59 +164,47 @@ impl<'a, R: tauri::Runtime> AppStartupService<'a, R> {
 }
 
 fn resolve_source_bridge() -> Option<PathBuf> {
-    let env_bridge = std::env::var_os("CODEISLAND_HOOK_BRIDGE").map(PathBuf::from);
-    let current_exe_bridge = std::env::current_exe().ok().and_then(|path| {
-        path.parent()
-            .map(|parent| parent.join(bridge_binary_name()))
-    });
-    let build_dir_bridge = source_bridge_candidates_from_repo();
-    let installed_bridge = Some(bridge_binary_path());
+    let mut candidates = Vec::new();
+    if let Some(env_bridge) = std::env::var_os("ECHOISLAND_HOOK_BRIDGE") {
+        candidates.push(PathBuf::from(env_bridge));
+    }
+    if let Ok(current_exe) = std::env::current_exe()
+        && let Some(parent) = current_exe.parent()
+    {
+        candidates.push(parent.join(bridge_binary_name()));
+    }
+    candidates.extend(source_bridge_candidates_from_repo());
 
-    [
-        env_bridge,
-        current_exe_bridge,
-        build_dir_bridge,
-        installed_bridge,
-    ]
-    .into_iter()
-    .flatten()
-    .find(|path| path.is_file())
+    candidates.into_iter().find(|path| path.is_file())
 }
 
-fn source_bridge_candidates_from_repo() -> Option<PathBuf> {
+fn source_bridge_candidates_from_repo() -> Vec<PathBuf> {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("..");
-    let profile = if cfg!(debug_assertions) {
+    let current_profile = if cfg!(debug_assertions) {
         "debug"
     } else {
         "release"
     };
-    let preferred = repo_root
-        .join("target")
-        .join(profile)
-        .join(bridge_binary_name());
-    if preferred.is_file() {
-        return Some(preferred);
-    }
-
-    ["debug", "release"]
-        .into_iter()
-        .map(|name| {
+    let mut candidates = Vec::new();
+    for profile in [current_profile, "debug", "release"] {
+        candidates.push(
             repo_root
                 .join("target")
-                .join(name)
-                .join(bridge_binary_name())
-        })
-        .find(|path| path.is_file())
+                .join(profile)
+                .join(bridge_binary_name()),
+        );
+    }
+    candidates
 }
 
 #[cfg(test)]
 mod tests {
     use crate::platform::PlatformBackend;
 
-    use super::StartupPolicy;
+    use super::{StartupPolicy, source_bridge_candidates_from_repo};
 
     #[test]
     fn startup_policy_matches_current_backend() {
@@ -246,5 +234,17 @@ mod tests {
             assert!(!policy.supports_tray);
             assert!(!policy.can_shape_window_region);
         }
+    }
+
+    #[test]
+    fn source_bridge_candidates_use_echoisland_bridge() {
+        let candidates = source_bridge_candidates_from_repo();
+
+        assert!(!candidates.is_empty());
+        assert!(candidates.iter().all(|path| {
+            path.file_name()
+                .and_then(|value| value.to_str())
+                .is_some_and(|name| name.starts_with("echoisland-hook-bridge"))
+        }));
     }
 }

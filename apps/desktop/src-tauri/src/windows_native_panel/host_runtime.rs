@@ -517,8 +517,9 @@ impl WindowsNativePanelRuntime {
             // scene_cache. Capture the soon-to-be-lost cards now so we can restore them
             // onto the rebuilt scene; without this the close animation starts with
             // card_count = 0 and visually skips the card-exit phase.
-            let preserved_close_card_stack =
-                is_close.then(|| self.capture_card_stack_for_hover_close_transition()).flatten();
+            let preserved_close_card_stack = is_close
+                .then(|| self.capture_card_stack_for_hover_close_transition())
+                .flatten();
             if let Err(error) = self.rerender_from_last_snapshot_with_input(input) {
                 self.panel_state.transitioning = previous_transitioning;
                 if is_close {
@@ -638,9 +639,7 @@ impl WindowsNativePanelRuntime {
     /// presented model may already have been mutated by an earlier preserve
     /// pass on this tick). Status-queue auto-collapse keeps the original
     /// Status-only filter.
-    fn capture_close_preservation_card_stack(
-        &self,
-    ) -> Option<NativePanelCardStackPresentation> {
+    fn capture_close_preservation_card_stack(&self) -> Option<NativePanelCardStackPresentation> {
         if self.hover_close_in_progress {
             self.capture_card_stack_for_hover_close_transition()
                 .or_else(|| self.pending_close_card_stack.clone())

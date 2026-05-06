@@ -61,6 +61,8 @@ pub(super) struct CardAnimationLayout {
 
 pub(super) type NativePanelTransitionFrame = crate::native_panel_core::PanelTransitionFrame;
 pub(super) type NativePanelAnimationDescriptor = crate::native_panel_core::PanelAnimationDescriptor;
+pub(super) type NativePanelPendingTransition =
+    crate::native_panel_renderer::facade::transition::NativePanelPendingTransition;
 
 #[derive(Clone, Copy)]
 pub(super) struct NativePanelGeometryMetrics {
@@ -113,6 +115,7 @@ pub(super) struct NativePanelState {
     pub(super) transition_cards_progress: f64,
     pub(super) transition_cards_entering: bool,
     pub(super) skip_next_close_card_exit: bool,
+    pub(super) pending_transition: Option<NativePanelPendingTransition>,
     pub(super) last_raw_snapshot: Option<RuntimeSnapshot>,
     pub(super) last_snapshot: Option<RuntimeSnapshot>,
     pub(super) scene_cache: NativePanelRuntimeSceneCache,

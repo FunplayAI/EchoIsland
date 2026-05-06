@@ -39,18 +39,61 @@ pub(super) fn run_command_success(
     args: &[&str],
     extra_env: Option<&[(&str, &str)]>,
 ) -> bool {
+    crate::diagnostics::log_diagnostic_event(
+        "macos_focus_command_begin",
+        &[
+            ("path", path.to_string()),
+            ("args", args.join(" ")),
+            ("has_extra_env", extra_env.is_some().to_string()),
+        ],
+    );
     let mut command = Command::new(path);
     command
         .args(args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     if let Some(extra_env) = extra_env {
         command.envs(extra_env.iter().copied());
     }
-    command
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    match command.output() {
+        Ok(output) => {
+            let stdout = command_output_preview(&output.stdout);
+            let stderr = command_output_preview(&output.stderr);
+            crate::diagnostics::log_diagnostic_event(
+                "macos_focus_command_complete",
+                &[
+                    ("path", path.to_string()),
+                    ("args", args.join(" ")),
+                    ("status", output.status.to_string()),
+                    ("success", output.status.success().to_string()),
+                    ("stdout", stdout),
+                    ("stderr", stderr),
+                ],
+            );
+            output.status.success()
+        }
+        Err(error) => {
+            crate::diagnostics::log_diagnostic_event(
+                "macos_focus_command_error",
+                &[
+                    ("path", path.to_string()),
+                    ("args", args.join(" ")),
+                    ("error", error.to_string()),
+                ],
+            );
+            false
+        }
+    }
+}
+
+fn command_output_preview(bytes: &[u8]) -> String {
+    const MAX_OUTPUT_CHARS: usize = 600;
+    let output = String::from_utf8_lossy(bytes).trim().to_string();
+    if output.chars().count() <= MAX_OUTPUT_CHARS {
+        return output;
+    }
+
+    output.chars().take(MAX_OUTPUT_CHARS).collect::<String>() + "...<truncated>"
 }
 
 pub(super) fn resolve_symlinks(path: &str) -> String {

@@ -289,6 +289,7 @@ pub(crate) struct NativePanelHostInteractionState {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NativePanelPollingInteractionResult {
     pub(crate) interactive_inside: bool,
+    pub(crate) click_platform_event: Option<NativePanelPlatformEvent>,
     pub(crate) click_command: PanelInteractionCommand,
     pub(crate) transition_request: Option<NativePanelTransitionRequest>,
     pub(crate) transition_snapshot: Option<RuntimeSnapshot>,
@@ -297,6 +298,7 @@ pub(crate) struct NativePanelPollingInteractionResult {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NativePanelHostPollingInteractionResult {
     pub(crate) interactive_inside: bool,
+    pub(crate) click_platform_event: Option<NativePanelPlatformEvent>,
     pub(crate) click_command: PanelInteractionCommand,
     pub(crate) transition_request: Option<NativePanelTransitionRequest>,
     pub(crate) transition_snapshot: Option<RuntimeSnapshot>,

@@ -6,6 +6,7 @@ use crate::native_panel_renderer::facade::{
         NativePanelRuntimeInputDescriptor, resolve_native_panel_pointer_regions,
     },
     renderer::NativePanelRuntimeSceneCache,
+    transition::NativePanelTransitionRequest,
 };
 use chrono::Utc;
 use echoisland_runtime::{PendingPermissionView, RuntimeSnapshot, SessionSnapshotView};
@@ -28,6 +29,10 @@ use super::panel_geometry::{
 };
 use super::panel_hit_testing::native_hover_pill_rect;
 use super::panel_interaction::{sync_native_hover_expansion_state, toggle_native_settings_surface};
+use super::panel_runtime_dispatch::{
+    clear_pending_native_panel_close_transition_in_state,
+    defer_native_panel_transition_in_state_if_active,
+};
 use super::panel_scene_adapter::build_native_panel_scene_for_core_state_with_input;
 use super::panel_screen_geometry::{
     expanded_width_for_camera_housing_screen, expanded_width_for_non_camera_housing_screen,
@@ -127,6 +132,7 @@ fn panel_state() -> NativePanelState {
         transition_cards_progress: 0.0,
         transition_cards_entering: false,
         skip_next_close_card_exit: false,
+        pending_transition: None,
         last_raw_snapshot: None,
         last_snapshot: None,
         scene_cache: NativePanelRuntimeSceneCache::default(),
@@ -301,6 +307,7 @@ fn completion_status_queue_auto_expands_status_surface() {
         &mut state,
         NativeStatusQueueSyncResult {
             added_approvals: 0,
+            added_questions: 0,
             added_completions: 1,
         },
     );
@@ -332,6 +339,7 @@ fn status_surface_transition_switches_expanded_panel_into_status_mode() {
         &mut state,
         NativeStatusQueueSyncResult {
             added_approvals: 1,
+            added_questions: 0,
             added_completions: 0,
         },
     );
@@ -861,7 +869,7 @@ fn close_transition_squares_top_corners_before_expanding_shoulders() {
 }
 
 #[test]
-fn hover_does_not_collapse_during_transition_even_after_delay() {
+fn hover_emits_collapse_intent_during_transition_for_runtime_to_defer() {
     let now = Instant::now();
     let mut state = panel_state();
     state.expanded = true;
@@ -871,8 +879,8 @@ fn hover_does_not_collapse_during_transition_even_after_delay() {
 
     let transition = sync_native_hover_expansion_state(&mut state, false, now);
 
-    assert_eq!(transition, None);
-    assert!(state.expanded);
+    assert_eq!(transition, Some(NativeHoverTransition::Collapse));
+    assert!(!state.expanded);
 }
 
 #[test]
@@ -888,6 +896,76 @@ fn hover_collapse_reuses_existing_timer_after_transition_finishes() {
 
     assert_eq!(transition, Some(NativeHoverTransition::Collapse));
     assert!(!state.expanded);
+}
+
+#[test]
+fn runtime_defers_close_transition_while_animation_is_active() {
+    let mut state = panel_state();
+    state.transitioning = true;
+    let snapshot = snapshot(1, 1);
+
+    assert!(defer_native_panel_transition_in_state_if_active(
+        &mut state,
+        NativePanelTransitionRequest::Close,
+        snapshot.clone(),
+    ));
+
+    assert_eq!(
+        state.pending_transition,
+        Some(super::panel_types::NativePanelPendingTransition {
+            request: NativePanelTransitionRequest::Close,
+            snapshot,
+        })
+    );
+}
+
+#[test]
+fn runtime_defers_any_transition_while_animation_is_active() {
+    let mut state = panel_state();
+    state.transitioning = true;
+    let snapshot = snapshot(1, 1);
+
+    assert!(defer_native_panel_transition_in_state_if_active(
+        &mut state,
+        NativePanelTransitionRequest::Open,
+        snapshot.clone(),
+    ));
+
+    assert_eq!(
+        state.pending_transition,
+        Some(super::panel_types::NativePanelPendingTransition {
+            request: NativePanelTransitionRequest::Open,
+            snapshot,
+        })
+    );
+}
+
+#[test]
+fn runtime_does_not_defer_when_inactive() {
+    let mut state = panel_state();
+    let snapshot = snapshot(1, 1);
+
+    assert!(!defer_native_panel_transition_in_state_if_active(
+        &mut state,
+        NativePanelTransitionRequest::Close,
+        snapshot,
+    ));
+
+    assert!(state.pending_transition.is_none());
+}
+
+#[test]
+fn runtime_clears_deferred_close_when_pointer_returns_inside() {
+    let mut state = panel_state();
+    state.pending_transition = Some(super::panel_types::NativePanelPendingTransition {
+        request: NativePanelTransitionRequest::Close,
+        snapshot: snapshot(1, 1),
+    });
+
+    assert!(clear_pending_native_panel_close_transition_in_state(
+        &mut state
+    ));
+    assert!(state.pending_transition.is_none());
 }
 
 #[test]

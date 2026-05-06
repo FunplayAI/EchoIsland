@@ -13,6 +13,7 @@ pub(crate) struct MascotVisualSpecInput {
     pub(crate) center: PanelPoint,
     pub(crate) radius: f64,
     pub(crate) pose: SceneMascotPose,
+    pub(crate) debug_mode_enabled: bool,
     pub(crate) completion_count: usize,
     pub(crate) elapsed_ms: u128,
 }
@@ -93,14 +94,22 @@ pub(crate) fn resolve_mascot_visual_spec(input: MascotVisualSpecInput) -> Mascot
         radius: input.radius,
         scale_x: frame.scale_x,
         scale_y: frame.scale_y,
-        color: NativePanelVisualColor::rgb(255, 122, 36),
+        color: if input.debug_mode_enabled {
+            NativePanelVisualColor::rgb(255, 255, 255)
+        } else {
+            NativePanelVisualColor::rgb(255, 122, 36)
+        },
     };
     let open_pct = if input.pose == SceneMascotPose::Running {
         ((center.y - body_frame.y - body_frame.height / 2.0 - 0.4) / 5.2).clamp(0.0, 1.0)
     } else {
         0.0
     };
-    let face_color = NativePanelVisualColor::rgb(255, 255, 255);
+    let face_color = if input.debug_mode_enabled {
+        NativePanelVisualColor::rgb(24, 24, 28)
+    } else {
+        NativePanelVisualColor::rgb(255, 255, 255)
+    };
     let eyes = mascot_eyes(
         input.pose,
         body_frame,
@@ -376,6 +385,7 @@ mod tests {
             center: PanelPoint { x: 22.0, y: 18.0 },
             radius: 11.0,
             pose: SceneMascotPose::Complete,
+            debug_mode_enabled: false,
             completion_count: 12,
             elapsed_ms: 0,
         });
@@ -395,6 +405,7 @@ mod tests {
             center: PanelPoint { x: 22.0, y: 18.0 },
             radius: 11.0,
             pose: SceneMascotPose::MessageBubble,
+            debug_mode_enabled: false,
             completion_count: 0,
             elapsed_ms: 500,
         });
@@ -402,6 +413,7 @@ mod tests {
             center: PanelPoint { x: 22.0, y: 18.0 },
             radius: 11.0,
             pose: SceneMascotPose::Sleepy,
+            debug_mode_enabled: false,
             completion_count: 0,
             elapsed_ms: 1500,
         });

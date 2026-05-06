@@ -38,6 +38,7 @@ pub(crate) fn panel_settings_state_from_app_settings(
         selected_display_index,
         completion_sound_enabled: settings.completion_sound_enabled,
         mascot_enabled: settings.mascot_enabled,
+        debug_mode_enabled: settings.debug_mode_enabled,
     }
 }
 
@@ -238,6 +239,7 @@ mod tests {
             &AppSettings {
                 completion_sound_enabled: false,
                 mascot_enabled: false,
+                debug_mode_enabled: true,
                 preferred_display_index: 7,
                 preferred_display_key: Some("display-key".to_string()),
             },
@@ -248,6 +250,7 @@ mod tests {
         assert_eq!(input.settings.selected_display_index, 2);
         assert!(!input.settings.completion_sound_enabled);
         assert!(!input.settings.mascot_enabled);
+        assert!(input.settings.debug_mode_enabled);
         assert_eq!(input.app_version, env!("CARGO_PKG_VERSION"));
     }
 

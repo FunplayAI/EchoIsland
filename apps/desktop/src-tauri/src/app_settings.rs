@@ -16,6 +16,8 @@ pub struct AppSettings {
     #[serde(default = "default_mascot_enabled")]
     pub mascot_enabled: bool,
     #[serde(default)]
+    pub debug_mode_enabled: bool,
+    #[serde(default)]
     pub preferred_display_index: usize,
     #[serde(default)]
     pub preferred_display_key: Option<String>,
@@ -26,6 +28,7 @@ impl Default for AppSettings {
         Self {
             completion_sound_enabled: default_completion_sound_enabled(),
             mascot_enabled: default_mascot_enabled(),
+            debug_mode_enabled: false,
             preferred_display_index: 0,
             preferred_display_key: None,
         }
@@ -72,6 +75,20 @@ pub fn update_mascot_enabled(enabled: bool) -> Result<AppSettings> {
         return Ok(guard.clone());
     }
     guard.mascot_enabled = enabled;
+    save_app_settings(&app_settings_path(), &guard)?;
+    Ok(guard.clone())
+}
+
+pub fn update_debug_mode_enabled(enabled: bool) -> Result<AppSettings> {
+    let cache = APP_SETTINGS_CACHE
+        .get_or_init(|| Mutex::new(load_app_settings_from_disk().unwrap_or_default()));
+    let mut guard = cache
+        .lock()
+        .map_err(|_| anyhow::anyhow!("app settings lock poisoned"))?;
+    if guard.debug_mode_enabled == enabled {
+        return Ok(guard.clone());
+    }
+    guard.debug_mode_enabled = enabled;
     save_app_settings(&app_settings_path(), &guard)?;
     Ok(guard.clone())
 }

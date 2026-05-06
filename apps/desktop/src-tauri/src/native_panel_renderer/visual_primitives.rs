@@ -52,6 +52,7 @@ pub(crate) enum NativePanelVisualPrimitive {
         scale_x: f64,
         scale_y: f64,
         pose: SceneMascotPose,
+        debug_mode_enabled: bool,
     },
     CompactShoulder {
         frame: PanelRect,
@@ -120,6 +121,7 @@ mod tests {
                     scale_x: 1.0,
                     scale_y: 1.0,
                     pose: SceneMascotPose::Complete,
+                    debug_mode_enabled: false,
                 },
                 NativePanelVisualPrimitive::CompactShoulder {
                     frame: PanelRect {

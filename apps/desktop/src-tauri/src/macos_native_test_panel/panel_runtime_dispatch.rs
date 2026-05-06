@@ -5,7 +5,7 @@ use super::panel_refs::{native_panel_handles, native_panel_state};
 use super::panel_transition_entry::{
     begin_native_panel_surface_transition, begin_native_panel_transition,
 };
-use super::panel_types::{NativePanelHandles, NativePanelRenderPayload};
+use super::panel_types::{NativePanelHandles, NativePanelRenderPayload, NativePanelState};
 use crate::native_panel_renderer::facade::{
     command::NativePanelRuntimeDispatchMode,
     runtime::{
@@ -14,8 +14,12 @@ use crate::native_panel_renderer::facade::{
     },
     shell::dispatch_native_panel_on_platform_thread,
     transition::{
-        NativePanelTransitionRequest, dispatch_native_panel_transition_request_or_fallback_via,
+        NativePanelPendingTransition, NativePanelTransitionRequest,
+        clear_pending_native_panel_transition_request,
+        dispatch_native_panel_transition_request_or_fallback_via,
         dispatch_native_panel_transition_request_with_snapshot_via,
+        pending_native_panel_transition_if_active,
+        take_pending_native_panel_transition_after_completed,
     },
 };
 
@@ -145,6 +149,12 @@ pub(super) fn dispatch_optional_native_panel_transition_request<R: tauri::Runtim
     snapshot: Option<RuntimeSnapshot>,
     mode: NativePanelRuntimeDispatchMode,
 ) -> Result<bool, String> {
+    if let (Some(request), Some(snapshot)) = (request, snapshot.clone()) {
+        if defer_native_panel_transition_if_active(request, snapshot) {
+            return Ok(true);
+        }
+    }
+
     dispatch_native_panel_transition_request_with_snapshot_via(
         request,
         snapshot,
@@ -205,4 +215,53 @@ pub(super) fn dispatch_native_panel_transition_request_or_apply_render_payload<
         },
         || dispatch_native_panel_render_payload(app, payload),
     )
+}
+
+pub(super) fn defer_native_panel_transition_if_active(
+    request: NativePanelTransitionRequest,
+    snapshot: RuntimeSnapshot,
+) -> bool {
+    native_panel_state()
+        .and_then(|state_mutex| {
+            state_mutex.lock().ok().map(|mut state| {
+                defer_native_panel_transition_in_state_if_active(&mut state, request, snapshot)
+            })
+        })
+        .unwrap_or(false)
+}
+
+pub(super) fn defer_native_panel_transition_in_state_if_active(
+    state: &mut NativePanelState,
+    request: NativePanelTransitionRequest,
+    snapshot: RuntimeSnapshot,
+) -> bool {
+    let Some(pending) =
+        pending_native_panel_transition_if_active(state.transitioning, request, snapshot)
+    else {
+        return false;
+    };
+    state.pending_transition = Some(pending);
+    true
+}
+
+pub(super) fn clear_pending_native_panel_close_transition_in_state(
+    state: &mut NativePanelState,
+) -> bool {
+    clear_pending_native_panel_transition_request(
+        &mut state.pending_transition,
+        NativePanelTransitionRequest::Close,
+    )
+}
+
+pub(super) fn take_pending_native_panel_transition_after_completion(
+    completed_request: NativePanelTransitionRequest,
+) -> Option<NativePanelPendingTransition> {
+    native_panel_state().and_then(|state_mutex| {
+        state_mutex.lock().ok().and_then(|mut state| {
+            take_pending_native_panel_transition_after_completed(
+                &mut state.pending_transition,
+                completed_request,
+            )
+        })
+    })
 }

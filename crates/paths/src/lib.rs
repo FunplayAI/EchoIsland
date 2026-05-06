@@ -1,6 +1,7 @@
 use std::{env, path::PathBuf};
 
-const ECHOISLAND_APP_DIR: &str = "CodeIsland";
+const ECHOISLAND_APP_DIR: &str = "EchoIsland";
+const ECHOISLAND_HOME_DIR: &str = ".echoisland";
 const IPC_TOKEN_FILE_NAME: &str = "ipc-token";
 const STATE_FILE_NAME: &str = "state.json";
 const FOCUS_BINDINGS_FILE_NAME: &str = "focus-bindings.json";
@@ -123,11 +124,11 @@ pub fn openclaw_hooks_dir() -> PathBuf {
 }
 
 pub fn echoisland_home_dir() -> PathBuf {
-    user_home_dir().join(".codeisland")
+    user_home_dir().join(ECHOISLAND_HOME_DIR)
 }
 
 pub fn echoisland_home_dir_from_home(home_dir: impl Into<PathBuf>) -> PathBuf {
-    home_dir.into().join(".codeisland")
+    home_dir.into().join(ECHOISLAND_HOME_DIR)
 }
 
 pub fn echoisland_bin_dir() -> PathBuf {
@@ -140,9 +141,9 @@ pub fn echoisland_bin_dir_from_home(home_dir: impl Into<PathBuf>) -> PathBuf {
 
 pub fn bridge_binary_name() -> &'static str {
     if cfg!(windows) {
-        "codeisland-hook-bridge.exe"
+        "echoisland-hook-bridge.exe"
     } else {
-        "codeisland-hook-bridge"
+        "echoisland-hook-bridge"
     }
 }
 
@@ -198,7 +199,7 @@ pub fn current_platform_paths() -> PlatformPaths {
     let ipc_token_path = echoisland_app_dir.join(IPC_TOKEN_FILE_NAME);
     let focus_bindings_path = echoisland_app_dir.join(FOCUS_BINDINGS_FILE_NAME);
     let bridge_log_path = echoisland_app_dir.join(BRIDGE_LOG_FILE_NAME);
-    let echoisland_home_dir = home_dir.join(".codeisland");
+    let echoisland_home_dir = home_dir.join(ECHOISLAND_HOME_DIR);
     let echoisland_bin_dir = echoisland_home_dir.join("bin");
     let bridge_binary_path = echoisland_bin_dir.join(bridge_binary_name());
     let codex_dir = home_dir.join(".codex");
@@ -284,11 +285,11 @@ mod tests {
         assert!(!app_data_dir().as_os_str().is_empty());
         assert_eq!(
             echoisland_home_dir().file_name().and_then(|v| v.to_str()),
-            Some(".codeisland")
+            Some(".echoisland")
         );
         assert_eq!(
             echoisland_app_dir().file_name().and_then(|v| v.to_str()),
-            Some("CodeIsland")
+            Some("EchoIsland")
         );
         assert_eq!(
             claude_config_dir().file_name().and_then(|v| v.to_str()),
@@ -318,19 +319,19 @@ mod tests {
 
     #[test]
     fn builds_deterministic_paths_from_custom_home() {
-        let home = std::path::PathBuf::from("/tmp/codeisland-home");
+        let home = std::path::PathBuf::from("/tmp/echoisland-home");
 
         assert_eq!(
             echoisland_home_dir_from_home(&home),
-            home.join(".codeisland")
+            home.join(".echoisland")
         );
         assert_eq!(
             echoisland_bin_dir_from_home(&home),
-            home.join(".codeisland").join("bin")
+            home.join(".echoisland").join("bin")
         );
         assert_eq!(
             bridge_binary_path_from_home(&home),
-            home.join(".codeisland")
+            home.join(".echoisland")
                 .join("bin")
                 .join(bridge_binary_name())
         );

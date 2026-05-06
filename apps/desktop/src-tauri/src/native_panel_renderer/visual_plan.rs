@@ -73,6 +73,7 @@ pub(crate) struct NativePanelVisualPlanInput {
     pub(crate) completion_count: usize,
     pub(crate) mascot_elapsed_ms: u128,
     pub(crate) mascot_pose: SceneMascotPose,
+    pub(crate) mascot_debug_mode_enabled: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -319,6 +320,7 @@ pub(crate) fn resolve_native_panel_visual_plan(
         },
         radius: 11.0,
         pose: input.mascot_pose,
+        debug_mode_enabled: input.mascot_debug_mode_enabled,
         completion_count: mascot_completion_count,
         elapsed_ms: input.mascot_elapsed_ms,
     });
@@ -464,6 +466,7 @@ fn push_mascot_primitives(
         scale_x: spec.body.scale_x,
         scale_y: spec.body.scale_y,
         pose: spec.pose,
+        debug_mode_enabled: spec.body.color == NativePanelVisualColor::rgb(255, 255, 255),
     });
     if let Some(message_bubble) = &spec.message_bubble {
         push_mascot_message_bubble(primitives, message_bubble);
@@ -1718,6 +1721,7 @@ mod tests {
             completion_count: 2,
             mascot_elapsed_ms: 0,
             mascot_pose: SceneMascotPose::Complete,
+            mascot_debug_mode_enabled: false,
         }
     }
 

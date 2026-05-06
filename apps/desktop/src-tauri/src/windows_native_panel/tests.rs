@@ -206,6 +206,7 @@ fn shell_draw_frame(
             },
             mascot: NativePanelMascotPresentation {
                 pose: SceneMascotPose::Idle,
+                debug_mode_enabled: false,
             },
             glow: None,
             action_buttons: NativePanelActionButtonsPresentation {
@@ -2081,6 +2082,12 @@ impl NativePanelRuntimeCommandCapability for RecordingEventHandler {
 
     fn toggle_mascot(&mut self) -> Result<(), Self::Error> {
         self.handled.push(NativePanelPlatformEvent::ToggleMascot);
+        Ok(())
+    }
+
+    fn mascot_debug_click(&mut self) -> Result<(), Self::Error> {
+        self.handled
+            .push(NativePanelPlatformEvent::MascotDebugClick);
         Ok(())
     }
 

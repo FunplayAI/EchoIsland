@@ -44,7 +44,7 @@ pub(super) const STATUS_APPROVAL_VISIBLE_SECONDS: u64 =
 pub(super) const STATUS_QUEUE_EXIT_EXTRA_MS: u64 =
     crate::native_panel_core::STATUS_QUEUE_EXIT_EXTRA_MS;
 pub(super) const STATUS_QUEUE_REFRESH_MS: u64 = crate::native_panel_core::STATUS_QUEUE_REFRESH_MS;
-pub(super) const HOVER_POLL_MS: u64 = crate::native_panel_core::HOVER_POLL_MS;
+pub(super) const HOVER_POLL_MS: u64 = 32;
 pub(super) const HOVER_DELAY_MS: u64 = crate::native_panel_core::HOVER_DELAY_MS;
 #[cfg(test)]
 pub(super) const PENDING_CARD_MIN_VISIBLE_MS: u64 =

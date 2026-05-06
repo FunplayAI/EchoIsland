@@ -8,6 +8,7 @@ use crate::install_support::{load_json_object, write_json_object};
 use crate::platform_support::supported_with_note;
 
 pub const DEFAULT_OPENCLAW_RECEIVER_URL: &str = "http://127.0.0.1:37892/event";
+const OPENCLAW_HOOK_ID: &str = "echoisland";
 
 pub fn install_openclaw_adapter(paths: &OpenClawPaths) -> Result<OpenClawStatus> {
     fs::create_dir_all(&paths.openclaw_dir)
@@ -60,7 +61,7 @@ fn hook_has_echoisland_marker(path: &Path) -> Result<bool> {
     }
     let raw =
         fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
-    Ok(raw.contains("codeisland-openclaw-hook") || raw.contains("echoisland-openclaw-hook"))
+    Ok(raw.contains("echoisland-openclaw-hook"))
 }
 
 fn hook_enabled(paths: &OpenClawPaths) -> Result<bool> {
@@ -75,11 +76,7 @@ fn hook_enabled(paths: &OpenClawPaths) -> Result<bool> {
         .and_then(Value::as_object)
         .and_then(|internal| internal.get("entries"))
         .and_then(Value::as_object)
-        .and_then(|entries| {
-            entries
-                .get("codeisland")
-                .or_else(|| entries.get("echoisland"))
-        })
+        .and_then(|entries| entries.get(OPENCLAW_HOOK_ID))
         .and_then(Value::as_object)
         .and_then(|entry| entry.get("enabled"))
         .and_then(Value::as_bool)
@@ -111,12 +108,7 @@ fn ensure_hook_enabled(paths: &OpenClawPaths) -> Result<()> {
         anyhow::anyhow!("openclaw hooks.internal.entries config must be an object")
     })?;
 
-    entries_obj.insert(
-        "codeisland".to_string(),
-        json!({
-            "enabled": true
-        }),
-    );
+    entries_obj.insert(OPENCLAW_HOOK_ID.to_string(), json!({ "enabled": true }));
 
     write_json_object(&paths.config_path, &root)
 }
@@ -125,7 +117,7 @@ fn render_hook_manifest() -> &'static str {
     r#"---
 metadata:
   openclaw:
-    name: codeisland
+    name: echoisland
     description: Forward OpenClaw session activity to EchoIsland.
     events:
       - command:new
@@ -147,7 +139,7 @@ fn render_hook_handler(paths: &OpenClawPaths) -> Result<String> {
     let token_path = serde_json::to_string(&paths.token_path.display().to_string())?;
 
     Ok(format!(
-        r#"// codeisland-openclaw-hook
+        r#"// echoisland-openclaw-hook
 import {{ readFile }} from "node:fs/promises";
 
 const RECEIVER_URL = {receiver_url};
@@ -273,7 +265,7 @@ export default async function handler(input) {{
       method: "POST",
       headers: {{
         "content-type": "application/json",
-        "x-codeisland-token": authToken,
+        "x-echoisland-token": authToken,
       }},
       body: JSON.stringify({{ event: envelope }}),
     }});

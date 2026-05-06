@@ -708,7 +708,10 @@ mod tests {
                 body_height: 0.0,
                 visible: false,
             },
-            mascot: NativePanelMascotPresentation { pose },
+            mascot: NativePanelMascotPresentation {
+                pose,
+                debug_mode_enabled: false,
+            },
             glow: None,
             action_buttons: NativePanelActionButtonsPresentation {
                 visible: false,
@@ -1008,6 +1011,7 @@ mod tests {
                 },
                 mascot: NativePanelMascotPresentation {
                     pose: crate::native_panel_scene::SceneMascotPose::Complete,
+                    debug_mode_enabled: false,
                 },
                 glow: Some(NativePanelGlowPresentation {
                     glow: crate::native_panel_scene::SceneGlow {
@@ -1310,6 +1314,7 @@ mod tests {
             completion_count: 0,
             mascot_elapsed_ms: 0,
             mascot_pose: crate::native_panel_scene::SceneMascotPose::Idle,
+            mascot_debug_mode_enabled: false,
         };
 
         let frames = windows_client_hover_fallback_frames(

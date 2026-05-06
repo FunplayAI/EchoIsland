@@ -1302,7 +1302,7 @@ mod tests {
             terminal_app: Some("Apple_Terminal".to_string()),
             terminal_bundle: Some("com.apple.Terminal".to_string()),
             host_app: Some("terminal".to_string()),
-            window_title: Some("codeisland".to_string()),
+            window_title: Some("echoisland".to_string()),
             tty: Some("/dev/ttys001".to_string()),
             pid: Some(1234),
             cli_pid: Some(5678),
@@ -1318,9 +1318,9 @@ mod tests {
         let scanned = SessionRecord {
             session_id: "session-1".to_string(),
             source: "codex".to_string(),
-            cwd: Some("/Users/wenuts/Documents/codeisland".to_string()),
+            cwd: Some("/Users/wenuts/Documents/echoisland".to_string()),
             model: Some("gpt-5.4".to_string()),
-            project_name: Some("codeisland".to_string()),
+            project_name: Some("echoisland".to_string()),
             terminal_app: None,
             terminal_bundle: None,
             host_app: None,
@@ -1351,7 +1351,7 @@ mod tests {
             Some("com.apple.Terminal")
         );
         assert_eq!(session.host_app.as_deref(), Some("terminal"));
-        assert_eq!(session.window_title.as_deref(), Some("codeisland"));
+        assert_eq!(session.window_title.as_deref(), Some("echoisland"));
         assert_eq!(session.tty.as_deref(), Some("/dev/ttys001"));
         assert_eq!(session.terminal_pid, Some(1234));
         assert_eq!(session.cli_pid, Some(5678));

@@ -189,7 +189,7 @@ mod tests {
             r#"{
               "hooks": {
                 "UserPromptSubmit": [
-                  { "hooks": [{ "command": "\"C:\\Users\\Adim\\.codeisland\\bin\\codeisland-hook-bridge.exe\" --source codex" }] },
+                  { "hooks": [{ "command": "\"C:\\Users\\Adim\\.echoisland\\bin\\echoisland-hook-bridge.exe\" --source codex" }] },
                   { "hooks": [{ "command": "echo keep" }] }
                 ]
               }

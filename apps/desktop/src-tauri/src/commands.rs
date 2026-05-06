@@ -7,6 +7,7 @@ use echoisland_core::ResponseEnvelope;
 use echoisland_ipc::DEFAULT_ADDR;
 use echoisland_runtime::RuntimeSnapshot;
 use serde::Serialize;
+use std::{path::Path, process::Command};
 use tauri::{AppHandle, State};
 
 use crate::{
@@ -299,54 +300,114 @@ pub fn open_release_page() -> Result<(), String> {
     open_url_with_system("https://github.com/FunplayAI/EchoIsland/releases/latest")
 }
 
-fn open_path_with_system(path: &std::path::Path) -> Result<(), String> {
-    let status = if cfg!(target_os = "windows") {
-        std::process::Command::new("explorer")
-            .arg(path)
-            .status()
-            .map_err(|error| error.to_string())?
-    } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-            .arg(path)
-            .status()
-            .map_err(|error| error.to_string())?
-    } else {
-        std::process::Command::new("xdg-open")
-            .arg(path)
-            .status()
-            .map_err(|error| error.to_string())?
+fn open_path_with_system(path: &Path) -> Result<(), String> {
+    let program = system_open_program();
+    let mut fields = path_open_diagnostic_fields(path, program);
+    crate::diagnostics::log_diagnostic_event("system_open_path_begin", &fields);
+
+    let output = match Command::new(program).arg(path).output() {
+        Ok(output) => output,
+        Err(error) => {
+            fields.push(("error", error.to_string()));
+            crate::diagnostics::log_diagnostic_event("system_open_path_spawn_error", &fields);
+            return Err(error.to_string());
+        }
     };
 
-    if status.success() {
+    fields.extend([
+        ("status", output.status.to_string()),
+        ("success", output.status.success().to_string()),
+        (
+            "stdout",
+            crate::diagnostics::command_output_preview(&output.stdout),
+        ),
+        (
+            "stderr",
+            crate::diagnostics::command_output_preview(&output.stderr),
+        ),
+    ]);
+    crate::diagnostics::log_diagnostic_event("system_open_path_complete", &fields);
+    if output.status.success() {
         Ok(())
     } else {
-        Err(format!("failed to open settings location: {status}"))
+        Err(format!(
+            "failed to open settings location: {}",
+            output.status
+        ))
     }
 }
 
 fn open_url_with_system(url: &str) -> Result<(), String> {
-    let status = if cfg!(target_os = "windows") {
-        std::process::Command::new("explorer")
-            .arg(url)
-            .status()
-            .map_err(|error| error.to_string())?
-    } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-            .arg(url)
-            .status()
-            .map_err(|error| error.to_string())?
-    } else {
-        std::process::Command::new("xdg-open")
-            .arg(url)
-            .status()
-            .map_err(|error| error.to_string())?
+    let program = system_open_program();
+    let mut fields = url_open_diagnostic_fields(url, program);
+    crate::diagnostics::log_diagnostic_event("system_open_url_begin", &fields);
+
+    let output = match Command::new(program).arg(url).output() {
+        Ok(output) => output,
+        Err(error) => {
+            fields.push(("error", error.to_string()));
+            crate::diagnostics::log_diagnostic_event("system_open_url_spawn_error", &fields);
+            return Err(error.to_string());
+        }
     };
 
-    if status.success() {
+    fields.extend([
+        ("status", output.status.to_string()),
+        ("success", output.status.success().to_string()),
+        (
+            "stdout",
+            crate::diagnostics::command_output_preview(&output.stdout),
+        ),
+        (
+            "stderr",
+            crate::diagnostics::command_output_preview(&output.stderr),
+        ),
+    ]);
+    crate::diagnostics::log_diagnostic_event("system_open_url_complete", &fields);
+    if output.status.success() {
         Ok(())
     } else {
-        Err(format!("failed to open url: {status}"))
+        Err(format!("failed to open url: {}", output.status))
     }
+}
+
+fn system_open_program() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    }
+}
+
+fn path_open_diagnostic_fields(path: &Path, program: &'static str) -> Vec<(&'static str, String)> {
+    let mut fields = vec![
+        ("program", program.to_string()),
+        ("target_type", "path".to_string()),
+        ("path", path.display().to_string()),
+        ("path_exists", path.exists().to_string()),
+        ("path_is_file", path.is_file().to_string()),
+        ("path_is_dir", path.is_dir().to_string()),
+        (
+            "canonical_path",
+            path.canonicalize()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|error| format!("error:{error}")),
+        ),
+    ];
+    fields.extend(crate::diagnostics::current_process_fields());
+    fields
+}
+
+fn url_open_diagnostic_fields(url: &str, program: &'static str) -> Vec<(&'static str, String)> {
+    let mut fields = vec![
+        ("program", program.to_string()),
+        ("target_type", "url".to_string()),
+        ("url", url.to_string()),
+    ];
+    fields.extend(crate::diagnostics::current_process_fields());
+    fields
 }
 
 fn refresh_desktop_after_settings_change<R: tauri::Runtime>(app: &AppHandle<R>) {

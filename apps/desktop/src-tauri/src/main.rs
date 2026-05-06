@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use echoisland_runtime::SharedRuntime;
-use tauri::WindowEvent;
+use tauri::{RunEvent, WindowEvent};
 use tracing_subscriber::{EnvFilter, fmt};
 
 mod app_runtime;
@@ -16,6 +16,7 @@ mod codex_scan;
 mod command_services;
 mod commands;
 mod constants;
+mod diagnostics;
 mod display_settings;
 mod focus_store;
 mod http_receiver;
@@ -68,6 +69,20 @@ use web_panel_scene_service::WebPanelSceneState;
 
 fn main() {
     setup_tracing();
+    diagnostics::log_diagnostic_event(
+        "app_start",
+        &[
+            diagnostics::current_process_fields(),
+            vec![(
+                "diagnostic_log",
+                diagnostics::diagnostic_log_path().display().to_string(),
+            )],
+        ]
+        .concat(),
+    );
+    if app_settings::current_app_settings().debug_mode_enabled {
+        diagnostics::log_debug_mode_snapshot();
+    }
 
     let runtime = Arc::new(SharedRuntime::new());
     let app_runtime = AppRuntime::new(runtime.clone());
@@ -80,12 +95,20 @@ fn main() {
         .manage(app_runtime.clone())
         .manage(WebPanelSceneState::default())
         .on_window_event(|window, event| {
+            diagnostics::log_diagnostic_event(
+                "tauri_window_event",
+                &[
+                    ("label", window.label().to_string()),
+                    ("event", window_event_name(event).to_string()),
+                ],
+            );
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
             }
         })
         .setup(move |app| {
+            diagnostics::log_diagnostic_event("tauri_setup_begin", &[]);
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let app_handle = app.handle().clone();
@@ -116,6 +139,7 @@ fn main() {
             spawn_claude_scan_loop(runtime.clone());
             spawn_ipc_server(app_handle, app_runtime.clone());
             spawn_http_receiver(app.handle().clone(), runtime.clone());
+            diagnostics::log_diagnostic_event("tauri_setup_complete", &[]);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -154,8 +178,81 @@ fn main() {
             focus_session_terminal,
             bind_session_terminal
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run tauri app");
+        .build(tauri::generate_context!())
+        .expect("failed to build tauri app")
+        .run(|_app_handle, event| {
+            log_tauri_run_event(&event);
+        });
+}
+
+fn window_event_name(event: &WindowEvent) -> &'static str {
+    match event {
+        WindowEvent::Resized(_) => "resized",
+        WindowEvent::Moved(_) => "moved",
+        WindowEvent::CloseRequested { .. } => "close_requested",
+        WindowEvent::Destroyed => "destroyed",
+        WindowEvent::Focused(true) => "focused_true",
+        WindowEvent::Focused(false) => "focused_false",
+        WindowEvent::ScaleFactorChanged { .. } => "scale_factor_changed",
+        WindowEvent::DragDrop(_) => "drag_drop",
+        WindowEvent::ThemeChanged(_) => "theme_changed",
+        _ => "unknown",
+    }
+}
+
+fn log_tauri_run_event(event: &RunEvent) {
+    let Some((event_name, mut fields)) = run_event_diagnostic_fields(event) else {
+        return;
+    };
+    fields.extend(diagnostics::current_process_fields());
+    diagnostics::log_diagnostic_event(event_name, &fields);
+}
+
+fn run_event_diagnostic_fields(
+    event: &RunEvent,
+) -> Option<(&'static str, Vec<(&'static str, String)>)> {
+    match event {
+        RunEvent::Ready => Some(("tauri_run_event", vec![("event", "ready".to_string())])),
+        RunEvent::Resumed => Some(("tauri_run_event", vec![("event", "resumed".to_string())])),
+        RunEvent::Exit => Some(("tauri_run_event", vec![("event", "exit".to_string())])),
+        RunEvent::ExitRequested { code, .. } => Some((
+            "tauri_run_event",
+            vec![
+                ("event", "exit_requested".to_string()),
+                (
+                    "code",
+                    code.map(|value| value.to_string()).unwrap_or_default(),
+                ),
+            ],
+        )),
+        #[cfg(target_os = "macos")]
+        RunEvent::Opened { urls } => Some((
+            "tauri_run_event",
+            vec![
+                ("event", "opened".to_string()),
+                ("url_count", urls.len().to_string()),
+                (
+                    "urls",
+                    urls.iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(","),
+                ),
+            ],
+        )),
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen {
+            has_visible_windows,
+            ..
+        } => Some((
+            "tauri_run_event",
+            vec![
+                ("event", "reopen".to_string()),
+                ("has_visible_windows", has_visible_windows.to_string()),
+            ],
+        )),
+        _ => None,
+    }
 }
 
 fn setup_tracing() {

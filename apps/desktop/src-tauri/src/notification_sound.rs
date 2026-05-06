@@ -151,9 +151,7 @@ fn windows_play_mp3_via_mci(sound_path: &Path) -> std::io::Result<()> {
     let path_str = sound_path
         .to_str()
         .ok_or_else(|| std::io::Error::other("sound path is not valid UTF-8"))?;
-    let open_status = send(&format!(
-        "open \"{path_str}\" type mpegvideo alias {ALIAS}"
-    ));
+    let open_status = send(&format!("open \"{path_str}\" type mpegvideo alias {ALIAS}"));
     if open_status != 0 {
         return Err(std::io::Error::other(format!(
             "MCI open returned {open_status}"

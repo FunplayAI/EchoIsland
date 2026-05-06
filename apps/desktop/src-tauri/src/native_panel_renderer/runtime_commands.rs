@@ -1,7 +1,7 @@
 use echoisland_runtime::RuntimeSnapshot;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU8, Ordering},
 };
 use tauri::{AppHandle, Manager};
 use tokio::sync::Notify;
@@ -10,9 +10,10 @@ use tracing::warn;
 use crate::{
     app_runtime::AppRuntime,
     app_settings::{
-        current_app_settings, update_completion_sound_enabled, update_mascot_enabled,
-        update_preferred_display_selection,
+        current_app_settings, update_completion_sound_enabled, update_debug_mode_enabled,
+        update_mascot_enabled, update_preferred_display_selection,
     },
+    diagnostics::{log_debug_mode_snapshot, log_diagnostic_event},
     display_settings::list_available_displays,
     native_panel_core::PanelInteractionCommand,
     native_panel_scene_input::resolve_next_display_selection_update_from_display_options,
@@ -31,6 +32,9 @@ use super::runtime_backend::{
 use super::runtime_click::dispatch_native_panel_click_command_with_handler;
 use super::runtime_interaction::NativePanelSettingsSurfaceSnapshotUpdate;
 use super::transition_controller::NativePanelTransitionRequest;
+
+const MASCOT_DEBUG_CLICK_THRESHOLD: u8 = 10;
+static MASCOT_DEBUG_CLICK_COUNT: AtomicU8 = AtomicU8::new(0);
 
 pub(crate) fn execute_native_panel_focus_session_command<R: tauri::Runtime + 'static>(
     app: &AppHandle<R>,
@@ -76,6 +80,60 @@ pub(crate) fn execute_native_panel_toggle_mascot_command(
 ) -> Result<(), String> {
     let next_enabled = !current_app_settings().mascot_enabled;
     update_mascot_enabled(next_enabled).map_err(|error| error.to_string())?;
+    refresh()
+}
+
+pub(crate) fn execute_native_panel_mascot_debug_click_command(
+    refresh: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    if current_app_settings().debug_mode_enabled {
+        let next_count = MASCOT_DEBUG_CLICK_COUNT
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1);
+        log_diagnostic_event(
+            "debug_mode_mascot_click",
+            &[
+                ("enabled", "true".to_string()),
+                ("click_count", next_count.to_string()),
+                ("threshold", MASCOT_DEBUG_CLICK_THRESHOLD.to_string()),
+            ],
+        );
+        if next_count < MASCOT_DEBUG_CLICK_THRESHOLD {
+            return Ok(());
+        }
+
+        MASCOT_DEBUG_CLICK_COUNT.store(0, Ordering::SeqCst);
+        log_diagnostic_event(
+            "debug_mode_disabled",
+            &[("trigger", "mascot_click".to_string())],
+        );
+        update_debug_mode_enabled(false).map_err(|error| error.to_string())?;
+        return refresh();
+    }
+
+    let next_count = MASCOT_DEBUG_CLICK_COUNT
+        .fetch_add(1, Ordering::SeqCst)
+        .saturating_add(1);
+    log_diagnostic_event(
+        "debug_mode_mascot_click",
+        &[
+            ("enabled", "false".to_string()),
+            ("click_count", next_count.to_string()),
+            ("threshold", MASCOT_DEBUG_CLICK_THRESHOLD.to_string()),
+        ],
+    );
+
+    if next_count < MASCOT_DEBUG_CLICK_THRESHOLD {
+        return Ok(());
+    }
+
+    MASCOT_DEBUG_CLICK_COUNT.store(0, Ordering::SeqCst);
+    update_debug_mode_enabled(true).map_err(|error| error.to_string())?;
+    log_diagnostic_event(
+        "debug_mode_enabled",
+        &[("trigger", "mascot_click".to_string())],
+    );
+    log_debug_mode_snapshot();
     refresh()
 }
 
@@ -388,6 +446,17 @@ pub(crate) trait NativePanelAppHandleRuntimeCommandBackend {
         )
     }
 
+    fn mascot_debug_click_command(&mut self) -> Result<(), String> {
+        self.dispatch_app_command(
+            move |app| {
+                execute_native_panel_mascot_debug_click_command(|| {
+                    Self::refresh_from_last_snapshot_with_app(&app)
+                })
+            },
+            "failed to enable debug mode from native panel",
+        )
+    }
+
     fn open_settings_location_command(&mut self) -> Result<(), String> {
         self.dispatch_command(
             execute_native_panel_open_settings_location_command,
@@ -431,6 +500,10 @@ where
 
     fn toggle_mascot(&mut self) -> Result<(), Self::Error> {
         self.toggle_mascot_command()
+    }
+
+    fn mascot_debug_click(&mut self) -> Result<(), Self::Error> {
+        self.mascot_debug_click_command()
     }
 
     fn open_settings_location(&mut self) -> Result<(), Self::Error> {

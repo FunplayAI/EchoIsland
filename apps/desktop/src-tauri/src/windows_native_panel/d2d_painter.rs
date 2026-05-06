@@ -1036,6 +1036,7 @@ mod tests {
             completion_count: 1,
             mascot_elapsed_ms: 0,
             mascot_pose: SceneMascotPose::Idle,
+            mascot_debug_mode_enabled: false,
         }
     }
 
@@ -1163,6 +1164,7 @@ mod tests {
             completion_count: 0,
             mascot_elapsed_ms: 0,
             mascot_pose: SceneMascotPose::Complete,
+            mascot_debug_mode_enabled: false,
         }
     }
 

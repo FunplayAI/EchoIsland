@@ -240,6 +240,7 @@ mod tests {
             completion_count: 0,
             mascot_elapsed_ms: 0,
             mascot_pose: SceneMascotPose::Idle,
+            mascot_debug_mode_enabled: false,
         }
     }
 
@@ -439,6 +440,12 @@ mod tests {
 
         fn toggle_mascot(&mut self) -> Result<(), Self::Error> {
             self.handled.push(NativePanelPlatformEvent::ToggleMascot);
+            Ok(())
+        }
+
+        fn mascot_debug_click(&mut self) -> Result<(), Self::Error> {
+            self.handled
+                .push(NativePanelPlatformEvent::MascotDebugClick);
             Ok(())
         }
 
@@ -1560,6 +1567,10 @@ mod tests {
                 Ok(())
             }
 
+            fn mascot_debug_click(&mut self) -> Result<(), Self::Error> {
+                Ok(())
+            }
+
             fn open_settings_location(&mut self) -> Result<(), Self::Error> {
                 Ok(())
             }
@@ -1669,6 +1680,10 @@ mod tests {
             }
 
             fn toggle_mascot(&mut self) -> Result<(), Self::Error> {
+                Ok(())
+            }
+
+            fn mascot_debug_click(&mut self) -> Result<(), Self::Error> {
                 Ok(())
             }
 

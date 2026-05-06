@@ -62,6 +62,7 @@ pub(crate) struct NativePanelCardStackCommand {
 #[derive(Clone, Debug)]
 pub(crate) struct NativePanelMascotCommand {
     pub(crate) pose: SceneMascotPose,
+    pub(crate) debug_mode_enabled: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -158,6 +159,7 @@ pub(crate) fn native_panel_card_stack_command(
 pub(crate) fn native_panel_mascot_command(scene: &PanelScene) -> NativePanelMascotCommand {
     NativePanelMascotCommand {
         pose: scene.mascot_pose,
+        debug_mode_enabled: scene.debug_mode_enabled,
     }
 }
 

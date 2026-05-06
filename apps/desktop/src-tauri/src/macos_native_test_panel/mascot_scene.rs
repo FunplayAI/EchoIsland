@@ -10,6 +10,7 @@ pub(super) struct NativeMascotFrameInput {
     pub(super) expanded: bool,
     pub(super) completion_count: usize,
     pub(super) mascot_hidden: bool,
+    pub(super) debug_mode_enabled: bool,
     pub(super) completion_glow_opacity: f64,
 }
 
@@ -58,9 +59,13 @@ pub(super) fn resolve_native_mascot_frame_input(
         base_state,
         expanded: state.expanded,
         completion_count,
-        mascot_hidden: mascot_command.is_some_and(|command| {
+        mascot_hidden: mascot_command.as_ref().is_some_and(|command| {
             command.pose == crate::native_panel_scene::SceneMascotPose::Hidden
         }),
+        debug_mode_enabled: mascot_command
+            .as_ref()
+            .map(|command| command.debug_mode_enabled)
+            .unwrap_or(false),
         completion_glow_opacity: glow_command
             .map(|command| command.glow.opacity)
             .unwrap_or(0.0),

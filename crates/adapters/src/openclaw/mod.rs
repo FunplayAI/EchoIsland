@@ -12,6 +12,8 @@ mod install;
 
 pub use install::{DEFAULT_OPENCLAW_RECEIVER_URL, get_openclaw_status, install_openclaw_adapter};
 
+const OPENCLAW_HOOK_ID: &str = "echoisland";
+
 #[derive(Debug, Clone)]
 pub struct OpenClawAdapter {
     paths: OpenClawPaths,
@@ -69,7 +71,7 @@ impl OpenClawPaths {
         let openclaw_dir = openclaw_dir_from_home(&home_dir);
         let config_path = openclaw_config_path_from_home(&home_dir);
         let hooks_dir = openclaw_hooks_dir_from_home(&home_dir);
-        let hook_dir = hooks_dir.join("codeisland");
+        let hook_dir = hooks_dir.join(OPENCLAW_HOOK_ID);
 
         Self {
             home_dir,
@@ -101,9 +103,11 @@ pub fn default_paths() -> OpenClawPaths {
         openclaw_dir: openclaw_dir(),
         config_path: openclaw_config_path(),
         hooks_dir: openclaw_hooks_dir(),
-        hook_dir: openclaw_hooks_dir().join("codeisland"),
-        hook_manifest_path: openclaw_hooks_dir().join("codeisland").join("HOOK.md"),
-        hook_handler_path: openclaw_hooks_dir().join("codeisland").join("handler.ts"),
+        hook_dir: openclaw_hooks_dir().join(OPENCLAW_HOOK_ID),
+        hook_manifest_path: openclaw_hooks_dir().join(OPENCLAW_HOOK_ID).join("HOOK.md"),
+        hook_handler_path: openclaw_hooks_dir()
+            .join(OPENCLAW_HOOK_ID)
+            .join("handler.ts"),
         token_path: ipc_token_path(),
         receiver_url: DEFAULT_OPENCLAW_RECEIVER_URL.to_string(),
     }
@@ -190,7 +194,7 @@ mod tests {
     #[test]
     fn installs_openclaw_hook_pack() {
         let root = temp_root();
-        let token_path = root.join("CodeIsland").join("ipc-token");
+        let token_path = root.join("EchoIsland").join("ipc-token");
         fs::create_dir_all(token_path.parent().unwrap()).unwrap();
         fs::write(&token_path, b"secret").unwrap();
 
@@ -210,7 +214,7 @@ mod tests {
         let hook_md = fs::read_to_string(&paths.hook_manifest_path).unwrap();
         let handler = fs::read_to_string(&paths.hook_handler_path).unwrap();
         assert!(hook_md.contains("message:received"));
-        assert!(handler.contains("codeisland-openclaw-hook"));
+        assert!(handler.contains("echoisland-openclaw-hook"));
 
         let _ = fs::remove_dir_all(root);
     }
@@ -218,7 +222,7 @@ mod tests {
     #[test]
     fn openclaw_adapter_exposes_generic_status() {
         let root = temp_root();
-        let token_path = root.join("CodeIsland").join("ipc-token");
+        let token_path = root.join("EchoIsland").join("ipc-token");
         fs::create_dir_all(token_path.parent().unwrap()).unwrap();
         fs::write(&token_path, b"secret").unwrap();
 

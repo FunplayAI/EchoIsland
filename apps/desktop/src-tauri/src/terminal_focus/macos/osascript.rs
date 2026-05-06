@@ -18,6 +18,13 @@ pub(super) fn run_osascript(source: &str, label: &str) -> bool {
 }
 
 pub(super) fn run_osascript_raw(source: &str, label: &str) -> Option<String> {
+    crate::diagnostics::log_diagnostic_event(
+        "macos_osascript_begin",
+        &[
+            ("label", label.to_string()),
+            ("source_len", source.len().to_string()),
+        ],
+    );
     let mut child = match Command::new("/usr/bin/osascript")
         .arg("-")
         .stdin(Stdio::piped())
@@ -27,6 +34,10 @@ pub(super) fn run_osascript_raw(source: &str, label: &str) -> Option<String> {
     {
         Ok(child) => child,
         Err(error) => {
+            crate::diagnostics::log_diagnostic_event(
+                "macos_osascript_spawn_error",
+                &[("label", label.to_string()), ("error", error.to_string())],
+            );
             warn!(label, error = %error, "failed to spawn osascript");
             return None;
         }
@@ -35,6 +46,10 @@ pub(super) fn run_osascript_raw(source: &str, label: &str) -> Option<String> {
     if let Some(stdin) = child.stdin.as_mut()
         && let Err(error) = stdin.write_all(source.as_bytes())
     {
+        crate::diagnostics::log_diagnostic_event(
+            "macos_osascript_write_error",
+            &[("label", label.to_string()), ("error", error.to_string())],
+        );
         warn!(label, error = %error, "failed to write osascript source");
         let _ = child.kill();
         return None;
@@ -42,15 +57,36 @@ pub(super) fn run_osascript_raw(source: &str, label: &str) -> Option<String> {
 
     match child.wait_with_output() {
         Ok(output) if output.status.success() => {
-            Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            crate::diagnostics::log_diagnostic_event(
+                "macos_osascript_complete",
+                &[
+                    ("label", label.to_string()),
+                    ("status", output.status.to_string()),
+                    ("stdout", stdout.clone()),
+                ],
+            );
+            Some(stdout)
         }
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             warn_macos_permission_hint(&stderr);
+            crate::diagnostics::log_diagnostic_event(
+                "macos_osascript_failed",
+                &[
+                    ("label", label.to_string()),
+                    ("status", output.status.to_string()),
+                    ("stderr", stderr.clone()),
+                ],
+            );
             warn!(label, stderr, "osascript command failed");
             None
         }
         Err(error) => {
+            crate::diagnostics::log_diagnostic_event(
+                "macos_osascript_wait_error",
+                &[("label", label.to_string()), ("error", error.to_string())],
+            );
             warn!(label, error = %error, "failed waiting for osascript");
             None
         }

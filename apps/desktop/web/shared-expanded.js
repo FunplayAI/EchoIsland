@@ -168,7 +168,7 @@ async function boot() {
   });
   await refreshExpandedSnapshot();
 
-  window.__CODEISLAND_SHARED_EXPANDED__ = {
+  window.__ECHOISLAND_SHARED_EXPANDED__ = {
     measureHeight,
     refreshSnapshot: refreshExpandedSnapshot,
     renderSnapshot: renderExpandedSnapshot,

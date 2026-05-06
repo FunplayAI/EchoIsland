@@ -166,16 +166,21 @@ impl NativePanelCardStackPresentation {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NativePanelMascotPresentationInput {
     pub(crate) pose: crate::native_panel_scene::SceneMascotPose,
+    pub(crate) debug_mode_enabled: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NativePanelMascotPresentation {
     pub(crate) pose: crate::native_panel_scene::SceneMascotPose,
+    pub(crate) debug_mode_enabled: bool,
 }
 
 impl NativePanelMascotPresentation {
     pub(crate) fn command(&self) -> NativePanelMascotCommand {
-        NativePanelMascotCommand { pose: self.pose }
+        NativePanelMascotCommand {
+            pose: self.pose,
+            debug_mode_enabled: self.debug_mode_enabled,
+        }
     }
 }
 
@@ -440,6 +445,9 @@ pub(crate) fn native_panel_visual_plan_input_from_presentation(
         mascot_pose: presentation
             .map(|presentation| presentation.mascot.pose)
             .unwrap_or(crate::native_panel_scene::SceneMascotPose::Idle),
+        mascot_debug_mode_enabled: presentation
+            .map(|presentation| presentation.mascot.debug_mode_enabled)
+            .unwrap_or(false),
     }
 }
 
@@ -553,6 +561,7 @@ pub(crate) fn native_panel_presentation_model_input_from_scene(
         card_stack: card_stack_presentation_input_from_scene(scene),
         mascot: NativePanelMascotPresentationInput {
             pose: scene.mascot_pose,
+            debug_mode_enabled: scene.debug_mode_enabled,
         },
         glow: scene
             .glow
@@ -716,13 +725,19 @@ pub(crate) fn native_panel_card_stack_presentation(
 pub(crate) fn mascot_presentation_input_from_command(
     command: &NativePanelMascotCommand,
 ) -> NativePanelMascotPresentationInput {
-    NativePanelMascotPresentationInput { pose: command.pose }
+    NativePanelMascotPresentationInput {
+        pose: command.pose,
+        debug_mode_enabled: command.debug_mode_enabled,
+    }
 }
 
 pub(crate) fn native_panel_mascot_presentation_from_input(
     input: NativePanelMascotPresentationInput,
 ) -> NativePanelMascotPresentation {
-    NativePanelMascotPresentation { pose: input.pose }
+    NativePanelMascotPresentation {
+        pose: input.pose,
+        debug_mode_enabled: input.debug_mode_enabled,
+    }
 }
 
 pub(crate) fn native_panel_mascot_presentation(
@@ -730,6 +745,7 @@ pub(crate) fn native_panel_mascot_presentation(
 ) -> NativePanelMascotPresentation {
     native_panel_mascot_presentation_from_input(NativePanelMascotPresentationInput {
         pose: native_panel_mascot_command(scene).pose,
+        debug_mode_enabled: scene.debug_mode_enabled,
     })
 }
 

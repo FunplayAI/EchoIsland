@@ -13,6 +13,12 @@ pub(crate) enum NativePanelTransitionRequest {
     SurfaceSwitch,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct NativePanelPendingTransition {
+    pub(crate) request: NativePanelTransitionRequest,
+    pub(crate) snapshot: RuntimeSnapshot,
+}
+
 pub(crate) trait NativePanelTransitionRequestDispatcher {
     type Error;
 
@@ -108,6 +114,37 @@ pub(crate) fn dispatch_native_panel_transition_request_with_snapshot_via<E>(
     Ok(true)
 }
 
+pub(crate) fn pending_native_panel_transition_if_active(
+    transitioning: bool,
+    request: NativePanelTransitionRequest,
+    snapshot: RuntimeSnapshot,
+) -> Option<NativePanelPendingTransition> {
+    transitioning.then_some(NativePanelPendingTransition { request, snapshot })
+}
+
+pub(crate) fn take_pending_native_panel_transition_after_completed(
+    pending: &mut Option<NativePanelPendingTransition>,
+    completed_request: NativePanelTransitionRequest,
+) -> Option<NativePanelPendingTransition> {
+    let pending_transition = pending.take()?;
+    (pending_transition.request != completed_request).then_some(pending_transition)
+}
+
+pub(crate) fn clear_pending_native_panel_transition_request(
+    pending: &mut Option<NativePanelPendingTransition>,
+    request: NativePanelTransitionRequest,
+) -> bool {
+    if pending
+        .as_ref()
+        .is_some_and(|pending| pending.request == request)
+    {
+        pending.take();
+        true
+    } else {
+        false
+    }
+}
+
 pub(crate) fn dispatch_native_panel_transition_request_or_fallback<D>(
     dispatcher: &mut D,
     request: Option<NativePanelTransitionRequest>,
@@ -188,6 +225,7 @@ mod tests {
 
     use super::{
         NativePanelTransitionRequest, NativePanelTransitionRequestDispatcher,
+        clear_pending_native_panel_transition_request,
         dispatch_native_panel_transition_request_or_fallback,
         dispatch_native_panel_transition_request_or_fallback_via,
         dispatch_native_panel_transition_request_with_snapshot,
@@ -195,7 +233,9 @@ mod tests {
         native_panel_transition_request_for_hover_transition,
         native_panel_transition_request_for_snapshot_sync,
         native_panel_transition_request_for_surface_change,
-        resolve_native_panel_animation_timeline, resolve_native_panel_terminal_timeline_descriptor,
+        pending_native_panel_transition_if_active, resolve_native_panel_animation_timeline,
+        resolve_native_panel_terminal_timeline_descriptor,
+        take_pending_native_panel_transition_after_completed,
     };
 
     #[derive(Default)]
@@ -221,6 +261,22 @@ mod tests {
         ) -> Result<(), Self::Error> {
             self.calls.push((snapshot.status, false));
             Ok(())
+        }
+    }
+
+    fn snapshot(status: &str) -> RuntimeSnapshot {
+        RuntimeSnapshot {
+            status: status.to_string(),
+            primary_source: "codex".to_string(),
+            active_session_count: 0,
+            total_session_count: 0,
+            pending_permission_count: 0,
+            pending_question_count: 0,
+            pending_permission: None,
+            pending_question: None,
+            pending_permissions: vec![],
+            pending_questions: vec![],
+            sessions: vec![],
         }
     }
 
@@ -329,24 +385,11 @@ mod tests {
     #[test]
     fn transition_request_dispatch_helper_routes_request_when_bundle_is_complete() {
         let mut dispatcher = RecordingDispatcher::default();
-        let snapshot = RuntimeSnapshot {
-            status: "idle".to_string(),
-            primary_source: "codex".to_string(),
-            active_session_count: 0,
-            total_session_count: 0,
-            pending_permission_count: 0,
-            pending_question_count: 0,
-            pending_permission: None,
-            pending_question: None,
-            pending_permissions: vec![],
-            pending_questions: vec![],
-            sessions: vec![],
-        };
 
         let dispatched = dispatch_native_panel_transition_request_with_snapshot(
             &mut dispatcher,
             Some(NativePanelTransitionRequest::Open),
-            Some(snapshot),
+            Some(snapshot("idle")),
         )
         .expect("dispatch transition bundle");
 
@@ -372,23 +415,10 @@ mod tests {
     #[test]
     fn closure_dispatch_helper_routes_request_when_bundle_is_complete() {
         let calls = std::cell::RefCell::new(Vec::new());
-        let snapshot = RuntimeSnapshot {
-            status: "idle".to_string(),
-            primary_source: "codex".to_string(),
-            active_session_count: 0,
-            total_session_count: 0,
-            pending_permission_count: 0,
-            pending_question_count: 0,
-            pending_permission: None,
-            pending_question: None,
-            pending_permissions: vec![],
-            pending_questions: vec![],
-            sessions: vec![],
-        };
 
         let dispatched = dispatch_native_panel_transition_request_with_snapshot_via(
             Some(NativePanelTransitionRequest::Open),
-            Some(snapshot),
+            Some(snapshot("idle")),
             |request, snapshot| {
                 calls.borrow_mut().push(match request {
                     NativePanelTransitionRequest::Open => (snapshot.status, true),
@@ -445,28 +475,93 @@ mod tests {
     #[test]
     fn transition_request_or_fallback_skips_fallback_when_transition_dispatches() {
         let mut dispatcher = RecordingDispatcher::default();
-        let snapshot = RuntimeSnapshot {
-            status: "idle".to_string(),
-            primary_source: "codex".to_string(),
-            active_session_count: 0,
-            total_session_count: 0,
-            pending_permission_count: 0,
-            pending_question_count: 0,
-            pending_permission: None,
-            pending_question: None,
-            pending_permissions: vec![],
-            pending_questions: vec![],
-            sessions: vec![],
-        };
 
         dispatch_native_panel_transition_request_or_fallback(
             &mut dispatcher,
             Some(NativePanelTransitionRequest::Open),
-            Some(snapshot),
+            Some(snapshot("idle")),
             || panic!("fallback should not run when transition dispatches"),
         )
         .expect("dispatch transition without fallback");
 
         assert_eq!(dispatcher.calls, vec![("idle".to_string(), true)]);
+    }
+
+    #[test]
+    fn pending_transition_is_created_only_while_active() {
+        assert!(
+            pending_native_panel_transition_if_active(
+                false,
+                NativePanelTransitionRequest::Close,
+                snapshot("idle")
+            )
+            .is_none()
+        );
+
+        let pending = pending_native_panel_transition_if_active(
+            true,
+            NativePanelTransitionRequest::Close,
+            snapshot("idle"),
+        )
+        .expect("pending transition");
+
+        assert_eq!(pending.request, NativePanelTransitionRequest::Close);
+        assert_eq!(pending.snapshot.status, "idle");
+    }
+
+    #[test]
+    fn pending_transition_after_completion_uses_last_distinct_request() {
+        let mut pending = pending_native_panel_transition_if_active(
+            true,
+            NativePanelTransitionRequest::Close,
+            snapshot("idle"),
+        );
+
+        let next = take_pending_native_panel_transition_after_completed(
+            &mut pending,
+            NativePanelTransitionRequest::Open,
+        )
+        .expect("distinct pending request");
+
+        assert_eq!(next.request, NativePanelTransitionRequest::Close);
+        assert!(pending.is_none());
+    }
+
+    #[test]
+    fn pending_transition_after_completion_discards_duplicate_request() {
+        let mut pending = pending_native_panel_transition_if_active(
+            true,
+            NativePanelTransitionRequest::Open,
+            snapshot("running"),
+        );
+
+        assert!(
+            take_pending_native_panel_transition_after_completed(
+                &mut pending,
+                NativePanelTransitionRequest::Open,
+            )
+            .is_none()
+        );
+        assert!(pending.is_none());
+    }
+
+    #[test]
+    fn pending_transition_clear_only_matches_requested_kind() {
+        let mut pending = pending_native_panel_transition_if_active(
+            true,
+            NativePanelTransitionRequest::Close,
+            snapshot("idle"),
+        );
+
+        assert!(!clear_pending_native_panel_transition_request(
+            &mut pending,
+            NativePanelTransitionRequest::Open
+        ));
+        assert!(pending.is_some());
+        assert!(clear_pending_native_panel_transition_request(
+            &mut pending,
+            NativePanelTransitionRequest::Close
+        ));
+        assert!(pending.is_none());
     }
 }

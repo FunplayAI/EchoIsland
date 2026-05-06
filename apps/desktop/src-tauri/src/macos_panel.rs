@@ -9,7 +9,7 @@ use tauri_nspanel::{CollectionBehavior, PanelBuilder, PanelLevel, StyleMask, tau
 
 #[cfg(target_os = "macos")]
 tauri_panel! {
-    panel!(CodeIslandPanel {
+    panel!(EchoIslandPanel {
         config: {
             can_become_key_window: true,
             can_become_main_window: false,
@@ -28,9 +28,9 @@ pub fn create_main_panel(app_handle: &AppHandle) -> tauri::Result<()> {
     }
 
     let panel =
-        PanelBuilder::<_, CodeIslandPanel>::new(app_handle, crate::constants::MAIN_WINDOW_LABEL)
+        PanelBuilder::<_, EchoIslandPanel>::new(app_handle, crate::constants::MAIN_WINDOW_LABEL)
             .url(WebviewUrl::App("index.html".into()))
-            .title("CodeIsland")
+            .title("EchoIsland")
             .position(Position::Logical(LogicalPosition::new(546.0, 0.0)))
             .size(Size::Logical(LogicalSize::new(420.0, 80.0)))
             .level(PanelLevel::Custom(26))

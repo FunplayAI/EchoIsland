@@ -427,6 +427,7 @@ fn scene_builder_emits_settings_rows_and_value_badges() {
             selected_display_index: 1,
             completion_sound_enabled: false,
             mascot_enabled: true,
+            debug_mode_enabled: false,
         },
         app_version: "0.5.0".to_string(),
     };
@@ -774,6 +775,7 @@ fn scene_cards_total_height_delegates_card_height_resolution() {
         cards: vec![SceneCard::Empty, SceneCard::Empty, SceneCard::Empty],
         glow: None,
         mascot_pose: SceneMascotPose::Idle,
+        debug_mode_enabled: false,
         hit_targets: Vec::new(),
         nodes: Vec::new(),
     };

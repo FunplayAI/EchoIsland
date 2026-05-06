@@ -47,6 +47,10 @@ impl<'a> TerminalFocusService<'a> {
     }
 
     pub async fn focus_session(&self, session_id: &str) -> Result<bool, String> {
+        crate::diagnostics::log_diagnostic_event(
+            "runtime_focus_session_begin",
+            &[("session_id", session_id.to_string())],
+        );
         let session = self
             .app_runtime
             .runtime
@@ -132,6 +136,22 @@ impl<'a> TerminalFocusService<'a> {
         );
         let outcome = focus_session_terminal_impl(&target, cached_tab.as_ref())
             .map_err(|error| error.to_string())?;
+        crate::diagnostics::log_diagnostic_event(
+            "runtime_focus_session_backend_complete",
+            &[
+                ("session_id", session_id.to_string()),
+                ("focused", outcome.focused.to_string()),
+                ("selected_tab", outcome.selected_tab.is_some().to_string()),
+                (
+                    "terminal_bundle",
+                    target.terminal_bundle.clone().unwrap_or_default(),
+                ),
+                (
+                    "terminal_app",
+                    target.terminal_app.clone().unwrap_or_default(),
+                ),
+            ],
+        );
         info!(
             session_id = %session_id,
             focused = outcome.focused,

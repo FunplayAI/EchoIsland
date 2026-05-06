@@ -59,11 +59,7 @@ fn command_values(entry: &Value) -> Vec<&str> {
 }
 
 fn is_echoisland_command(command: &str) -> bool {
-    command.contains("codeisland-hook-bridge")
-        || command.contains("echoisland-hook-bridge")
-        || command.contains("codeisland-bridge")
-        || command.contains("codeisland-hook.sh")
-        || command.contains("vibenotch")
+    command.contains("echoisland-hook-bridge") || command.contains("echoisland-hook.sh")
 }
 
 pub fn remove_echoisland_entries(hooks_obj: &mut Map<String, Value>) {
@@ -87,7 +83,7 @@ mod tests {
 
     #[test]
     fn builds_bridge_commands() {
-        let path_string = format!("C:/CodeIsland/{}", bridge_binary_name());
+        let path_string = format!("C:/EchoIsland/{}", bridge_binary_name());
         let path = std::path::Path::new(&path_string);
         let direct = direct_bridge_command(path, "codex");
         let platform = platform_bridge_command(path, "claude");
@@ -99,7 +95,7 @@ mod tests {
 
     #[test]
     fn removes_echoisland_entries_from_hook_map() {
-        let bridge_command = format!("\"C:/CodeIsland/{}\" --source codex", bridge_binary_name());
+        let bridge_command = format!("\"C:/EchoIsland/{}\" --source codex", bridge_binary_name());
         let mut hooks = serde_json::Map::from_iter([(
             "SessionStart".to_string(),
             json!([

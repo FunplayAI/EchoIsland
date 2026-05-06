@@ -215,6 +215,7 @@ where
 
     NativePanelPollingInteractionResult {
         interactive_inside,
+        click_platform_event: click_event,
         click_command,
         transition_request,
         transition_snapshot,
@@ -250,6 +251,7 @@ where
 
     NativePanelHostPollingInteractionResult {
         interactive_inside: interaction.interactive_inside,
+        click_platform_event: interaction.click_platform_event,
         click_command: interaction.click_command,
         transition_request: interaction.transition_request,
         transition_snapshot: interaction.transition_snapshot,

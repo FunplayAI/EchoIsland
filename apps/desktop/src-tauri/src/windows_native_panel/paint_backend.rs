@@ -216,10 +216,17 @@ fn windows_native_panel_paint_operation_from_primitive(
             scale_x,
             scale_y,
             pose,
+            debug_mode_enabled,
         } => {
             let body_width = radius * (24.0 / 11.0) * scale_x;
             let body_height = radius * (20.0 / 11.0) * scale_y;
-            let color = if *pose == SceneMascotPose::Sleepy {
+            let color = if *debug_mode_enabled {
+                WindowsNativePanelPaintColor {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                }
+            } else if *pose == SceneMascotPose::Sleepy {
                 WindowsNativePanelPaintColor { r: 3, g: 3, b: 3 }
             } else {
                 WindowsNativePanelPaintColor { r: 5, g: 5, b: 5 }
@@ -234,10 +241,18 @@ fn windows_native_panel_paint_operation_from_primitive(
                 radius: radius * (6.0 / 11.0),
                 pose: *pose,
                 color,
-                stroke_color: WindowsNativePanelPaintColor {
-                    r: 255,
-                    g: 122,
-                    b: 36,
+                stroke_color: if *debug_mode_enabled {
+                    WindowsNativePanelPaintColor {
+                        r: 255,
+                        g: 255,
+                        b: 255,
+                    }
+                } else {
+                    WindowsNativePanelPaintColor {
+                        r: 255,
+                        g: 122,
+                        b: 36,
+                    }
                 },
                 stroke_width: 2.2,
             }
@@ -666,6 +681,7 @@ mod tests {
             completion_count: 2,
             mascot_elapsed_ms: 0,
             mascot_pose: SceneMascotPose::Complete,
+            mascot_debug_mode_enabled: false,
         }
     }
 

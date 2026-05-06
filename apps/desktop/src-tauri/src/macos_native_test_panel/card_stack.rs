@@ -64,7 +64,9 @@ unsafe fn render_status_queue_cards(
     let mut rendered_count = 0usize;
     for card in &command.cards {
         let item = match card {
-            SceneCard::StatusApproval { item } | SceneCard::StatusCompletion { item } => item,
+            SceneCard::StatusApproval { item }
+            | SceneCard::StatusQuestion { item }
+            | SceneCard::StatusCompletion { item } => item,
             _ => continue,
         };
         let card_height = estimated_scene_card_height(card);
@@ -122,6 +124,7 @@ unsafe fn render_default_cards(
             }
             SceneCard::Settings { .. }
             | SceneCard::StatusApproval { .. }
+            | SceneCard::StatusQuestion { .. }
             | SceneCard::StatusCompletion { .. } => continue,
         }
         rendered_count += 1;

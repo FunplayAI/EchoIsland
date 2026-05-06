@@ -2,7 +2,7 @@ use tracing::info;
 
 use super::{
     SessionFocusTarget,
-    native_apps::{activate_app_bundle, activate_app_name},
+    native_apps::{activate_app_bundle, activate_running_app_bundle, activate_running_app_process},
     osascript::{escape_applescript, run_osascript_raw},
     title_match::{
         applescript_title_candidate_records, ide_window_title_candidates,
@@ -432,14 +432,27 @@ pub(super) fn activate_terminal_window(
     bundle_id: &str,
     fallback_name: &str,
 ) -> bool {
-    let activated = if bundle_id.is_empty() {
-        activate_app_name(fallback_name)
-    } else {
-        activate_app_bundle(bundle_id, fallback_name)
-    };
+    crate::diagnostics::log_diagnostic_event(
+        "macos_activate_terminal_window_begin",
+        &[
+            ("session_id", target.session_id.clone()),
+            ("source", target.source.clone()),
+            ("bundle_id", bundle_id.to_string()),
+            ("fallback_name", fallback_name.to_string()),
+            ("cwd", target.cwd.clone().unwrap_or_default()),
+            (
+                "terminal_bundle",
+                target.terminal_bundle.clone().unwrap_or_default(),
+            ),
+            (
+                "terminal_app",
+                target.terminal_app.clone().unwrap_or_default(),
+            ),
+        ],
+    );
     let candidates = terminal_window_title_candidates(target);
     if candidates.is_empty() {
-        return activated;
+        return activate_terminal_app_fallback(bundle_id, fallback_name);
     }
     let candidate_records = applescript_title_candidate_records(&candidates);
     let script = format!(
@@ -507,6 +520,10 @@ return false
             true
         }
         _ => {
+            let mut activated = activate_running_app_process(fallback_name);
+            if !activated {
+                activated = activate_terminal_app_fallback(bundle_id, fallback_name);
+            }
             info!(
                 bundle_id,
                 fallback_name,
@@ -519,6 +536,28 @@ return false
             activated
         }
     }
+}
+
+fn activate_terminal_app_fallback(bundle_id: &str, fallback_name: &str) -> bool {
+    crate::diagnostics::log_diagnostic_event(
+        "macos_activate_terminal_fallback_begin",
+        &[
+            ("bundle_id", bundle_id.to_string()),
+            ("fallback_name", fallback_name.to_string()),
+        ],
+    );
+    let activated = (!bundle_id.is_empty()
+        && activate_running_app_bundle(bundle_id, fallback_name))
+        || activate_running_app_process(fallback_name);
+    crate::diagnostics::log_diagnostic_event(
+        "macos_activate_terminal_fallback_complete",
+        &[
+            ("bundle_id", bundle_id.to_string()),
+            ("fallback_name", fallback_name.to_string()),
+            ("activated", activated.to_string()),
+        ],
+    );
+    activated
 }
 
 pub(super) fn activate_ide_window(

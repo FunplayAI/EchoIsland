@@ -1,5 +1,5 @@
 function resolveShell(capabilities) {
-  const explicitShell = globalThis.__CODEISLAND_SHELL__;
+  const explicitShell = globalThis.__ECHOISLAND_SHELL__;
 
   if (typeof explicitShell === "string" && explicitShell.trim()) {
     return explicitShell.trim().toLowerCase();

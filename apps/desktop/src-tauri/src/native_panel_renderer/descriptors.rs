@@ -1,7 +1,8 @@
 use crate::{
     native_panel_core::{
-        HoverTransition, PanelAnimationDescriptor, PanelHitTarget, PanelInteractionCommand,
-        PanelLayout, PanelPoint, PanelRect, point_in_rect, resolve_compact_action_button_layout,
+        CompactBarContentLayoutInput, HoverTransition, PanelAnimationDescriptor, PanelHitTarget,
+        PanelInteractionCommand, PanelLayout, PanelPoint, PanelRect, point_in_rect,
+        resolve_compact_action_button_layout, resolve_compact_bar_content_layout,
         resolve_native_panel_host_frame, resolve_settings_surface_card_height,
         settings_surface_row_frame,
     },
@@ -221,6 +222,7 @@ pub(crate) enum NativePanelPointerRegionKind {
     Shell,
     CompactBar,
     CardsContainer,
+    MascotDebugTrigger,
     EdgeAction(NativePanelEdgeAction),
     HitTarget(PanelHitTarget),
 }
@@ -337,6 +339,7 @@ pub(crate) enum NativePanelPlatformEvent {
     CycleDisplay,
     ToggleCompletionSound,
     ToggleMascot,
+    MascotDebugClick,
     OpenSettingsLocation,
     OpenReleasePage,
 }
@@ -349,6 +352,7 @@ pub(crate) enum NativePanelRuntimeCommand {
     CycleDisplay,
     ToggleCompletionSound,
     ToggleMascot,
+    MascotDebugClick,
     OpenSettingsLocation,
     OpenReleasePage,
 }
@@ -390,6 +394,8 @@ pub(crate) trait NativePanelRuntimeCommandCapability {
 
     fn toggle_mascot(&mut self) -> Result<(), Self::Error>;
 
+    fn mascot_debug_click(&mut self) -> Result<(), Self::Error>;
+
     fn open_settings_location(&mut self) -> Result<(), Self::Error>;
 
     fn open_release_page(&mut self) -> Result<(), Self::Error>;
@@ -409,6 +415,7 @@ pub(crate) trait NativePanelRuntimeCommandHandler:
             NativePanelRuntimeCommand::CycleDisplay => self.cycle_display(),
             NativePanelRuntimeCommand::ToggleCompletionSound => self.toggle_completion_sound(),
             NativePanelRuntimeCommand::ToggleMascot => self.toggle_mascot(),
+            NativePanelRuntimeCommand::MascotDebugClick => self.mascot_debug_click(),
             NativePanelRuntimeCommand::OpenSettingsLocation => self.open_settings_location(),
             NativePanelRuntimeCommand::OpenReleasePage => self.open_release_page(),
         }
@@ -464,6 +471,11 @@ impl NativePanelRuntimeCommandCapability for NativePanelQueuedRuntimeCommandHand
         Ok(())
     }
 
+    fn mascot_debug_click(&mut self) -> Result<(), Self::Error> {
+        self.events.push(NativePanelPlatformEvent::MascotDebugClick);
+        Ok(())
+    }
+
     fn open_settings_location(&mut self) -> Result<(), Self::Error> {
         self.events
             .push(NativePanelPlatformEvent::OpenSettingsLocation);
@@ -501,6 +513,7 @@ pub(crate) fn native_panel_runtime_command_for_platform_event(
             NativePanelRuntimeCommand::ToggleCompletionSound
         }
         NativePanelPlatformEvent::ToggleMascot => NativePanelRuntimeCommand::ToggleMascot,
+        NativePanelPlatformEvent::MascotDebugClick => NativePanelRuntimeCommand::MascotDebugClick,
         NativePanelPlatformEvent::OpenSettingsLocation => {
             NativePanelRuntimeCommand::OpenSettingsLocation
         }
@@ -593,6 +606,9 @@ pub(crate) fn native_panel_platform_event_for_pointer_region(
         }
         NativePanelPointerRegionKind::EdgeAction(NativePanelEdgeAction::Quit) => {
             Some(NativePanelPlatformEvent::QuitApplication)
+        }
+        NativePanelPointerRegionKind::MascotDebugTrigger => {
+            Some(NativePanelPlatformEvent::MascotDebugClick)
         }
         NativePanelPointerRegionKind::HitTarget(target) => {
             Some(native_panel_platform_event_for_hit_target(target))
@@ -705,6 +721,7 @@ pub(crate) fn native_panel_hit_target_at_point(
         NativePanelPointerRegionKind::Shell
         | NativePanelPointerRegionKind::CompactBar
         | NativePanelPointerRegionKind::CardsContainer
+        | NativePanelPointerRegionKind::MascotDebugTrigger
         | NativePanelPointerRegionKind::EdgeAction(_) => None,
     }
 }
@@ -769,6 +786,7 @@ pub(crate) fn resolve_native_panel_interaction_plan(
             absolute_panel_rect(layout, layout.expanded_frame),
             NativePanelPointerRegionKind::Shell,
         );
+        push_expanded_mascot_debug_region(&mut regions, layout, scene);
         push_expanded_top_gap_region(&mut regions, layout);
         push_region(
             &mut regions,
@@ -788,6 +806,36 @@ pub(crate) fn resolve_native_panel_interaction_plan(
     NativePanelInteractionPlan {
         pointer_regions: regions,
     }
+}
+
+fn push_expanded_mascot_debug_region(
+    regions: &mut Vec<NativePanelPointerRegion>,
+    layout: PanelLayout,
+    scene: &PanelScene,
+) {
+    if scene.mascot_pose == crate::native_panel_scene::SceneMascotPose::Hidden {
+        return;
+    }
+
+    let pill = absolute_panel_rect(layout, layout.pill_frame);
+    let compact_content = resolve_compact_bar_content_layout(CompactBarContentLayoutInput {
+        bar_width: layout.pill_frame.width,
+        bar_height: layout.pill_frame.height,
+    });
+    let mascot_center = PanelPoint {
+        x: pill.x + compact_content.mascot_center_x,
+        y: pill.y + pill.height / 2.0,
+    };
+    push_region(
+        regions,
+        PanelRect {
+            x: mascot_center.x - 18.0,
+            y: mascot_center.y - 18.0,
+            width: 36.0,
+            height: 36.0,
+        },
+        NativePanelPointerRegionKind::MascotDebugTrigger,
+    );
 }
 
 fn push_expanded_top_gap_region(regions: &mut Vec<NativePanelPointerRegion>, layout: PanelLayout) {

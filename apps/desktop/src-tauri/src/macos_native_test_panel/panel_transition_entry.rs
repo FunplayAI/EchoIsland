@@ -6,6 +6,7 @@ use tauri::AppHandle;
 use super::panel_constants::{COLLAPSED_PANEL_HEIGHT, PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS};
 use super::panel_globals::NATIVE_TEST_PANEL_ANIMATION_ID;
 use super::panel_refs::native_panel_state;
+use super::panel_runtime_dispatch::take_pending_native_panel_transition_after_completion;
 use super::panel_scene_adapter::resolve_snapshot_render_plan;
 use super::panel_types::NativePanelHandles;
 use super::panel_view_updates::apply_snapshot_values_to_panel;
@@ -195,6 +196,7 @@ fn spawn_prepared_transition<R: tauri::Runtime + 'static>(
         )
         .await;
 
+        let app_after_finish = app.clone();
         let _ = app.run_on_main_thread(move || unsafe {
             if NATIVE_TEST_PANEL_ANIMATION_ID.load(Ordering::SeqCst) != animation_id {
                 return;
@@ -203,6 +205,7 @@ fn spawn_prepared_transition<R: tauri::Runtime + 'static>(
             finish_transition_state(prepared.final_cards_progress, prepared.final_cards_entering);
             let context = resolve_native_transition_context(handles);
             finalize_prepared_transition(handles, context, &render_plan, prepared);
+            begin_pending_transition_after_completion(app_after_finish, handles, prepared.request);
         });
     });
 }
@@ -228,6 +231,29 @@ unsafe fn finalize_prepared_transition(
                 render_plan,
                 prepared.target_height,
             );
+        }
+    }
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn begin_pending_transition_after_completion<R: tauri::Runtime + 'static>(
+    app: AppHandle<R>,
+    handles: NativePanelHandles,
+    completed_request: NativePanelTransitionRequest,
+) {
+    let Some(pending) = take_pending_native_panel_transition_after_completion(completed_request)
+    else {
+        return;
+    };
+    match pending.request {
+        NativePanelTransitionRequest::Open => {
+            begin_native_panel_transition(app, handles, pending.snapshot, true);
+        }
+        NativePanelTransitionRequest::Close => {
+            begin_native_panel_transition(app, handles, pending.snapshot, false);
+        }
+        NativePanelTransitionRequest::SurfaceSwitch => {
+            begin_native_panel_surface_transition(app, handles, pending.snapshot);
         }
     }
 }

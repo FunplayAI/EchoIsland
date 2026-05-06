@@ -132,6 +132,7 @@ mod tests {
             transition_cards_progress: 0.0,
             transition_cards_entering: false,
             skip_next_close_card_exit: false,
+            pending_transition: None,
             last_raw_snapshot: None,
             last_snapshot: Some(echoisland_runtime::RuntimeSnapshot {
                 status: "idle".to_string(),

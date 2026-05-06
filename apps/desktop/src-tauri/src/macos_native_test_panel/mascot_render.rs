@@ -44,8 +44,14 @@ pub(super) unsafe fn apply_native_mascot_frame(
         NSPoint::new(body_x, body_y),
         NSSize::new(body_width, body_height),
     ));
-    let stroke_color = ns_color(frame.color);
-    let body_fill = if frame.state == NativeMascotState::Sleepy {
+    let stroke_color = if frame.debug_mode_enabled {
+        ns_color([1.0, 1.0, 1.0, 1.0])
+    } else {
+        ns_color(frame.color)
+    };
+    let body_fill = if frame.debug_mode_enabled {
+        ns_color([1.0, 1.0, 1.0, 1.0])
+    } else if frame.state == NativeMascotState::Sleepy {
         ns_color([0.012, 0.012, 0.012, 1.0])
     } else {
         ns_color([0.02, 0.02, 0.02, 1.0])
@@ -165,9 +171,16 @@ pub(super) unsafe fn apply_native_mascot_frame(
     }
     sync_completion_glow(completion_glow, frame);
 
+    let face_fill = if frame.debug_mode_enabled {
+        ns_color([0.095, 0.095, 0.11, 1.0])
+    } else {
+        ns_color([1.0, 1.0, 1.0, 1.0])
+    };
     for face_part in [mascot_left_eye, mascot_right_eye, mascot_mouth] {
         face_part.setHidden(false);
         if let Some(layer) = face_part.layer() {
+            layer.setBackgroundColor(Some(&face_fill.CGColor()));
+            layer.setShadowColor(Some(&face_fill.CGColor()));
             layer.setShadowOpacity(0.22);
             layer.setShadowRadius(6.0);
         }

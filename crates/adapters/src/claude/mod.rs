@@ -52,7 +52,7 @@ impl ClaudePaths {
         let claude_dir = claude_config_dir_from_home(&home_dir);
         let settings_path = claude_settings_path_from_home(&home_dir);
         let projects_dir = claude_projects_dir_from_home(&home_dir);
-        let hook_script_path = claude_dir.join("hooks").join("codeisland-hook.sh");
+        let hook_script_path = claude_dir.join("hooks").join("echoisland-hook.sh");
         let bridge_install_dir = echoisland_bin_dir_from_home(&home_dir);
         let bridge_path = bridge_binary_path_from_home(&home_dir);
         Self {
@@ -83,7 +83,7 @@ pub fn default_paths() -> ClaudePaths {
         claude_dir: claude_config_dir(),
         settings_path: claude_settings_path(),
         projects_dir: claude_projects_dir(),
-        hook_script_path: claude_config_dir().join("hooks").join("codeisland-hook.sh"),
+        hook_script_path: claude_config_dir().join("hooks").join("echoisland-hook.sh"),
         bridge_install_dir: echoisland_bin_dir(),
         bridge_path: bridge_binary_path(),
     }

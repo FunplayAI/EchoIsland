@@ -435,6 +435,12 @@ mod tests {
             Ok(())
         }
 
+        fn mascot_debug_click(&mut self) -> Result<(), Self::Error> {
+            self.handled
+                .push(NativePanelRuntimeCommand::MascotDebugClick);
+            Ok(())
+        }
+
         fn open_settings_location(&mut self) -> Result<(), Self::Error> {
             self.handled
                 .push(NativePanelRuntimeCommand::OpenSettingsLocation);
@@ -563,6 +569,7 @@ mod tests {
             cards: vec![],
             glow: None,
             mascot_pose: SceneMascotPose::Idle,
+            debug_mode_enabled: false,
             hit_targets: vec![],
             nodes: vec![],
         }

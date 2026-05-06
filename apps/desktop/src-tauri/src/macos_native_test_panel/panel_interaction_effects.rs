@@ -5,6 +5,7 @@ use crate::native_panel_renderer::facade::{
     command::{
         NativePanelPlatformEvent, NativePanelRuntimeDispatchMode,
         dispatch_native_panel_click_command_with_app_handle,
+        dispatch_native_panel_platform_events_with_app_handle,
         execute_native_panel_settings_surface_command,
     },
     interaction::{
@@ -23,6 +24,18 @@ pub(super) fn handle_native_click_command<R: tauri::Runtime + 'static>(
     dispatch_native_panel_click_command_with_app_handle(
         app,
         click_command,
+        toggle_native_panel_settings_surface,
+        NativePanelRuntimeDispatchMode::Scheduled,
+    )
+}
+
+pub(super) fn handle_native_platform_event<R: tauri::Runtime + 'static>(
+    app: AppHandle<R>,
+    event: NativePanelPlatformEvent,
+) -> Result<(), String> {
+    dispatch_native_panel_platform_events_with_app_handle(
+        app,
+        [event],
         toggle_native_panel_settings_surface,
         NativePanelRuntimeDispatchMode::Scheduled,
     )

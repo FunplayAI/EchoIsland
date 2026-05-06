@@ -356,8 +356,8 @@ fn has_reliable_terminal_focus_metadata(target: &SessionFocusTarget) -> bool {
 
 fn configured_terminal_target() -> Option<MacFocusTarget> {
     for name in [
-        "CODEISLAND_MACOS_FOCUS_TERMINAL",
-        "CODEISLAND_DEFAULT_TERMINAL",
+        "ECHOISLAND_MACOS_FOCUS_TERMINAL",
+        "ECHOISLAND_DEFAULT_TERMINAL",
     ] {
         let Ok(value) = env::var(name) else {
             continue;

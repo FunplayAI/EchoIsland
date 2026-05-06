@@ -17,6 +17,7 @@ pub(super) fn initialize_native_panel_state(
         transition_cards_progress: 1.0,
         transition_cards_entering: false,
         skip_next_close_card_exit: false,
+        pending_transition: None,
         last_raw_snapshot: None,
         last_snapshot: None,
         scene_cache: NativePanelRuntimeSceneCache::default(),

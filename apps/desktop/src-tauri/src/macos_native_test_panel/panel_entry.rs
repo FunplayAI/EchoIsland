@@ -20,7 +20,7 @@ use crate::native_panel_renderer::facade::env::native_panel_enabled_from_webview
 use tracing::info;
 
 pub(crate) fn native_ui_enabled() -> bool {
-    native_panel_enabled_from_webview_env_value(std::env::var("CODEISLAND_USE_WEBVIEW").ok())
+    native_panel_enabled_from_webview_env_value(std::env::var("ECHOISLAND_USE_WEBVIEW").ok())
 }
 
 pub(crate) fn create_native_island_panel() -> Result<(), String> {

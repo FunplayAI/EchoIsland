@@ -47,6 +47,7 @@ pub(crate) mod facade {
         pub(crate) use super::super::runtime_commands::{
             dispatch_drained_native_panel_platform_events_with_app_handle,
             dispatch_native_panel_click_command_with_app_handle,
+            dispatch_native_panel_platform_events_with_app_handle,
             execute_native_panel_settings_surface_command,
             run_native_panel_pointer_input_with_queued_command_dispatch,
             run_native_panel_runtime_with_queued_command_dispatch,
@@ -263,10 +264,13 @@ pub(crate) mod facade {
 
     pub(crate) mod transition {
         pub(crate) use super::super::transition_controller::{
-            NativePanelTransitionRequest, dispatch_native_panel_transition_request_or_fallback_via,
+            NativePanelPendingTransition, NativePanelTransitionRequest,
+            clear_pending_native_panel_transition_request,
+            dispatch_native_panel_transition_request_or_fallback_via,
             dispatch_native_panel_transition_request_with_snapshot_via,
             native_panel_transition_request_for_snapshot_sync,
-            resolve_native_panel_animation_timeline,
+            pending_native_panel_transition_if_active, resolve_native_panel_animation_timeline,
+            take_pending_native_panel_transition_after_completed,
         };
     }
 

@@ -5,6 +5,7 @@ use crate::native_panel_renderer::facade::interaction::{
     toggle_native_panel_settings_surface_for_state,
 };
 use crate::native_panel_renderer::facade::{
+    command::NativePanelPlatformEvent,
     descriptor::NativePanelPointerRegion,
     interaction::{
         NativePanelHoverFallbackFrames, NativePanelPollingHostFacts,
@@ -24,12 +25,15 @@ use super::panel_constants::{
 use super::panel_geometry::absolute_rect;
 use super::panel_hit_testing::native_hover_pill_rect;
 use super::panel_host_adapter::ns_rect_to_panel_rect;
-use super::panel_interaction_effects::handle_native_click_command;
+use super::panel_interaction_effects::{handle_native_click_command, handle_native_platform_event};
 use super::panel_refs::{
     native_panel_handles, native_panel_state, panel_from_ptr, resolve_native_panel_refs,
     view_from_ptr,
 };
-use super::panel_runtime_dispatch::dispatch_native_panel_transition_request_immediate_with_snapshot;
+use super::panel_runtime_dispatch::{
+    clear_pending_native_panel_close_transition_in_state,
+    dispatch_native_panel_transition_request_immediate_with_snapshot,
+};
 use super::panel_types::NativeExpandedSurface;
 use super::panel_types::NativePanelHandles;
 #[cfg(test)]
@@ -53,6 +57,7 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
     let now = Instant::now();
     let transition_request: Option<NativePanelTransitionRequest>;
     let transition_snapshot;
+    let click_platform_event: Option<NativePanelPlatformEvent>;
     let click_command: PanelInteractionCommand;
     let next_ignores_mouse_events;
     let sync_mouse_event_passthrough;
@@ -72,11 +77,15 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
             HOVER_DELAY_MS,
             CARD_FOCUS_CLICK_DEBOUNCE_MS,
         );
+        click_platform_event = interaction.click_platform_event;
         click_command = interaction.click_command;
         transition_request = interaction.transition_request;
         transition_snapshot = interaction.transition_snapshot;
         next_ignores_mouse_events = interaction.next_ignores_mouse_events;
         sync_mouse_event_passthrough = interaction.sync_mouse_event_passthrough;
+        if interaction.interactive_inside {
+            clear_pending_native_panel_close_transition_in_state(&mut state);
+        }
     }
 
     if sync_mouse_event_passthrough {
@@ -88,6 +97,14 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
         transition_request,
         transition_snapshot,
     );
+
+    if matches!(
+        click_platform_event,
+        Some(NativePanelPlatformEvent::MascotDebugClick)
+    ) {
+        let _ =
+            handle_native_platform_event(app.clone(), NativePanelPlatformEvent::MascotDebugClick);
+    }
 
     let _ = handle_native_click_command(app, click_command);
 }

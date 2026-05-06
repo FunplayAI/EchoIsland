@@ -198,6 +198,7 @@ pub(crate) fn build_panel_scene(
         cards,
         glow,
         mascot_pose,
+        debug_mode_enabled: input.settings.debug_mode_enabled,
         hit_targets,
         nodes,
     }

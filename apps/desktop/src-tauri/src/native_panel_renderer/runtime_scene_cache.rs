@@ -1342,6 +1342,7 @@ mod tests {
                 cards: vec![],
                 glow: None,
                 mascot_pose: SceneMascotPose::Idle,
+                debug_mode_enabled: false,
                 hit_targets: vec![],
                 nodes: vec![],
             },

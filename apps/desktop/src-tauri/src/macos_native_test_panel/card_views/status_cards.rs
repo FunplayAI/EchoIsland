@@ -41,6 +41,9 @@ pub(crate) unsafe fn create_status_queue_card(
         NativeStatusQueuePayload::Approval(_) => {
             render_pending_card_spec(frame, build_status_queue_pending_card_spec(item))
         }
+        NativeStatusQueuePayload::Question(_) => {
+            render_pending_card_spec(frame, build_status_queue_pending_card_spec(item))
+        }
         NativeStatusQueuePayload::Completion(_) => {
             render_completion_card_spec(frame, build_status_queue_completion_card_spec(item))
         }

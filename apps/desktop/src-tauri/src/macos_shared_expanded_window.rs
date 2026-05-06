@@ -31,8 +31,8 @@ const SHARED_EXPANDED_WINDOW_LEVEL: isize = 27;
 
 #[cfg(target_os = "macos")]
 const SHARED_EXPANDED_BOOTSTRAP_SCRIPT: &str = r#"
-window.__CODEISLAND_SHELL__ = "native";
-window.__CODEISLAND_PLATFORM_BACKEND__ = "tauri-native";
+window.__ECHOISLAND_SHELL__ = "native";
+window.__ECHOISLAND_PLATFORM_BACKEND__ = "tauri-native";
 "#;
 
 #[cfg(target_os = "macos")]
@@ -49,7 +49,7 @@ struct SharedExpandedWindowState {
 #[cfg(target_os = "macos")]
 pub fn shared_expanded_enabled() -> bool {
     native_panel_feature_enabled_from_env_value(
-        std::env::var("CODEISLAND_MACOS_SHARED_EXPANDED").ok(),
+        std::env::var("ECHOISLAND_MACOS_SHARED_EXPANDED").ok(),
     )
 }
 
