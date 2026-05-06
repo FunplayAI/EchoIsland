@@ -9,6 +9,7 @@ dist/
 docs/
 promo-video/
 apps/desktop/src-tauri/gen/schemas/
+apps/desktop/src-tauri/resources/echoisland-hook-bridge*
 
 .idea/
 .vscode/

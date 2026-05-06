@@ -19,6 +19,22 @@ use super::{
     },
 };
 
+#[cfg(all(windows, not(test)))]
+const COMPLETION_GLOW_IMAGE_BYTES: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../web/assets/island-completion-inner-glow-9slice.png"
+));
+#[cfg(all(windows, not(test)))]
+const COMPLETION_GLOW_IMAGE_WIDTH: f64 = 480.0;
+#[cfg(all(windows, not(test)))]
+const COMPLETION_GLOW_IMAGE_HEIGHT: f64 = 160.0;
+#[cfg(all(windows, not(test)))]
+const COMPLETION_GLOW_IMAGE_RADIUS: f64 = 64.0;
+#[cfg(all(windows, not(test)))]
+const COMPLETION_GLOW_SLICE_LEFT: f64 = 160.0;
+#[cfg(all(windows, not(test)))]
+const COMPLETION_GLOW_SLICE_RIGHT: f64 = 160.0;
+
 pub(super) fn directwrite_text_requests_from_paint_plan(
     plan: &WindowsNativePanelPaintPlan,
 ) -> Vec<WindowsDirectWriteTextLayoutRequest> {
@@ -305,6 +321,8 @@ pub(super) struct Direct2DWindowsNativePanelPainter {
     resource_cache: WindowsDirect2DResourceCacheState,
     #[cfg(all(windows, not(test)))]
     surface: Option<WindowsDirect2DPaintSurface>,
+    #[cfg(all(windows, not(test)))]
+    completion_glow_bitmap: Option<windows::Win32::Graphics::Direct2D::ID2D1Bitmap>,
 }
 
 impl Direct2DWindowsNativePanelPainter {
@@ -316,6 +334,8 @@ impl Direct2DWindowsNativePanelPainter {
             resource_cache: WindowsDirect2DResourceCacheState::default(),
             #[cfg(all(windows, not(test)))]
             surface: None,
+            #[cfg(all(windows, not(test)))]
+            completion_glow_bitmap: None,
         })
     }
 
@@ -410,6 +430,19 @@ impl Direct2DWindowsNativePanelPainter {
             operations.extend(resolve_windows_native_panel_paint_operations(plan));
             for operation in operations {
                 match operation {
+                    WindowsNativePanelPaintOperation::DrawCompletionGlowImage {
+                        frame,
+                        opacity,
+                    } => {
+                        let target = &surface.target;
+                        let Ok(bitmap) = ensure_completion_glow_bitmap_for_target(
+                            target,
+                            &mut self.completion_glow_bitmap,
+                        ) else {
+                            continue;
+                        };
+                        draw_completion_glow_image(target, bitmap, coordinate_space, frame, opacity);
+                    }
                     WindowsNativePanelPaintOperation::FillHitTestBlocker { frame, alpha } => {
                         let brush = surface
                             .target
@@ -612,7 +645,163 @@ impl Direct2DWindowsNativePanelPainter {
             .factory()
             .ok_or_else(|| "Direct2D factory is not initialized".to_string())?;
         self.surface = Some(WindowsDirect2DPaintSurface::new(factory, key, dpi_scale)?);
+        self.completion_glow_bitmap = None;
         Ok(())
+    }
+}
+
+#[cfg(all(windows, not(test)))]
+fn ensure_completion_glow_bitmap_for_target<'a>(
+    target: &windows::Win32::Graphics::Direct2D::ID2D1DCRenderTarget,
+    slot: &'a mut Option<windows::Win32::Graphics::Direct2D::ID2D1Bitmap>,
+) -> Result<&'a windows::Win32::Graphics::Direct2D::ID2D1Bitmap, String> {
+    if slot.is_none() {
+        *slot = Some(create_completion_glow_bitmap(target)?);
+    }
+    slot.as_ref()
+        .ok_or_else(|| "completion glow bitmap was not initialized".to_string())
+}
+
+#[cfg(all(windows, not(test)))]
+fn create_completion_glow_bitmap(
+    target: &windows::Win32::Graphics::Direct2D::ID2D1DCRenderTarget,
+) -> Result<windows::Win32::Graphics::Direct2D::ID2D1Bitmap, String> {
+    use windows::{
+        Win32::{
+            Foundation::RPC_E_CHANGED_MODE,
+            Graphics::Imaging::{
+                CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICBitmapSource,
+                IWICImagingFactory, WICBitmapDitherTypeNone, WICBitmapPaletteTypeMedianCut,
+                WICDecodeMetadataCacheOnLoad,
+            },
+            System::Com::{
+                CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
+            },
+        },
+    };
+
+    let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }
+        .ok()
+        .or_else(|error| {
+            if error.code() == RPC_E_CHANGED_MODE {
+                Ok(())
+            } else {
+                Err(error)
+            }
+        })
+        .map_err(|error| error.to_string())?;
+
+    let factory: IWICImagingFactory =
+        unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER) }
+            .map_err(|error| error.to_string())?;
+    let stream = unsafe { factory.CreateStream() }.map_err(|error| error.to_string())?;
+    unsafe { stream.InitializeFromMemory(COMPLETION_GLOW_IMAGE_BYTES) }
+        .map_err(|error| error.to_string())?;
+    let decoder = unsafe {
+        factory.CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnLoad)
+    }
+    .map_err(|error| error.to_string())?;
+    let frame = unsafe { decoder.GetFrame(0) }.map_err(|error| error.to_string())?;
+    let converter = unsafe { factory.CreateFormatConverter() }.map_err(|error| error.to_string())?;
+    unsafe {
+        converter.Initialize(
+            &frame,
+            &GUID_WICPixelFormat32bppPBGRA,
+            WICBitmapDitherTypeNone,
+            None,
+            0.0,
+            WICBitmapPaletteTypeMedianCut,
+        )
+    }
+    .map_err(|error| error.to_string())?;
+    let source: IWICBitmapSource = converter.into();
+    unsafe { target.CreateBitmapFromWicBitmap(&source, None) }.map_err(|error| error.to_string())
+}
+
+#[cfg(all(windows, not(test)))]
+fn draw_completion_glow_image(
+    target: &windows::Win32::Graphics::Direct2D::ID2D1DCRenderTarget,
+    bitmap: &windows::Win32::Graphics::Direct2D::ID2D1Bitmap,
+    coordinate_space: WindowsDirect2DCoordinateSpace,
+    frame: PanelRect,
+    opacity: f64,
+) {
+    use windows::Win32::Graphics::Direct2D::D2D1_BITMAP_INTERPOLATION_MODE_LINEAR;
+
+    let display_scale =
+        (crate::native_panel_core::COMPACT_PILL_RADIUS / COMPLETION_GLOW_IMAGE_RADIUS).max(0.0);
+    let display_height = (COMPLETION_GLOW_IMAGE_HEIGHT * display_scale)
+        .min(frame.height)
+        .max(0.0);
+    let mut left_width = COMPLETION_GLOW_SLICE_LEFT * display_scale;
+    let mut right_width = COMPLETION_GLOW_SLICE_RIGHT * display_scale;
+    let total_cap_width = left_width + right_width;
+    if total_cap_width > frame.width && total_cap_width > 0.0 {
+        let shrink = frame.width / total_cap_width;
+        left_width *= shrink;
+        right_width *= shrink;
+    }
+    let center_width = (frame.width - left_width - right_width).max(0.0);
+    let y = frame.y;
+    let slices = [
+        (
+            PanelRect {
+                x: frame.x,
+                y,
+                width: left_width,
+                height: display_height,
+            },
+            PanelRect {
+                x: 0.0,
+                y: 0.0,
+                width: COMPLETION_GLOW_SLICE_LEFT,
+                height: COMPLETION_GLOW_IMAGE_HEIGHT,
+            },
+        ),
+        (
+            PanelRect {
+                x: frame.x + left_width,
+                y,
+                width: center_width,
+                height: display_height,
+            },
+            PanelRect {
+                x: COMPLETION_GLOW_SLICE_LEFT,
+                y: 0.0,
+                width: COMPLETION_GLOW_IMAGE_WIDTH - COMPLETION_GLOW_SLICE_LEFT - COMPLETION_GLOW_SLICE_RIGHT,
+                height: COMPLETION_GLOW_IMAGE_HEIGHT,
+            },
+        ),
+        (
+            PanelRect {
+                x: frame.x + frame.width - right_width,
+                y,
+                width: right_width,
+                height: display_height,
+            },
+            PanelRect {
+                x: COMPLETION_GLOW_IMAGE_WIDTH - COMPLETION_GLOW_SLICE_RIGHT,
+                y: 0.0,
+                width: COMPLETION_GLOW_SLICE_RIGHT,
+                height: COMPLETION_GLOW_IMAGE_HEIGHT,
+            },
+        ),
+    ];
+    for (dest, source) in slices {
+        if dest.width <= 0.0 || dest.height <= 0.0 || source.width <= 0.0 || source.height <= 0.0 {
+            continue;
+        }
+        let dest = d2d_rect(coordinate_space.rect(dest));
+        let source = d2d_rect(source);
+        unsafe {
+            target.DrawBitmap(
+                bitmap,
+                Some(&dest),
+                opacity.clamp(0.0, 1.0) as f32,
+                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                Some(&source),
+            );
+        }
     }
 }
 

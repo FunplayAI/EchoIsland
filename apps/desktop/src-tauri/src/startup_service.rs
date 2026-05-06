@@ -1,7 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use echoisland_adapters::{ClaudeAdapter, CodexAdapter, InstallableAdapter, claude_default_paths};
-use echoisland_paths::{bridge_binary_name, codex_dir};
+use echoisland_paths::{bridge_binary_name, bridge_binary_path, codex_dir};
+use tauri::Manager;
 use tracing::{info, warn};
 
 use crate::{
@@ -118,7 +119,8 @@ impl<'a, R: tauri::Runtime> AppStartupService<'a, R> {
     }
 
     fn initialize_hooks(&self) -> Result<(), String> {
-        let Some(source_bridge) = resolve_source_bridge() else {
+        let resource_dir = self.app.path().resource_dir().ok();
+        let Some(source_bridge) = resolve_source_bridge(resource_dir.as_deref()) else {
             warn!("hook bridge binary not found; skipping Claude/Codex hook installation");
             return Ok(());
         };
@@ -163,7 +165,13 @@ impl<'a, R: tauri::Runtime> AppStartupService<'a, R> {
     }
 }
 
-fn resolve_source_bridge() -> Option<PathBuf> {
+fn resolve_source_bridge(resource_dir: Option<&Path>) -> Option<PathBuf> {
+    source_bridge_candidates(resource_dir)
+        .into_iter()
+        .find(|path| path.is_file())
+}
+
+fn source_bridge_candidates(resource_dir: Option<&Path>) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     if let Some(env_bridge) = std::env::var_os("ECHOISLAND_HOOK_BRIDGE") {
         candidates.push(PathBuf::from(env_bridge));
@@ -173,9 +181,12 @@ fn resolve_source_bridge() -> Option<PathBuf> {
     {
         candidates.push(parent.join(bridge_binary_name()));
     }
+    if let Some(resource_dir) = resource_dir {
+        candidates.push(resource_dir.join(bridge_binary_name()));
+    }
     candidates.extend(source_bridge_candidates_from_repo());
 
-    candidates.into_iter().find(|path| path.is_file())
+    candidates
 }
 
 fn source_bridge_candidates_from_repo() -> Vec<PathBuf> {
@@ -197,12 +208,15 @@ fn source_bridge_candidates_from_repo() -> Vec<PathBuf> {
                 .join(bridge_binary_name()),
         );
     }
+    candidates.push(bridge_binary_path());
     candidates
 }
 
 #[cfg(test)]
 mod tests {
     use crate::platform::PlatformBackend;
+
+    use std::path::PathBuf;
 
     use super::{StartupPolicy, source_bridge_candidates_from_repo};
 
@@ -241,10 +255,19 @@ mod tests {
         let candidates = source_bridge_candidates_from_repo();
 
         assert!(!candidates.is_empty());
+        assert!(candidates.contains(&echoisland_paths::bridge_binary_path()));
         assert!(candidates.iter().all(|path| {
             path.file_name()
                 .and_then(|value| value.to_str())
                 .is_some_and(|name| name.starts_with("echoisland-hook-bridge"))
         }));
+    }
+
+    #[test]
+    fn source_bridge_candidates_include_resource_dir_bridge() {
+        let resource_dir = PathBuf::from("C:/Program Files/EchoIsland");
+        let candidates = super::source_bridge_candidates(Some(&resource_dir));
+
+        assert!(candidates.contains(&resource_dir.join(echoisland_paths::bridge_binary_name())));
     }
 }

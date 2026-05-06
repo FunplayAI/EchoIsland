@@ -169,6 +169,7 @@ pub(crate) fn resolve_native_panel_visual_plan(
     if input.display_mode == NativePanelVisualDisplayMode::Compact {
         push_compact_island_background(&mut primitives, input, compact_frame);
     }
+    push_completion_glow_if_visible(&mut primitives, input, compact_frame);
 
     if input.display_mode == NativePanelVisualDisplayMode::Expanded {
         primitives.push(NativePanelVisualPrimitive::RoundRect {
@@ -336,6 +337,25 @@ pub(crate) fn native_panel_visual_card_input_from_scene_card(
     card: &SceneCard,
 ) -> NativePanelVisualCardInput {
     native_panel_visual_card_input_from_scene_card_with_height(card, 72.0)
+}
+
+fn push_completion_glow_if_visible(
+    primitives: &mut Vec<NativePanelVisualPrimitive>,
+    input: &NativePanelVisualPlanInput,
+    compact_frame: PanelRect,
+) {
+    if !input.glow_visible {
+        return;
+    }
+    let breath = (((input.mascot_elapsed_ms as f64 / 1000.0) * 3.2).sin() + 1.0) * 0.5;
+    let opacity = 0.78 * (0.42 + breath * 0.46);
+    if opacity <= 0.02 {
+        return;
+    }
+    primitives.push(NativePanelVisualPrimitive::CompletionGlow {
+        frame: compact_frame,
+        opacity: opacity.clamp(0.0, 1.0),
+    });
 }
 
 pub(crate) fn native_panel_visual_card_input_from_scene_card_with_height(
@@ -976,7 +996,8 @@ fn translate_primitive_y(primitive: &mut NativePanelVisualPrimitive, translate_y
         NativePanelVisualPrimitive::RoundRect { frame, .. }
         | NativePanelVisualPrimitive::Rect { frame, .. }
         | NativePanelVisualPrimitive::Ellipse { frame, .. }
-        | NativePanelVisualPrimitive::CompactShoulder { frame, .. } => {
+        | NativePanelVisualPrimitive::CompactShoulder { frame, .. }
+        | NativePanelVisualPrimitive::CompletionGlow { frame, .. } => {
             frame.y += translate_y;
         }
         NativePanelVisualPrimitive::StrokeLine { from, to, .. } => {
@@ -1008,6 +1029,9 @@ fn fade_primitive_color(
         NativePanelVisualPrimitive::CompactShoulder { fill, border, .. } => {
             *fill = blend_visual_color(fade_base, *fill, progress);
             *border = blend_visual_color(fade_base, *border, progress);
+        }
+        NativePanelVisualPrimitive::CompletionGlow { opacity, .. } => {
+            *opacity *= progress.clamp(0.0, 1.0);
         }
         NativePanelVisualPrimitive::MascotDot { .. } => {}
     }
@@ -1525,7 +1549,8 @@ fn primitive_vertical_bounds(primitive: &NativePanelVisualPrimitive) -> Option<(
         NativePanelVisualPrimitive::RoundRect { frame, .. }
         | NativePanelVisualPrimitive::Rect { frame, .. }
         | NativePanelVisualPrimitive::Ellipse { frame, .. }
-        | NativePanelVisualPrimitive::CompactShoulder { frame, .. } => {
+        | NativePanelVisualPrimitive::CompactShoulder { frame, .. }
+        | NativePanelVisualPrimitive::CompletionGlow { frame, .. } => {
             Some((frame.y, frame.y + frame.height))
         }
         NativePanelVisualPrimitive::StrokeLine { from, to, .. } => {
@@ -2642,6 +2667,11 @@ mod tests {
         input.glow_visible = true;
         let plan = resolve_native_panel_visual_plan(&input);
 
+        assert!(plan.primitives.iter().any(|primitive| matches!(
+            primitive,
+            NativePanelVisualPrimitive::CompletionGlow { frame, opacity }
+                if *frame == input.compact_bar_frame && *opacity > 0.0
+        )));
         assert!(!plan.primitives.iter().any(|primitive| matches!(
             primitive,
             NativePanelVisualPrimitive::RoundRect { frame, .. }
@@ -3661,6 +3691,11 @@ mod tests {
         input.glow_visible = true;
         let plan = resolve_native_panel_visual_plan(&input);
 
+        assert!(plan.primitives.iter().any(|primitive| matches!(
+            primitive,
+            NativePanelVisualPrimitive::CompletionGlow { frame, opacity }
+                if *frame == input.compact_bar_frame && *opacity > 0.0
+        )));
         assert!(!plan.primitives.iter().any(|primitive| matches!(
             primitive,
             NativePanelVisualPrimitive::RoundRect {

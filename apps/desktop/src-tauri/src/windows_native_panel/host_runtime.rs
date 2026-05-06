@@ -742,10 +742,6 @@ impl WindowsNativePanelRuntime {
     }
 
     pub(super) fn refresh_mascot_animation_frame_at(&mut self, now: Instant) -> bool {
-        if self.panel_state.transitioning || self.animation_scheduler.is_active() {
-            self.mascot_animation_started_at = None;
-            return false;
-        }
         if !self.host.shell.mascot_animation_needs_refresh() {
             self.mascot_animation_started_at = None;
             return false;

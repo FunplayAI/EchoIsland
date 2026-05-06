@@ -18,6 +18,10 @@ impl NativePanelVisualColor {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum NativePanelVisualPrimitive {
+    CompletionGlow {
+        frame: PanelRect,
+        opacity: f64,
+    },
     RoundRect {
         frame: PanelRect,
         radius: f64,
@@ -105,6 +109,15 @@ mod tests {
         let plan = NativePanelVisualPlan {
             hidden: false,
             primitives: vec![
+                NativePanelVisualPrimitive::CompletionGlow {
+                    frame: PanelRect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 120.0,
+                        height: 48.0,
+                    },
+                    opacity: 0.5,
+                },
                 NativePanelVisualPrimitive::RoundRect {
                     frame: PanelRect {
                         x: 0.0,
@@ -139,6 +152,6 @@ mod tests {
         };
 
         assert!(!plan.hidden);
-        assert_eq!(plan.primitives.len(), 3);
+        assert_eq!(plan.primitives.len(), 4);
     }
 }

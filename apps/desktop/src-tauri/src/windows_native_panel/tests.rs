@@ -3474,7 +3474,7 @@ fn windows_runtime_refreshes_mascot_animation_paint_job_without_scene_sync() {
 }
 
 #[test]
-fn windows_runtime_skips_lightweight_refreshes_during_panel_transition() {
+fn windows_runtime_keeps_mascot_animation_refreshing_during_panel_transition() {
     let mut runtime = super::WindowsNativePanelRuntime::default();
     let now = Instant::now();
     let mut frame = shell_draw_frame(Vec::new(), true);
@@ -3494,10 +3494,16 @@ fn windows_runtime_skips_lightweight_refreshes_during_panel_transition() {
         Some(now - Duration::from_millis(crate::native_panel_core::MASCOT_ANIMATION_REFRESH_MS));
 
     assert!(!runtime.refresh_active_count_marquee_frame_at(now));
-    assert!(!runtime.refresh_mascot_animation_frame_at(now));
-    assert!(runtime.host.shell.pending_paint_job().is_none());
+    assert!(runtime.refresh_mascot_animation_frame_at(now));
+    let paint_job = runtime
+        .host
+        .shell
+        .pending_paint_job()
+        .expect("mascot transition paint job");
+    assert_eq!(paint_job.mascot_pose, SceneMascotPose::Idle);
+    assert!(paint_job.mascot_elapsed_ms > 0);
     assert!(runtime.active_count_marquee_started_at.is_none());
-    assert!(runtime.mascot_animation_started_at.is_none());
+    assert!(runtime.mascot_animation_started_at.is_some());
 }
 
 #[test]

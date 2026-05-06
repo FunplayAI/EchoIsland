@@ -31,6 +31,10 @@ pub(super) enum WindowsNativePanelPainterBackend {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum WindowsNativePanelPaintOperation {
+    DrawCompletionGlowImage {
+        frame: PanelRect,
+        opacity: f64,
+    },
     FillHitTestBlocker {
         frame: PanelRect,
         alpha: u8,
@@ -161,6 +165,12 @@ fn windows_native_panel_paint_operation_from_primitive(
     primitive: &WindowsNativePanelPaintPrimitive,
 ) -> WindowsNativePanelPaintOperation {
     match primitive {
+        WindowsNativePanelPaintPrimitive::CompletionGlow { frame, opacity } => {
+            WindowsNativePanelPaintOperation::DrawCompletionGlowImage {
+                frame: *frame,
+                opacity: *opacity,
+            }
+        }
         WindowsNativePanelPaintPrimitive::RoundRect {
             frame,
             radius,
@@ -356,6 +366,7 @@ pub(super) fn paint_windows_native_panel_job_with_gdi(
 
         for operation in &operations {
             match operation {
+                WindowsNativePanelPaintOperation::DrawCompletionGlowImage { .. } => {}
                 WindowsNativePanelPaintOperation::FillHitTestBlocker { .. } => {}
                 WindowsNativePanelPaintOperation::FillRoundRect {
                     frame,
@@ -745,6 +756,11 @@ mod tests {
         let operations = resolve_windows_native_panel_paint_operations(&plan);
 
         assert_eq!(operations.len(), plan.primitives.len());
+        assert!(operations.iter().any(|operation| matches!(
+            operation,
+            WindowsNativePanelPaintOperation::DrawCompletionGlowImage { opacity, .. }
+                if *opacity > 0.0
+        )));
         assert!(operations.iter().any(|operation| matches!(
             operation,
             WindowsNativePanelPaintOperation::DrawText { text, .. } if text == "Codex ready"
