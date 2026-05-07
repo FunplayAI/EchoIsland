@@ -1,7 +1,9 @@
-use crate::native_panel_core::{
-    DEFAULT_COMPACT_PILL_WIDTH, DEFAULT_EXPANDED_PILL_WIDTH, PanelRect, ease_out_cubic, lerp,
-    resolve_compact_action_button_layout,
+pub(crate) use crate::native_panel_core::{
+    ActionButtonVisibilitySpec, ActionButtonVisibilitySpecInput,
+    action_button_transition_progress_from_compact_width, action_button_visual_frame_for_phase,
+    resolve_action_button_visibility_spec,
 };
+use crate::native_panel_core::{PanelRect, lerp, resolve_compact_action_button_layout};
 
 use super::{
     descriptors::NativePanelEdgeAction,
@@ -17,21 +19,6 @@ pub(crate) struct ActionButtonVisualSpecInput<'a> {
     pub(crate) visible: bool,
     pub(crate) compact_frame: PanelRect,
     pub(crate) buttons: &'a [(NativePanelEdgeAction, PanelRect)],
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct ActionButtonVisibilitySpecInput {
-    pub(crate) semantic_visible: bool,
-    pub(crate) expanded_display_mode: bool,
-    pub(crate) transition_visibility_progress: f64,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct ActionButtonVisibilitySpec {
-    pub(crate) visible: bool,
-    pub(crate) reserves_headline_space: bool,
-    pub(crate) opacity: f64,
-    pub(crate) retract_offset_y: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -55,40 +42,6 @@ pub(crate) fn resolve_action_button_visual_specs(
         .iter()
         .map(|(action, frame)| action_button_visual_spec(*action, *frame, input.compact_frame))
         .collect()
-}
-
-pub(crate) fn resolve_action_button_visibility_spec(
-    input: ActionButtonVisibilitySpecInput,
-) -> ActionButtonVisibilitySpec {
-    let eligible = input.semantic_visible && input.expanded_display_mode;
-    let progress = input.transition_visibility_progress.clamp(0.0, 1.0);
-    let opacity = if eligible {
-        ease_out_cubic(progress)
-    } else {
-        0.0
-    };
-    let visible = eligible && opacity > 0.01;
-    ActionButtonVisibilitySpec {
-        visible,
-        reserves_headline_space: eligible,
-        opacity,
-        retract_offset_y: lerp(-4.0, 0.0, opacity),
-    }
-}
-
-pub(crate) fn action_button_transition_progress_from_compact_width(compact_width: f64) -> f64 {
-    let width_delta = (DEFAULT_EXPANDED_PILL_WIDTH - DEFAULT_COMPACT_PILL_WIDTH).max(1.0);
-    ((compact_width - DEFAULT_COMPACT_PILL_WIDTH) / width_delta).clamp(0.0, 1.0)
-}
-
-pub(crate) fn action_button_visual_frame_for_phase(
-    frame: PanelRect,
-    visibility: ActionButtonVisibilitySpec,
-) -> PanelRect {
-    PanelRect {
-        y: frame.y + visibility.retract_offset_y,
-        ..frame
-    }
 }
 
 pub(crate) fn action_button_visual_color_for_phase(
@@ -274,6 +227,7 @@ mod tests {
                 reserves_headline_space: true,
                 opacity: 1.0,
                 retract_offset_y: 0.0,
+                scale: 1.0,
             }
         );
         assert_eq!(
@@ -287,6 +241,7 @@ mod tests {
                 reserves_headline_space: false,
                 opacity: 0.0,
                 retract_offset_y: -4.0,
+                scale: 0.82,
             }
         );
         assert_eq!(
@@ -300,6 +255,7 @@ mod tests {
                 reserves_headline_space: false,
                 opacity: 0.0,
                 retract_offset_y: -4.0,
+                scale: 0.82,
             }
         );
     }
@@ -321,10 +277,12 @@ mod tests {
         assert!(hidden.reserves_headline_space);
         assert_eq!(hidden.opacity, 0.0);
         assert_eq!(hidden.retract_offset_y, -4.0);
+        assert_eq!(hidden.scale, 0.82);
         assert!(mid.visible);
         assert!(mid.reserves_headline_space);
         assert!(mid.opacity > 0.0 && mid.opacity < 1.0);
         assert!(mid.retract_offset_y > -4.0 && mid.retract_offset_y < 0.0);
+        assert!(mid.scale > 0.82 && mid.scale < 1.0);
     }
 
     #[test]

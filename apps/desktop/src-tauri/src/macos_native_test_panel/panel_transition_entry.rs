@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use echoisland_runtime::RuntimeSnapshot;
 use tauri::AppHandle;
 
-use super::panel_constants::{COLLAPSED_PANEL_HEIGHT, PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS};
+use super::panel_constants::COLLAPSED_PANEL_HEIGHT;
 use super::panel_globals::NATIVE_TEST_PANEL_ANIMATION_ID;
 use super::panel_refs::native_panel_state;
 use super::panel_runtime_dispatch::take_pending_native_panel_transition_after_completion;
@@ -19,6 +19,9 @@ use super::transition_ui::{
     finalize_close_transition, finalize_open_transition, finalize_surface_switch_transition,
     prepare_close_transition, prepare_open_transition, prepare_surface_switch_transition,
     resolve_native_transition_context, resolved_expanded_target_height_for_plan,
+};
+use crate::native_panel_renderer::facade::renderer::{
+    NativePanelTransitionLifecyclePlan, resolve_native_panel_transition_lifecycle_plan,
 };
 use crate::native_panel_renderer::facade::{
     presentation::NativePanelSnapshotRenderPlan, transition::NativePanelTransitionRequest,
@@ -36,10 +39,7 @@ struct NativePanelPreparedTransition {
     request: NativePanelTransitionRequest,
     target_height: f64,
     card_count: usize,
-    initial_cards_progress: f64,
-    initial_cards_entering: bool,
-    final_cards_progress: f64,
-    final_cards_entering: bool,
+    lifecycle: NativePanelTransitionLifecyclePlan,
     finalize: NativePanelTransitionFinalizeKind,
 }
 
@@ -116,6 +116,8 @@ unsafe fn prepare_open_entry_transition(
     render_plan: &NativePanelSnapshotRenderPlan,
     shared_body_height: Option<f64>,
 ) -> NativePanelPreparedTransition {
+    let lifecycle =
+        resolve_native_panel_transition_lifecycle_plan(NativePanelTransitionRequest::Open);
     NativePanelPreparedTransition {
         request: NativePanelTransitionRequest::Open,
         target_height: resolved_expanded_target_height_for_plan(
@@ -123,11 +125,12 @@ unsafe fn prepare_open_entry_transition(
             render_plan,
             shared_body_height,
         ),
-        card_count: prepare_open_transition(context, render_plan),
-        initial_cards_progress: 0.0,
-        initial_cards_entering: true,
-        final_cards_progress: 1.0,
-        final_cards_entering: true,
+        card_count: prepare_open_transition(
+            context,
+            render_plan,
+            lifecycle.initial_card_phase.progress,
+        ),
+        lifecycle,
         finalize: NativePanelTransitionFinalizeKind::Open,
     }
 }
@@ -137,14 +140,17 @@ unsafe fn prepare_close_entry_transition(
     context: super::transition_ui::NativeTransitionContext,
     skip_close_card_exit: bool,
 ) -> NativePanelPreparedTransition {
+    let lifecycle =
+        resolve_native_panel_transition_lifecycle_plan(NativePanelTransitionRequest::Close);
     NativePanelPreparedTransition {
         request: NativePanelTransitionRequest::Close,
         target_height: COLLAPSED_PANEL_HEIGHT,
-        card_count: prepare_close_transition(context, skip_close_card_exit),
-        initial_cards_progress: 0.0,
-        initial_cards_entering: false,
-        final_cards_progress: 0.0,
-        final_cards_entering: false,
+        card_count: prepare_close_transition(
+            context,
+            skip_close_card_exit,
+            lifecycle.initial_card_phase.progress,
+        ),
+        lifecycle,
         finalize: NativePanelTransitionFinalizeKind::Close,
     }
 }
@@ -155,6 +161,8 @@ unsafe fn prepare_surface_switch_entry_transition(
     render_plan: &NativePanelSnapshotRenderPlan,
     shared_body_height: Option<f64>,
 ) -> NativePanelPreparedTransition {
+    let lifecycle =
+        resolve_native_panel_transition_lifecycle_plan(NativePanelTransitionRequest::SurfaceSwitch);
     NativePanelPreparedTransition {
         request: NativePanelTransitionRequest::SurfaceSwitch,
         target_height: resolved_expanded_target_height_for_plan(
@@ -162,11 +170,12 @@ unsafe fn prepare_surface_switch_entry_transition(
             render_plan,
             shared_body_height,
         ),
-        card_count: prepare_surface_switch_transition(context, render_plan),
-        initial_cards_progress: PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
-        initial_cards_entering: true,
-        final_cards_progress: 1.0,
-        final_cards_entering: true,
+        card_count: prepare_surface_switch_transition(
+            context,
+            render_plan,
+            lifecycle.initial_card_phase.progress,
+        ),
+        lifecycle,
         finalize: NativePanelTransitionFinalizeKind::SurfaceSwitch,
     }
 }
@@ -180,8 +189,8 @@ fn spawn_prepared_transition<R: tauri::Runtime + 'static>(
     prepared: NativePanelPreparedTransition,
 ) {
     set_transition_cards_state(
-        prepared.initial_cards_progress,
-        prepared.initial_cards_entering,
+        prepared.lifecycle.initial_card_phase.progress,
+        prepared.lifecycle.initial_card_phase.entering,
     );
 
     tauri::async_runtime::spawn(async move {
@@ -202,7 +211,10 @@ fn spawn_prepared_transition<R: tauri::Runtime + 'static>(
                 return;
             }
 
-            finish_transition_state(prepared.final_cards_progress, prepared.final_cards_entering);
+            finish_transition_state(
+                prepared.lifecycle.final_card_phase.progress,
+                prepared.lifecycle.final_card_phase.entering,
+            );
             let context = resolve_native_transition_context(handles);
             finalize_prepared_transition(handles, context, &render_plan, prepared);
             begin_pending_transition_after_completion(app_after_finish, handles, prepared.request);

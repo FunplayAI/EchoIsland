@@ -8,7 +8,8 @@ use crate::native_panel_renderer::facade::{
     command::NativePanelPlatformEvent,
     descriptor::NativePanelPointerRegion,
     interaction::{
-        NativePanelHoverFallbackFrames, NativePanelPollingHostFacts,
+        NativePanelHostBehaviorCommand, NativePanelHoverFallbackFrames,
+        NativePanelPollingHostFacts,
         sync_native_panel_host_polling_interaction_from_host_facts_for_state,
     },
     transition::NativePanelTransitionRequest,
@@ -59,8 +60,7 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
     let transition_snapshot;
     let click_platform_event: Option<NativePanelPlatformEvent>;
     let click_command: PanelInteractionCommand;
-    let next_ignores_mouse_events;
-    let sync_mouse_event_passthrough;
+    let host_behavior_commands;
 
     {
         let mut state = match state_mutex.lock() {
@@ -81,15 +81,18 @@ pub(super) unsafe fn sync_hover_state_on_main_thread<R: tauri::Runtime + 'static
         click_command = interaction.click_command;
         transition_request = interaction.transition_request;
         transition_snapshot = interaction.transition_snapshot;
-        next_ignores_mouse_events = interaction.next_ignores_mouse_events;
-        sync_mouse_event_passthrough = interaction.sync_mouse_event_passthrough;
+        host_behavior_commands = interaction.host_behavior.commands;
         if interaction.interactive_inside {
             clear_pending_native_panel_close_transition_in_state(&mut state);
         }
     }
 
-    if sync_mouse_event_passthrough {
-        panel_from_ptr(handles.panel).setIgnoresMouseEvents(next_ignores_mouse_events);
+    for command in host_behavior_commands {
+        match command {
+            NativePanelHostBehaviorCommand::SetMouseEventPassthrough {
+                ignores_mouse_events,
+            } => panel_from_ptr(handles.panel).setIgnoresMouseEvents(ignores_mouse_events),
+        }
     }
 
     let _ = dispatch_native_panel_transition_request_immediate_with_snapshot(

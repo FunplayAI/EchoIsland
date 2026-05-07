@@ -3,9 +3,7 @@ use objc2_foundation::{NSPoint, NSRect, NSSize};
 use super::card_animation::apply_card_stack_transition;
 use super::card_stack::render_expanded_cards_with_plan;
 use super::card_views::clear_subviews;
-use super::panel_constants::{
-    COLLAPSED_PANEL_HEIGHT, EXPANDED_CARDS_SIDE_INSET, PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
-};
+use super::panel_constants::{COLLAPSED_PANEL_HEIGHT, EXPANDED_CARDS_SIDE_INSET};
 use super::panel_geometry::{expanded_cards_width, expanded_total_height_for_body_height};
 use super::panel_refs::{NativePanelRefs, resolve_native_panel_refs};
 use super::panel_render::apply_panel_geometry;
@@ -100,9 +98,10 @@ pub(super) unsafe fn reset_collapsed_cards(context: NativeTransitionContext) {
 pub(super) unsafe fn prepare_open_transition(
     context: NativeTransitionContext,
     plan: &NativePanelSnapshotRenderPlan,
+    initial_cards_progress: f64,
 ) -> usize {
     let card_count = render_transition_cards_with_plan(context, plan);
-    apply_card_stack_transition(context.refs.cards_container, 0.0, true);
+    apply_card_stack_transition(context.refs.cards_container, initial_cards_progress, true);
     context.refs.cards_container.setHidden(false);
     context.refs.cards_container.setAlphaValue(1.0);
     context.refs.expanded_container.setHidden(true);
@@ -129,6 +128,7 @@ pub(super) unsafe fn finalize_open_transition(
 pub(super) unsafe fn prepare_close_transition(
     context: NativeTransitionContext,
     skip_close_card_exit: bool,
+    initial_cards_progress: f64,
 ) -> usize {
     if skip_close_card_exit {
         clear_subviews(context.refs.cards_container);
@@ -146,7 +146,7 @@ pub(super) unsafe fn prepare_close_transition(
     if !skip_close_card_exit {
         context.refs.cards_container.setHidden(false);
         context.refs.cards_container.setAlphaValue(1.0);
-        apply_card_stack_transition(context.refs.cards_container, 0.0, false);
+        apply_card_stack_transition(context.refs.cards_container, initial_cards_progress, false);
     }
 
     card_count
@@ -171,13 +171,10 @@ pub(super) unsafe fn finalize_close_transition(
 pub(super) unsafe fn prepare_surface_switch_transition(
     context: NativeTransitionContext,
     plan: &NativePanelSnapshotRenderPlan,
+    initial_cards_progress: f64,
 ) -> usize {
     let card_count = render_transition_cards_with_plan(context, plan);
-    apply_card_stack_transition(
-        context.refs.cards_container,
-        PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
-        true,
-    );
+    apply_card_stack_transition(context.refs.cards_container, initial_cards_progress, true);
     context.refs.cards_container.setHidden(false);
     context.refs.cards_container.setAlphaValue(1.0);
     context.refs.expanded_container.setHidden(false);

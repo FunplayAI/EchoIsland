@@ -15,9 +15,9 @@ mod display_helpers;
 #[cfg(target_os = "macos")]
 mod facade;
 #[cfg(target_os = "macos")]
-mod mascot;
+mod macos_visual_plan;
 #[cfg(target_os = "macos")]
-mod mascot_motion;
+mod mascot;
 #[cfg(target_os = "macos")]
 mod mascot_render;
 #[cfg(target_os = "macos")]

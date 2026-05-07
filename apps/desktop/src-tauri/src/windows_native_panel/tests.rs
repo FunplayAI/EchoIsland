@@ -2812,6 +2812,14 @@ fn windows_runtime_host_polling_interaction_updates_passthrough_state() {
     assert_eq!(interaction.click_command, PanelInteractionCommand::None);
     assert!(!interaction.next_ignores_mouse_events);
     assert!(interaction.sync_mouse_event_passthrough);
+    assert_eq!(
+        interaction.host_behavior.commands,
+        vec![
+            crate::native_panel_renderer::facade::interaction::NativePanelHostBehaviorCommand::SetMouseEventPassthrough {
+                ignores_mouse_events: false,
+            }
+        ]
+    );
     assert!(!runtime.ignores_mouse_events);
     assert_eq!(runtime.host.shell.last_ignores_mouse_events(), Some(false));
     assert!(

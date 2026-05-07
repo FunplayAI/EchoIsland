@@ -3,7 +3,8 @@ use super::{
 };
 use crate::{
     native_panel_core::{
-        MASCOT_IDLE_LONG_SECONDS, MASCOT_WAKE_ANGRY_SECONDS, PanelPoint, PanelRect,
+        MASCOT_STATE_TRANSITION_SECONDS, MascotRuntimeFrameInput, MascotRuntimeState,
+        MascotVisualFrame, PanelMascotBaseState, PanelPoint, PanelRect,
     },
     native_panel_renderer::facade::{
         descriptor::{
@@ -26,6 +27,7 @@ use crate::{
             sync_native_panel_raw_window_handle,
         },
     },
+    native_panel_scene::SceneMascotPose,
 };
 
 pub(super) const WINDOWS_WM_MOUSEMOVE: u32 = 0x0200;
@@ -81,10 +83,8 @@ pub(super) struct WindowsNativePanelWindowShell {
     paint_pass_count: usize,
     display_snapshot: Option<WindowsNativePanelShellDisplaySnapshot>,
     last_pointer_input: Option<NativePanelPointerInput>,
-    mascot_idle_started_elapsed_ms: Option<u128>,
-    mascot_wake_started_elapsed_ms: Option<u128>,
-    mascot_wake_return_pose: Option<crate::native_panel_scene::SceneMascotPose>,
-    last_mascot_visual_pose: Option<crate::native_panel_scene::SceneMascotPose>,
+    mascot_base_pose: Option<SceneMascotPose>,
+    mascot_runtime: MascotRuntimeState,
 }
 
 impl WindowsNativePanelWindowShell {
@@ -173,20 +173,21 @@ impl WindowsNativePanelWindowShell {
         let Some(display) = self.display_snapshot.as_mut() else {
             return false;
         };
+        let base_pose = self
+            .mascot_base_pose
+            .unwrap_or(display.visual_input.mascot_pose);
         if display.visual_input.mascot_pose == crate::native_panel_scene::SceneMascotPose::Hidden {
             return false;
         }
         let pose = resolve_windows_shell_mascot_timed_pose(
-            &mut self.mascot_idle_started_elapsed_ms,
-            &mut self.mascot_wake_started_elapsed_ms,
-            &mut self.mascot_wake_return_pose,
+            &mut self.mascot_runtime,
             display.display_mode,
-            display.visual_input.mascot_pose,
+            base_pose,
             elapsed_ms,
         );
         display.visual_input.mascot_pose = pose.pose;
         display.visual_input.mascot_elapsed_ms = pose.elapsed_ms;
-        self.last_mascot_visual_pose = Some(pose.pose);
+        display.visual_input.mascot_motion_frame = pose.motion_frame;
         self.pending_paint_job = Some(display.visual_input.clone());
         self.request_redraw();
         true
@@ -347,17 +348,17 @@ impl WindowsNativePanelWindowShell {
             .display_snapshot
             .as_ref()
             .map(|display| display.visual_input.mascot_elapsed_ms);
+        let mascot_base_pose = display_snapshot.visual_input.mascot_pose;
         sync_presented_mascot_visual_state(
             &mut display_snapshot,
-            &mut self.mascot_idle_started_elapsed_ms,
-            &mut self.mascot_wake_started_elapsed_ms,
-            &mut self.mascot_wake_return_pose,
-            self.last_mascot_visual_pose,
+            &mut self.mascot_runtime,
+            mascot_base_pose,
             previous_mascot_elapsed_ms,
         );
+        self.mascot_base_pose =
+            (mascot_base_pose != SceneMascotPose::Hidden).then_some(mascot_base_pose);
         let paint_job = build_paint_job(&display_snapshot);
         self.last_frame = Some(frame);
-        self.last_mascot_visual_pose = Some(display_snapshot.visual_input.mascot_pose);
         self.display_snapshot = Some(display_snapshot);
         self.pending_paint_job = Some(paint_job);
         self.request_redraw();
@@ -501,95 +502,86 @@ fn non_zero_rect(rect: PanelRect) -> Option<PanelRect> {
     (rect.width > 0.0 && rect.height > 0.0).then_some(rect)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct WindowsShellTimedMascotPose {
-    pose: crate::native_panel_scene::SceneMascotPose,
+    pose: SceneMascotPose,
     elapsed_ms: u128,
+    motion_frame: Option<MascotVisualFrame>,
 }
 
 fn sync_presented_mascot_visual_state(
     display: &mut WindowsNativePanelShellDisplaySnapshot,
-    idle_started_elapsed_ms: &mut Option<u128>,
-    wake_started_elapsed_ms: &mut Option<u128>,
-    wake_return_pose: &mut Option<crate::native_panel_scene::SceneMascotPose>,
-    last_visual_pose: Option<crate::native_panel_scene::SceneMascotPose>,
+    runtime: &mut MascotRuntimeState,
+    base_pose: SceneMascotPose,
     previous_elapsed_ms: Option<u128>,
 ) {
-    let base_pose = display.visual_input.mascot_pose;
-    if base_pose == crate::native_panel_scene::SceneMascotPose::Hidden {
-        *idle_started_elapsed_ms = None;
-        *wake_started_elapsed_ms = None;
-        *wake_return_pose = None;
-        return;
-    }
-
-    let wakes_from_sleep = last_visual_pose
-        == Some(crate::native_panel_scene::SceneMascotPose::Sleepy)
-        && (base_pose != crate::native_panel_scene::SceneMascotPose::Idle
-            || display.display_mode == NativePanelVisualDisplayMode::Expanded);
-    if wakes_from_sleep {
-        display.visual_input.mascot_pose = crate::native_panel_scene::SceneMascotPose::WakeAngry;
-        display.visual_input.mascot_elapsed_ms = 0;
-        *idle_started_elapsed_ms = None;
-        *wake_started_elapsed_ms = None;
-        *wake_return_pose = Some(base_pose);
-        return;
-    }
-
-    if last_visual_pose == Some(base_pose) {
-        display.visual_input.mascot_elapsed_ms =
-            previous_elapsed_ms.unwrap_or(display.visual_input.mascot_elapsed_ms);
-    }
-
-    if base_pose != crate::native_panel_scene::SceneMascotPose::Idle
-        || display.display_mode == NativePanelVisualDisplayMode::Expanded
-    {
-        *idle_started_elapsed_ms = None;
-    }
+    let elapsed_ms = previous_elapsed_ms.unwrap_or(display.visual_input.mascot_elapsed_ms);
+    let pose = resolve_windows_shell_mascot_timed_pose(
+        runtime,
+        display.display_mode,
+        base_pose,
+        elapsed_ms,
+    );
+    display.visual_input.mascot_pose = pose.pose;
+    display.visual_input.mascot_elapsed_ms = pose.elapsed_ms;
+    display.visual_input.mascot_motion_frame = pose.motion_frame;
 }
 
 fn resolve_windows_shell_mascot_timed_pose(
-    idle_started_elapsed_ms: &mut Option<u128>,
-    wake_started_elapsed_ms: &mut Option<u128>,
-    wake_return_pose: &mut Option<crate::native_panel_scene::SceneMascotPose>,
+    runtime: &mut MascotRuntimeState,
     display_mode: NativePanelVisualDisplayMode,
-    current_pose: crate::native_panel_scene::SceneMascotPose,
+    current_pose: SceneMascotPose,
     elapsed_ms: u128,
 ) -> WindowsShellTimedMascotPose {
-    if let Some(return_pose) = *wake_return_pose {
-        let started_at = wake_started_elapsed_ms.get_or_insert(elapsed_ms);
-        let wake_elapsed_ms = elapsed_ms.saturating_sub(*started_at);
-        if wake_elapsed_ms < (MASCOT_WAKE_ANGRY_SECONDS * 1000.0) as u128 {
-            return WindowsShellTimedMascotPose {
-                pose: crate::native_panel_scene::SceneMascotPose::WakeAngry,
-                elapsed_ms: wake_elapsed_ms,
-            };
-        }
-        *wake_started_elapsed_ms = None;
-        *wake_return_pose = None;
+    if current_pose == SceneMascotPose::Hidden {
+        runtime.reset(elapsed_ms);
         return WindowsShellTimedMascotPose {
-            pose: return_pose,
+            pose: SceneMascotPose::Hidden,
             elapsed_ms,
+            motion_frame: None,
         };
     }
 
-    if current_pose == crate::native_panel_scene::SceneMascotPose::Idle
-        && display_mode != NativePanelVisualDisplayMode::Expanded
-    {
-        let started_at = idle_started_elapsed_ms.get_or_insert(elapsed_ms);
-        if elapsed_ms.saturating_sub(*started_at) >= MASCOT_IDLE_LONG_SECONDS as u128 * 1000 {
-            return WindowsShellTimedMascotPose {
-                pose: crate::native_panel_scene::SceneMascotPose::Sleepy,
-                elapsed_ms,
-            };
-        }
-    } else {
-        *idle_started_elapsed_ms = None;
-    }
-
-    WindowsShellTimedMascotPose {
-        pose: current_pose,
+    let frame = runtime.next_frame(MascotRuntimeFrameInput {
+        base_state: panel_mascot_state_from_scene_pose(current_pose),
+        expanded: display_mode == NativePanelVisualDisplayMode::Expanded,
         elapsed_ms,
+        transition_duration_ms: mascot_transition_duration_ms(),
+    });
+    WindowsShellTimedMascotPose {
+        pose: scene_mascot_pose_from_panel_state(frame.state),
+        elapsed_ms: frame.elapsed_ms,
+        motion_frame: Some(frame.motion),
+    }
+}
+
+fn mascot_transition_duration_ms() -> u128 {
+    (MASCOT_STATE_TRANSITION_SECONDS * 1000.0).round() as u128
+}
+
+fn panel_mascot_state_from_scene_pose(pose: SceneMascotPose) -> PanelMascotBaseState {
+    match pose {
+        SceneMascotPose::Running => PanelMascotBaseState::Running,
+        SceneMascotPose::Approval => PanelMascotBaseState::Approval,
+        SceneMascotPose::Question => PanelMascotBaseState::Question,
+        SceneMascotPose::MessageBubble => PanelMascotBaseState::MessageBubble,
+        SceneMascotPose::Complete => PanelMascotBaseState::Complete,
+        SceneMascotPose::Sleepy => PanelMascotBaseState::Sleepy,
+        SceneMascotPose::WakeAngry => PanelMascotBaseState::WakeAngry,
+        SceneMascotPose::Idle | SceneMascotPose::Hidden => PanelMascotBaseState::Idle,
+    }
+}
+
+fn scene_mascot_pose_from_panel_state(state: PanelMascotBaseState) -> SceneMascotPose {
+    match state {
+        PanelMascotBaseState::Idle => SceneMascotPose::Idle,
+        PanelMascotBaseState::Running => SceneMascotPose::Running,
+        PanelMascotBaseState::Approval => SceneMascotPose::Approval,
+        PanelMascotBaseState::Question => SceneMascotPose::Question,
+        PanelMascotBaseState::MessageBubble => SceneMascotPose::MessageBubble,
+        PanelMascotBaseState::Complete => SceneMascotPose::Complete,
+        PanelMascotBaseState::Sleepy => SceneMascotPose::Sleepy,
+        PanelMascotBaseState::WakeAngry => SceneMascotPose::WakeAngry,
     }
 }
 
@@ -1120,12 +1112,13 @@ mod tests {
                 .mascot_pose,
             crate::native_panel_scene::SceneMascotPose::WakeAngry
         );
-        assert!(shell.refresh_mascot_animation(130_000));
+        let wake_started_at = crate::native_panel_core::MASCOT_IDLE_LONG_SECONDS as u128 * 1000 + 1;
+        assert!(shell.refresh_mascot_animation(wake_started_at + 400));
         assert_eq!(
             shell.paint_next_frame().expect("wake paint").mascot_pose,
             crate::native_panel_scene::SceneMascotPose::WakeAngry
         );
-        assert!(shell.refresh_mascot_animation(131_000));
+        assert!(shell.refresh_mascot_animation(wake_started_at + 1_000));
         assert_eq!(
             shell
                 .paint_next_frame()
@@ -1309,10 +1302,12 @@ mod tests {
             card_count: 0,
             cards: Vec::new(),
             glow_visible: false,
+            glow_opacity: 0.0,
             action_buttons_visible: false,
             action_buttons: Vec::new(),
             completion_count: 0,
             mascot_elapsed_ms: 0,
+            mascot_motion_frame: None,
             mascot_pose: crate::native_panel_scene::SceneMascotPose::Idle,
             mascot_debug_mode_enabled: false,
         };

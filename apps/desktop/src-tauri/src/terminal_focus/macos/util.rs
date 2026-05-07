@@ -39,14 +39,8 @@ pub(super) fn run_command_success(
     args: &[&str],
     extra_env: Option<&[(&str, &str)]>,
 ) -> bool {
-    crate::diagnostics::log_diagnostic_event(
-        "macos_focus_command_begin",
-        &[
-            ("path", path.to_string()),
-            ("args", args.join(" ")),
-            ("has_extra_env", extra_env.is_some().to_string()),
-        ],
-    );
+    let begin_fields = command_diagnostic_fields(path, args, extra_env);
+    crate::diagnostics::log_diagnostic_event("macos_focus_command_begin", &begin_fields);
     let mut command = Command::new(path);
     command
         .args(args)
@@ -59,31 +53,37 @@ pub(super) fn run_command_success(
         Ok(output) => {
             let stdout = command_output_preview(&output.stdout);
             let stderr = command_output_preview(&output.stderr);
-            crate::diagnostics::log_diagnostic_event(
-                "macos_focus_command_complete",
-                &[
-                    ("path", path.to_string()),
-                    ("args", args.join(" ")),
-                    ("status", output.status.to_string()),
-                    ("success", output.status.success().to_string()),
-                    ("stdout", stdout),
-                    ("stderr", stderr),
-                ],
-            );
+            let mut fields = command_diagnostic_fields(path, args, extra_env);
+            fields.extend([
+                ("status", output.status.to_string()),
+                ("success", output.status.success().to_string()),
+                ("stdout", stdout),
+                ("stderr", stderr),
+            ]);
+            crate::diagnostics::log_diagnostic_event("macos_focus_command_complete", &fields);
             output.status.success()
         }
         Err(error) => {
-            crate::diagnostics::log_diagnostic_event(
-                "macos_focus_command_error",
-                &[
-                    ("path", path.to_string()),
-                    ("args", args.join(" ")),
-                    ("error", error.to_string()),
-                ],
-            );
+            let mut fields = command_diagnostic_fields(path, args, extra_env);
+            fields.push(("error", error.to_string()));
+            crate::diagnostics::log_diagnostic_event("macos_focus_command_error", &fields);
             false
         }
     }
+}
+
+fn command_diagnostic_fields(
+    path: &str,
+    args: &[&str],
+    extra_env: Option<&[(&str, &str)]>,
+) -> Vec<(&'static str, String)> {
+    let mut fields = vec![
+        ("path", path.to_string()),
+        ("args", args.join(" ")),
+        ("has_extra_env", extra_env.is_some().to_string()),
+    ];
+    fields.extend(crate::diagnostics::current_context_fields());
+    fields
 }
 
 fn command_output_preview(bytes: &[u8]) -> String {

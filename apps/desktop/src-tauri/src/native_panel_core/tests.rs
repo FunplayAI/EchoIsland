@@ -712,7 +712,7 @@ fn panel_style_resolver_hides_actions_before_threshold() {
         bar_progress: 0.3,
         height_progress: 0.0,
         headline_emphasized: true,
-        edge_actions_visible: true,
+        edge_actions_visible: false,
         compact_pill_radius: 20.0,
         panel_morph_pill_radius: 24.0,
         expanded_panel_radius: 28.0,
@@ -1140,6 +1140,57 @@ fn mascot_visual_frame_supports_mac_sleepy_and_wake_angry_states() {
     assert!(wake_start.offset_x.abs() < 0.001);
     assert!(wake_start.scale_x > 1.04);
     assert!(wake_faded.scale_x < wake_start.scale_x);
+}
+
+#[test]
+fn mascot_visual_frame_transition_smoothsteps_motion_fields() {
+    let start = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Idle,
+        elapsed_ms: 0,
+    });
+    let target = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Running,
+        elapsed_ms: 0,
+    });
+    let halfway = resolve_mascot_visual_frame_transition(MascotVisualFrameTransitionInput {
+        start,
+        target,
+        elapsed_ms: 120,
+        duration_ms: 240,
+    });
+    let done = resolve_mascot_visual_frame_transition(MascotVisualFrameTransitionInput {
+        start,
+        target,
+        elapsed_ms: 240,
+        duration_ms: 240,
+    });
+
+    assert!((halfway.scale_x - ((start.scale_x + target.scale_x) / 2.0)).abs() < 0.001);
+    assert!(halfway.shadow_opacity > start.shadow_opacity);
+    assert!(halfway.shadow_opacity < target.shadow_opacity);
+    assert_eq!(done, target);
+}
+
+#[test]
+fn mascot_visual_frame_transition_zero_duration_jumps_to_target() {
+    let start = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Idle,
+        elapsed_ms: 0,
+    });
+    let target = resolve_mascot_visual_frame(MascotVisualFrameInput {
+        state: PanelMascotBaseState::Complete,
+        elapsed_ms: 300,
+    });
+
+    assert_eq!(
+        resolve_mascot_visual_frame_transition(MascotVisualFrameTransitionInput {
+            start,
+            target,
+            elapsed_ms: 0,
+            duration_ms: 0,
+        }),
+        target
+    );
 }
 
 #[test]

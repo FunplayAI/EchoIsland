@@ -5,14 +5,13 @@ use objc2_app_kit::NSView;
 use objc2_core_graphics::{CGAffineTransformMakeScale, CGAffineTransformTranslate};
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
-use super::panel_constants::{
-    PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS, PANEL_CARD_CONTENT_REVEAL_DELAY_PROGRESS,
-    PANEL_CARD_EXIT_MS, PANEL_CARD_EXIT_STAGGER_MS, PANEL_CARD_REVEAL_MS,
-    PANEL_CARD_REVEAL_STAGGER_MS, PANEL_CARD_REVEAL_Y,
-};
+use super::panel_constants::PANEL_CARD_REVEAL_Y;
 use super::panel_globals::CARD_ANIMATION_LAYOUTS;
-use super::panel_helpers::{ease_in_cubic, ease_out_cubic, lerp};
+use super::panel_helpers::{ease_out_cubic, lerp};
 use super::panel_types::CardAnimationLayout;
+use crate::native_panel_renderer::facade::presentation::{
+    card_visual_content_visibility_phase, card_visual_staggered_phase,
+};
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_card_stack_transition(
@@ -134,23 +133,7 @@ pub(super) unsafe fn apply_card_exit_phase(card: &NSView, phase: f64) {
 }
 
 pub(super) fn card_content_visibility_phase(phase: f64, entering: bool) -> f64 {
-    let phase = phase.clamp(0.0, 1.0);
-    if entering {
-        ease_out_cubic(
-            ((phase - PANEL_CARD_CONTENT_REVEAL_DELAY_PROGRESS)
-                / (1.0 - PANEL_CARD_CONTENT_REVEAL_DELAY_PROGRESS))
-                .clamp(0.0, 1.0),
-        )
-    } else if phase <= PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS {
-        1.0 - (0.06 * (phase / PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS).clamp(0.0, 1.0))
-    } else {
-        0.94 * (1.0
-            - ease_in_cubic(
-                ((phase - PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS)
-                    / (1.0 - PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS))
-                    .clamp(0.0, 1.0),
-            ))
-    }
+    card_visual_content_visibility_phase(phase, entering)
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -201,35 +184,7 @@ pub(super) fn staggered_card_phase(
     total: usize,
     entering: bool,
 ) -> f64 {
-    let progress = progress.clamp(0.0, 1.0);
-    let duration_ms = if entering {
-        PANEL_CARD_REVEAL_MS
-    } else {
-        PANEL_CARD_EXIT_MS
-    };
-    let stagger_ms = if entering {
-        PANEL_CARD_REVEAL_STAGGER_MS
-    } else {
-        PANEL_CARD_EXIT_STAGGER_MS
-    };
-    let total_ms = card_transition_total_ms(total, duration_ms, stagger_ms) as f64;
-    let order_index = if entering {
-        index
-    } else {
-        total.saturating_sub(index + 1)
-    };
-    let elapsed_ms = progress * total_ms;
-    let delay_ms = order_index as f64 * stagger_ms as f64;
-
-    ((elapsed_ms - delay_ms) / duration_ms as f64).clamp(0.0, 1.0)
-}
-
-pub(super) fn card_transition_total_ms(
-    card_count: usize,
-    duration_ms: u64,
-    stagger_ms: u64,
-) -> u64 {
-    crate::native_panel_core::card_transition_total_ms(card_count, duration_ms, stagger_ms)
+    card_visual_staggered_phase(progress, index, total, entering)
 }
 
 pub(super) fn clear_card_animation_layouts() {

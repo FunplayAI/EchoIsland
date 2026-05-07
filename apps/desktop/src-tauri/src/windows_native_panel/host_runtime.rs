@@ -43,14 +43,16 @@ use crate::{
             set_native_panel_host_shared_body_height_via_controller,
         },
         interaction::{
-            NativePanelHostPollingInteractionResult, NativePanelHoverSyncResult,
-            NativePanelPointerRegionInteractionBridge, NativePanelPollingHostFacts,
-            NativePanelQueuedPlatformEventBridge, NativePanelSettingsSurfaceToggleResult,
+            NativePanelHostBehaviorCommand, NativePanelHostPollingInteractionResult,
+            NativePanelHoverSyncResult, NativePanelPointerRegionInteractionBridge,
+            NativePanelPollingHostFacts, NativePanelQueuedPlatformEventBridge,
+            NativePanelSettingsSurfaceToggleResult,
             dispatch_native_panel_click_command_at_point_with_handler,
             handle_native_panel_pointer_input_with_handler,
             handle_optional_native_panel_pointer_input_with_handler,
             native_panel_click_state_slots, native_panel_interactive_inside_from_host_facts,
             native_panel_polling_interaction_input_from_host_facts,
+            sync_native_panel_host_behavior_for_interactive_inside,
             sync_native_panel_host_polling_interaction_for_state,
             sync_native_panel_hover_and_refresh_for_runtime,
             sync_native_panel_hover_interaction_and_rerender_at_point_with_input_descriptor,
@@ -59,7 +61,6 @@ use crate::{
             sync_native_panel_hover_interaction_at_point_for_state,
             sync_native_panel_hover_interaction_for_pointer_input_for_state,
             sync_native_panel_hover_interaction_for_state,
-            sync_native_panel_mouse_passthrough_for_interactive_inside,
         },
         presentation::NativePanelCardStackPresentation,
         renderer::{
@@ -460,13 +461,23 @@ impl WindowsNativePanelRuntime {
         let Some(interactive_inside) = self.interactive_inside_for_pointer_input(input) else {
             return;
         };
-        let Some(next_ignores_mouse_events) =
-            sync_native_panel_mouse_passthrough_for_interactive_inside(self, interactive_inside)
-        else {
-            return;
-        };
-        self.host
-            .sync_shell_mouse_event_passthrough(next_ignores_mouse_events);
+        let plan = sync_native_panel_host_behavior_for_interactive_inside(self, interactive_inside);
+        self.apply_host_behavior_commands(plan.commands);
+    }
+
+    fn apply_host_behavior_commands(
+        &mut self,
+        commands: impl IntoIterator<Item = NativePanelHostBehaviorCommand>,
+    ) {
+        for command in commands {
+            match command {
+                NativePanelHostBehaviorCommand::SetMouseEventPassthrough {
+                    ignores_mouse_events,
+                } => self
+                    .host
+                    .sync_shell_mouse_event_passthrough(ignores_mouse_events),
+            }
+        }
     }
 
     pub(super) fn sync_host_polling_interaction(
@@ -484,10 +495,7 @@ impl WindowsNativePanelRuntime {
             crate::native_panel_core::HOVER_DELAY_MS,
             crate::native_panel_core::CARD_FOCUS_CLICK_DEBOUNCE_MS,
         );
-        if interaction.sync_mouse_event_passthrough {
-            self.host
-                .sync_shell_mouse_event_passthrough(interaction.next_ignores_mouse_events);
-        }
+        self.apply_host_behavior_commands(interaction.host_behavior.commands.clone());
         Some(interaction)
     }
 

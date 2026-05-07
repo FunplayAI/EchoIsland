@@ -1,8 +1,25 @@
 use super::constants::{
+    DEFAULT_COMPACT_PILL_WIDTH, DEFAULT_EXPANDED_PILL_WIDTH,
     PANEL_COMPACT_CORNER_MASK_MAX_PROGRESS, PANEL_EDGE_ACTIONS_MIN_SCALE,
-    PANEL_EDGE_ACTIONS_REVEAL_SPAN, PANEL_EDGE_ACTIONS_REVEAL_START_PROGRESS,
     PANEL_HIGHLIGHT_MAX_ALPHA, PANEL_PILL_BORDER_MAX_WIDTH, PANEL_VISIBILITY_EPSILON,
 };
+use super::{PanelRect, transitions::ease_out_cubic};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct ActionButtonVisibilitySpecInput {
+    pub(crate) semantic_visible: bool,
+    pub(crate) expanded_display_mode: bool,
+    pub(crate) transition_visibility_progress: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct ActionButtonVisibilitySpec {
+    pub(crate) visible: bool,
+    pub(crate) reserves_headline_space: bool,
+    pub(crate) opacity: f64,
+    pub(crate) retract_offset_y: f64,
+    pub(crate) scale: f64,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct PanelStyleResolverInput {
@@ -44,13 +61,12 @@ pub(crate) fn resolve_panel_style(input: PanelStyleResolverInput) -> PanelStyleR
     } else {
         0.0
     };
-    let action_progress = if input.edge_actions_visible {
-        edge_action_progress(bar_progress)
-    } else {
-        0.0
-    };
-    let action_alpha = action_progress;
-    let action_scale = lerp(PANEL_EDGE_ACTIONS_MIN_SCALE, 1.0, action_progress);
+    let action_visibility =
+        resolve_action_button_visibility_spec(ActionButtonVisibilitySpecInput {
+            semantic_visible: input.edge_actions_visible,
+            expanded_display_mode: input.shell_visible,
+            transition_visibility_progress: bar_progress,
+        });
 
     PanelStyleResolved {
         expanded_hidden: !input.shell_visible,
@@ -60,9 +76,9 @@ pub(crate) fn resolve_panel_style(input: PanelStyleResolverInput) -> PanelStyleR
         cards_hidden: input.shared_visible,
         highlight_hidden: highlight_alpha <= PANEL_VISIBILITY_EPSILON,
         highlight_alpha,
-        actions_hidden: action_alpha <= PANEL_VISIBILITY_EPSILON,
-        action_alpha,
-        action_scale,
+        actions_hidden: !action_visibility.visible,
+        action_alpha: action_visibility.opacity,
+        action_scale: action_visibility.scale,
         pill_corner_radius: lerp(
             input.compact_pill_radius,
             input.panel_morph_pill_radius,
@@ -78,9 +94,39 @@ pub(crate) fn resolve_panel_style(input: PanelStyleResolverInput) -> PanelStyleR
     }
 }
 
-fn edge_action_progress(bar_progress: f64) -> f64 {
-    ((bar_progress - PANEL_EDGE_ACTIONS_REVEAL_START_PROGRESS) / PANEL_EDGE_ACTIONS_REVEAL_SPAN)
-        .clamp(0.0, 1.0)
+pub(crate) fn resolve_action_button_visibility_spec(
+    input: ActionButtonVisibilitySpecInput,
+) -> ActionButtonVisibilitySpec {
+    let eligible = input.semantic_visible && input.expanded_display_mode;
+    let progress = input.transition_visibility_progress.clamp(0.0, 1.0);
+    let opacity = if eligible {
+        ease_out_cubic(progress)
+    } else {
+        0.0
+    };
+    let visible = eligible && opacity > PANEL_VISIBILITY_EPSILON;
+    ActionButtonVisibilitySpec {
+        visible,
+        reserves_headline_space: eligible,
+        opacity,
+        retract_offset_y: lerp(-4.0, 0.0, opacity),
+        scale: lerp(PANEL_EDGE_ACTIONS_MIN_SCALE, 1.0, opacity),
+    }
+}
+
+pub(crate) fn action_button_transition_progress_from_compact_width(compact_width: f64) -> f64 {
+    let width_delta = (DEFAULT_EXPANDED_PILL_WIDTH - DEFAULT_COMPACT_PILL_WIDTH).max(1.0);
+    ((compact_width - DEFAULT_COMPACT_PILL_WIDTH) / width_delta).clamp(0.0, 1.0)
+}
+
+pub(crate) fn action_button_visual_frame_for_phase(
+    frame: PanelRect,
+    visibility: ActionButtonVisibilitySpec,
+) -> PanelRect {
+    PanelRect {
+        y: frame.y + visibility.retract_offset_y,
+        ..frame
+    }
 }
 
 fn lerp(start: f64, end: f64, progress: f64) -> f64 {

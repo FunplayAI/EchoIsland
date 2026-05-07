@@ -286,6 +286,32 @@ pub(crate) struct NativePanelHostInteractionState {
     pub(crate) ignores_mouse_events: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NativePanelHostBehaviorCommand {
+    SetMouseEventPassthrough { ignores_mouse_events: bool },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct NativePanelHostBehaviorPlan {
+    pub(crate) interactive_inside: bool,
+    pub(crate) ignores_mouse_events: bool,
+    pub(crate) commands: Vec<NativePanelHostBehaviorCommand>,
+}
+
+impl NativePanelHostBehaviorPlan {
+    pub(crate) fn mouse_event_passthrough_target(&self) -> Option<bool> {
+        self.commands.iter().find_map(|command| match command {
+            NativePanelHostBehaviorCommand::SetMouseEventPassthrough {
+                ignores_mouse_events,
+            } => Some(*ignores_mouse_events),
+        })
+    }
+
+    pub(crate) fn sync_mouse_event_passthrough(&self) -> bool {
+        self.mouse_event_passthrough_target().is_some()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NativePanelPollingInteractionResult {
     pub(crate) interactive_inside: bool,
@@ -302,6 +328,7 @@ pub(crate) struct NativePanelHostPollingInteractionResult {
     pub(crate) click_command: PanelInteractionCommand,
     pub(crate) transition_request: Option<NativePanelTransitionRequest>,
     pub(crate) transition_snapshot: Option<RuntimeSnapshot>,
+    pub(crate) host_behavior: NativePanelHostBehaviorPlan,
     pub(crate) next_ignores_mouse_events: bool,
     pub(crate) sync_mouse_event_passthrough: bool,
 }

@@ -9,7 +9,8 @@ use super::descriptors::{
 use super::runtime_click::resolve_native_panel_click_command_for_pointer_state;
 use super::runtime_hover::sync_native_panel_hover_interaction_for_state;
 use super::runtime_interaction::{
-    NativePanelClickStateBridge, NativePanelCoreStateBridge, NativePanelHostInteractionState,
+    NativePanelClickStateBridge, NativePanelCoreStateBridge, NativePanelHostBehaviorCommand,
+    NativePanelHostBehaviorPlan, NativePanelHostInteractionState,
     NativePanelHostInteractionStateBridge, NativePanelHostPollingInteractionResult,
     NativePanelHoverFallbackFrames, NativePanelHoverFallbackState, NativePanelPollingHostFacts,
     NativePanelPollingInteractionInput, NativePanelPollingInteractionResult,
@@ -61,6 +62,25 @@ pub(crate) fn resolve_native_panel_host_interaction_state(
     }
 }
 
+pub(crate) fn resolve_native_panel_host_behavior_plan(
+    current_ignores_mouse_events: bool,
+    interactive_inside: bool,
+) -> NativePanelHostBehaviorPlan {
+    let state = resolve_native_panel_host_interaction_state(interactive_inside);
+    let commands = (current_ignores_mouse_events != state.ignores_mouse_events)
+        .then_some(NativePanelHostBehaviorCommand::SetMouseEventPassthrough {
+            ignores_mouse_events: state.ignores_mouse_events,
+        })
+        .into_iter()
+        .collect();
+
+    NativePanelHostBehaviorPlan {
+        interactive_inside: state.interactive_inside,
+        ignores_mouse_events: state.ignores_mouse_events,
+        commands,
+    }
+}
+
 fn non_zero_rect(rect: PanelRect) -> Option<PanelRect> {
     (rect.width > 0.0 && rect.height > 0.0).then_some(rect)
 }
@@ -82,13 +102,23 @@ pub(crate) fn sync_native_panel_mouse_passthrough_for_interactive_inside<S>(
 where
     S: NativePanelHostInteractionStateBridge,
 {
-    let next_ignores_mouse_events =
-        resolve_native_panel_host_interaction_state(interactive_inside).ignores_mouse_events;
-    if state.host_ignores_mouse_events() == next_ignores_mouse_events {
-        return None;
-    }
-    state.set_host_ignores_mouse_events(next_ignores_mouse_events);
-    Some(next_ignores_mouse_events)
+    let plan = sync_native_panel_host_behavior_for_interactive_inside(state, interactive_inside);
+    plan.mouse_event_passthrough_target()
+}
+
+pub(crate) fn sync_native_panel_host_behavior_for_interactive_inside<S>(
+    state: &mut S,
+    interactive_inside: bool,
+) -> NativePanelHostBehaviorPlan
+where
+    S: NativePanelHostInteractionStateBridge,
+{
+    let plan = resolve_native_panel_host_behavior_plan(
+        state.host_ignores_mouse_events(),
+        interactive_inside,
+    );
+    state.set_host_ignores_mouse_events(plan.ignores_mouse_events);
+    plan
 }
 
 pub(crate) fn native_panel_polling_interaction_input(
@@ -242,12 +272,12 @@ where
         hover_delay_ms,
         focus_debounce_ms,
     );
-    let next_ignores_mouse_events =
-        resolve_native_panel_host_interaction_state(interaction.interactive_inside)
-            .ignores_mouse_events;
-    let sync_mouse_event_passthrough =
-        state.host_ignores_mouse_events() != next_ignores_mouse_events;
-    state.set_host_ignores_mouse_events(next_ignores_mouse_events);
+    let host_behavior = sync_native_panel_host_behavior_for_interactive_inside(
+        state,
+        interaction.interactive_inside,
+    );
+    let next_ignores_mouse_events = host_behavior.ignores_mouse_events;
+    let sync_mouse_event_passthrough = host_behavior.sync_mouse_event_passthrough();
 
     NativePanelHostPollingInteractionResult {
         interactive_inside: interaction.interactive_inside,
@@ -255,6 +285,7 @@ where
         click_command: interaction.click_command,
         transition_request: interaction.transition_request,
         transition_snapshot: interaction.transition_snapshot,
+        host_behavior,
         next_ignores_mouse_events,
         sync_mouse_event_passthrough,
     }

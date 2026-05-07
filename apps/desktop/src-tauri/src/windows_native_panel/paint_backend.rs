@@ -74,6 +74,8 @@ pub(super) enum WindowsNativePanelPaintOperation {
         color: WindowsNativePanelPaintColor,
         stroke_color: WindowsNativePanelPaintColor,
         stroke_width: f64,
+        shadow_opacity: f64,
+        shadow_radius: f64,
     },
     FillCompactShoulder {
         frame: PanelRect,
@@ -192,6 +194,22 @@ fn windows_native_panel_paint_operation_from_primitive(
                 color: *color,
             }
         }
+        WindowsNativePanelPaintPrimitive::MascotRoundRect {
+            frame,
+            radius,
+            color,
+            ..
+        } => WindowsNativePanelPaintOperation::FillRoundRect {
+            frame: *frame,
+            radius: *radius,
+            color: *color,
+        },
+        WindowsNativePanelPaintPrimitive::MascotEllipse { frame, color, .. } => {
+            WindowsNativePanelPaintOperation::FillEllipse {
+                frame: *frame,
+                color: *color,
+            }
+        }
         WindowsNativePanelPaintPrimitive::StrokeLine {
             from,
             to,
@@ -211,6 +229,25 @@ fn windows_native_panel_paint_operation_from_primitive(
             size,
             weight,
             alignment,
+            ..
+        } => WindowsNativePanelPaintOperation::DrawText {
+            origin: *origin,
+            max_width: *max_width,
+            text: text.clone(),
+            color: *color,
+            size: *size,
+            weight: *weight,
+            alignment: *alignment,
+        },
+        WindowsNativePanelPaintPrimitive::MascotText {
+            origin,
+            max_width,
+            text,
+            color,
+            size,
+            weight,
+            alignment,
+            ..
         } => WindowsNativePanelPaintOperation::DrawText {
             origin: *origin,
             max_width: *max_width,
@@ -221,52 +258,25 @@ fn windows_native_panel_paint_operation_from_primitive(
             alignment: *alignment,
         },
         WindowsNativePanelPaintPrimitive::MascotDot {
-            center,
-            radius,
-            scale_x,
-            scale_y,
+            frame,
+            corner_radius,
             pose,
-            debug_mode_enabled,
-        } => {
-            let body_width = radius * (24.0 / 11.0) * scale_x;
-            let body_height = radius * (20.0 / 11.0) * scale_y;
-            let color = if *debug_mode_enabled {
-                WindowsNativePanelPaintColor {
-                    r: 255,
-                    g: 255,
-                    b: 255,
-                }
-            } else if *pose == SceneMascotPose::Sleepy {
-                WindowsNativePanelPaintColor { r: 3, g: 3, b: 3 }
-            } else {
-                WindowsNativePanelPaintColor { r: 5, g: 5, b: 5 }
-            };
-            WindowsNativePanelPaintOperation::FillMascotDot {
-                frame: PanelRect {
-                    x: center.x - body_width / 2.0,
-                    y: center.y - body_height / 2.0,
-                    width: body_width,
-                    height: body_height,
-                },
-                radius: radius * (6.0 / 11.0),
-                pose: *pose,
-                color,
-                stroke_color: if *debug_mode_enabled {
-                    WindowsNativePanelPaintColor {
-                        r: 255,
-                        g: 255,
-                        b: 255,
-                    }
-                } else {
-                    WindowsNativePanelPaintColor {
-                        r: 255,
-                        g: 122,
-                        b: 36,
-                    }
-                },
-                stroke_width: 2.2,
-            }
-        }
+            fill,
+            stroke,
+            stroke_width,
+            shadow_opacity,
+            shadow_radius,
+            ..
+        } => WindowsNativePanelPaintOperation::FillMascotDot {
+            frame: *frame,
+            radius: *corner_radius,
+            pose: *pose,
+            color: *fill,
+            stroke_color: *stroke,
+            stroke_width: *stroke_width,
+            shadow_opacity: *shadow_opacity,
+            shadow_radius: *shadow_radius,
+        },
         WindowsNativePanelPaintPrimitive::CompactShoulder {
             frame,
             side,
@@ -668,6 +678,7 @@ mod tests {
                 },
             ],
             glow_visible: true,
+            glow_opacity: 0.78,
             action_buttons_visible: true,
             action_buttons: vec![
                 WindowsNativePanelShellActionButtonPaintInput {
@@ -691,6 +702,7 @@ mod tests {
             ],
             completion_count: 2,
             mascot_elapsed_ms: 0,
+            mascot_motion_frame: None,
             mascot_pose: SceneMascotPose::Complete,
             mascot_debug_mode_enabled: false,
         }
@@ -738,7 +750,7 @@ mod tests {
         );
         assert!(plan.primitives.iter().any(|primitive| matches!(
             primitive,
-            WindowsNativePanelPaintPrimitive::Ellipse { .. }
+            WindowsNativePanelPaintPrimitive::MascotEllipse { .. }
         )));
         assert!(
             plan.primitives
@@ -854,6 +866,24 @@ mod tests {
             } if (frame.width - 24.0).abs() < 0.5
                 && (frame.height - 20.0).abs() < 0.5
                 && (*radius - 6.0).abs() < 0.5
+        )));
+    }
+
+    #[test]
+    fn mascot_paint_operation_consumes_shared_body_style() {
+        let plan = resolve_windows_native_panel_paint_plan(&paint_job(
+            NativePanelVisualDisplayMode::Compact,
+        ));
+        let operations = resolve_windows_native_panel_paint_operations(&plan);
+
+        assert!(operations.iter().any(|operation| matches!(
+            operation,
+            WindowsNativePanelPaintOperation::FillMascotDot {
+                color: WindowsNativePanelPaintColor { r: 5, g: 5, b: 5 },
+                stroke_color: WindowsNativePanelPaintColor { r: 255, g: 122, b: 36 },
+                stroke_width,
+                ..
+            } if (*stroke_width - 2.2).abs() < 0.001
         )));
     }
 

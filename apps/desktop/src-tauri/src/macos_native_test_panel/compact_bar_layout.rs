@@ -14,6 +14,7 @@ use super::panel_constants::{
 use super::panel_globals::{ACTIVE_COUNT_SCROLL_STARTED, ACTIVE_COUNT_SCROLL_TEXT};
 use super::panel_refs::NativePanelRefs;
 use super::panel_screen_geometry::screen_has_camera_housing;
+use crate::native_panel_core::{PanelRect, resolve_compact_action_button_layout};
 
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn compact_headline_should_hide(refs: &NativePanelRefs) -> bool {
@@ -44,17 +45,17 @@ pub(super) unsafe fn relayout_compact_content(
     } else {
         0.0
     };
-    let action_size = 26.0;
-    let settings_gap = 14.0;
-    let quit_gap = 6.0;
     let left_inset = ((bar_size.height - mascot_size) / 2.0).clamp(8.0, 12.0);
-    let settings_x = if actions_active {
-        left_inset + mascot_size + settings_gap
-    } else {
-        left_inset + mascot_size + 8.0
+    let compact_frame = PanelRect {
+        x: 0.0,
+        y: 0.0,
+        width: bar_size.width,
+        height: bar_size.height,
     };
+    let action_layout = resolve_compact_action_button_layout(compact_frame);
+    let settings_x = action_layout.settings.x;
     let title_x = if actions_active {
-        settings_x + action_size + 8.0
+        settings_x + action_layout.settings.width + 8.0
     } else {
         left_inset + mascot_size + 8.0
     };
@@ -67,11 +68,6 @@ pub(super) unsafe fn relayout_compact_content(
     let total_x = group_right - total_width;
     let slash_x = total_x - metrics_gap - slash_width;
     let right_start = (slash_x - metrics_gap - active_width + ACTIVE_COUNT_SLOT_NUDGE_X).max(168.0);
-    let quit_x = if actions_active {
-        (right_start - quit_gap - action_size).max(0.0)
-    } else {
-        (bar_size.width - 10.0 - action_size).max(0.0)
-    };
     let headline_width = (right_start - title_x - 8.0).max(96.0);
     let digit_y = ((bar_size.height - ACTIVE_COUNT_LABEL_HEIGHT) / 2.0).round() - 1.5;
     let slash_y = digit_y;
@@ -85,14 +81,13 @@ pub(super) unsafe fn relayout_compact_content(
         NSSize::new(bar_size.width.max(0.0), bar_size.height.max(0.0)),
     ));
     update_completion_glow_layout(completion_glow, bar_size);
-    let action_y = ((bar_size.height - action_size) / 2.0).round();
     settings_button.setFrame(NSRect::new(
-        NSPoint::new(settings_x, action_y),
-        NSSize::new(action_size, action_size),
+        NSPoint::new(action_layout.settings.x, action_layout.settings.y),
+        NSSize::new(action_layout.settings.width, action_layout.settings.height),
     ));
     quit_button.setFrame(NSRect::new(
-        NSPoint::new(quit_x, action_y),
-        NSSize::new(action_size, action_size),
+        NSPoint::new(action_layout.quit.x, action_layout.quit.y),
+        NSSize::new(action_layout.quit.width, action_layout.quit.height),
     ));
     mascot_shell.setFrame(NSRect::new(
         NSPoint::new(

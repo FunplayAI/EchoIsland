@@ -52,8 +52,8 @@ use super::runtime_polling::{
     native_panel_interactive_inside_for_polling_input,
     native_panel_interactive_inside_from_host_facts, native_panel_polling_interaction_input,
     native_panel_polling_interaction_input_from_host_facts,
-    resolve_native_panel_host_interaction_state, resolve_native_panel_hover_fallback_frames,
-    resolve_native_panel_hover_fallback_state,
+    resolve_native_panel_host_behavior_plan, resolve_native_panel_host_interaction_state,
+    resolve_native_panel_hover_fallback_frames, resolve_native_panel_hover_fallback_state,
     sync_native_panel_host_polling_interaction_for_state,
     sync_native_panel_mouse_passthrough_for_interactive_inside,
     sync_native_panel_polling_interaction_for_state,
@@ -91,7 +91,8 @@ mod tests {
         native_panel_polling_interaction_input_from_host_facts,
         record_native_panel_focus_click_session,
         resolve_native_panel_click_command_for_pointer_state,
-        resolve_native_panel_hover_fallback_frames, resolve_native_panel_last_focus_click,
+        resolve_native_panel_host_behavior_plan, resolve_native_panel_hover_fallback_frames,
+        resolve_native_panel_last_focus_click,
         resolve_native_panel_settings_surface_snapshot_update_for_state,
         sync_native_panel_host_polling_interaction_for_state,
         sync_native_panel_hover_interaction_and_rerender_at_point_with_input_descriptor,
@@ -235,10 +236,12 @@ mod tests {
             card_count: 0,
             cards: Vec::new(),
             glow_visible: false,
+            glow_opacity: 0.0,
             action_buttons_visible: false,
             action_buttons: Vec::new(),
             completion_count: 0,
             mascot_elapsed_ms: 0,
+            mascot_motion_frame: None,
             mascot_pose: SceneMascotPose::Idle,
             mascot_debug_mode_enabled: false,
         }
@@ -1489,7 +1492,37 @@ mod tests {
         assert!(result.interactive_inside);
         assert!(!result.next_ignores_mouse_events);
         assert!(result.sync_mouse_event_passthrough);
+        assert_eq!(
+            result.host_behavior.commands,
+            vec![
+                crate::native_panel_renderer::runtime_interaction::NativePanelHostBehaviorCommand::SetMouseEventPassthrough {
+                    ignores_mouse_events: false,
+                }
+            ]
+        );
         assert!(!state.ignores_mouse_events);
+    }
+
+    #[test]
+    fn shared_host_behavior_plan_skips_redundant_passthrough_commands() {
+        let plan = resolve_native_panel_host_behavior_plan(false, true);
+        assert!(plan.commands.is_empty());
+        assert_eq!(plan.ignores_mouse_events, false);
+        assert!(plan.interactive_inside);
+        assert!(!plan.sync_mouse_event_passthrough());
+        assert_eq!(plan.mouse_event_passthrough_target(), None);
+
+        let plan = resolve_native_panel_host_behavior_plan(false, false);
+        assert_eq!(
+            plan.commands,
+            vec![
+                crate::native_panel_renderer::runtime_interaction::NativePanelHostBehaviorCommand::SetMouseEventPassthrough {
+                    ignores_mouse_events: true,
+                }
+            ]
+        );
+        assert!(plan.sync_mouse_event_passthrough());
+        assert_eq!(plan.mouse_event_passthrough_target(), Some(true));
     }
 
     #[test]

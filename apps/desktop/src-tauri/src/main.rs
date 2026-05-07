@@ -22,6 +22,8 @@ mod focus_store;
 mod http_receiver;
 mod island_window;
 #[cfg(target_os = "macos")]
+mod macos_lifecycle_diagnostics;
+#[cfg(target_os = "macos")]
 mod macos_native_test_panel;
 #[cfg(not(target_os = "macos"))]
 #[path = "macos_native_test_panel_stub.rs"]
@@ -111,6 +113,8 @@ fn main() {
             diagnostics::log_diagnostic_event("tauri_setup_begin", &[]);
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            #[cfg(target_os = "macos")]
+            macos_lifecycle_diagnostics::install_macos_lifecycle_diagnostics();
             let app_handle = app.handle().clone();
             let native_panel_backend = current_native_panel_runtime_backend();
             if native_panel_backend.native_ui_enabled() {

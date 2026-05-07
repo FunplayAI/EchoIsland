@@ -42,20 +42,18 @@ pub(super) fn source_native_app_bundle(source: &str) -> Option<(&'static str, &'
 }
 
 pub(super) fn activate_app_bundle(bundle_id: &str, display_name: &str) -> bool {
-    crate::diagnostics::log_diagnostic_event(
-        "macos_activate_app_bundle_begin",
-        &[
-            ("bundle_id", bundle_id.to_string()),
-            ("display_name", display_name.to_string()),
-        ],
-    );
+    let mut begin_fields = app_bundle_diagnostic_fields(bundle_id, display_name);
+    begin_fields.push(("method", "activate_app_bundle".to_string()));
+    crate::diagnostics::log_diagnostic_event("macos_activate_app_bundle_begin", &begin_fields);
     if activate_running_app_bundle(bundle_id, display_name) {
+        let mut fields = app_bundle_diagnostic_fields(bundle_id, display_name);
+        fields.extend([
+            ("activated", "true".to_string()),
+            ("activation_stage", "running_process".to_string()),
+        ]);
         crate::diagnostics::log_diagnostic_event(
             "macos_activate_app_bundle_running_process_hit",
-            &[
-                ("bundle_id", bundle_id.to_string()),
-                ("display_name", display_name.to_string()),
-            ],
+            &fields,
         );
         return true;
     }
@@ -71,62 +69,59 @@ end try
     );
     crate::diagnostics::log_diagnostic_event(
         "macos_activate_app_bundle_osascript_begin",
-        &[
-            ("bundle_id", bundle_id.to_string()),
-            ("display_name", display_name.to_string()),
-        ],
+        &app_bundle_diagnostic_fields(bundle_id, display_name),
     );
     let osascript_activated = run_osascript(&script, display_name);
+    let mut osascript_fields = app_bundle_diagnostic_fields(bundle_id, display_name);
+    osascript_fields.push(("activated", osascript_activated.to_string()));
     crate::diagnostics::log_diagnostic_event(
         "macos_activate_app_bundle_osascript_complete",
-        &[
-            ("bundle_id", bundle_id.to_string()),
-            ("display_name", display_name.to_string()),
-            ("activated", osascript_activated.to_string()),
-        ],
+        &osascript_fields,
     );
     let fallback_activated = if osascript_activated {
         false
     } else {
+        let mut fallback_fields = app_bundle_diagnostic_fields(bundle_id, display_name);
+        fallback_fields.extend([
+            ("path", "/usr/bin/open".to_string()),
+            ("args", format!("-b {bundle_id}")),
+        ]);
         crate::diagnostics::log_diagnostic_event(
             "macos_activate_app_bundle_open_fallback_begin",
-            &[
-                ("bundle_id", bundle_id.to_string()),
-                ("display_name", display_name.to_string()),
-                ("path", "/usr/bin/open".to_string()),
-                ("args", format!("-b {bundle_id}")),
-            ],
+            &fallback_fields,
         );
         let activated = run_command_success("/usr/bin/open", &["-b", bundle_id], None);
+        let mut fallback_complete_fields = app_bundle_diagnostic_fields(bundle_id, display_name);
+        fallback_complete_fields.extend([
+            ("path", "/usr/bin/open".to_string()),
+            ("args", format!("-b {bundle_id}")),
+            ("activated", activated.to_string()),
+        ]);
         crate::diagnostics::log_diagnostic_event(
             "macos_activate_app_bundle_open_fallback_complete",
-            &[
-                ("bundle_id", bundle_id.to_string()),
-                ("display_name", display_name.to_string()),
-                ("activated", activated.to_string()),
-            ],
+            &fallback_complete_fields,
         );
         activated
     };
     let activated = osascript_activated || fallback_activated;
+    let mut complete_fields = app_bundle_diagnostic_fields(bundle_id, display_name);
+    complete_fields.extend([
+        ("activated", activated.to_string()),
+        (
+            "activation_stage",
+            if osascript_activated {
+                "osascript"
+            } else if fallback_activated {
+                "open_fallback"
+            } else {
+                "failed"
+            }
+            .to_string(),
+        ),
+    ]);
     crate::diagnostics::log_diagnostic_event(
         "macos_activate_app_bundle_complete",
-        &[
-            ("bundle_id", bundle_id.to_string()),
-            ("display_name", display_name.to_string()),
-            ("activated", activated.to_string()),
-            (
-                "activation_stage",
-                if osascript_activated {
-                    "osascript"
-                } else if fallback_activated {
-                    "open_fallback"
-                } else {
-                    "failed"
-                }
-                .to_string(),
-            ),
-        ],
+        &complete_fields,
     );
     activated
 }
@@ -156,9 +151,24 @@ return false
             ("bundle_id", bundle_id.to_string()),
             ("display_name", display_name.to_string()),
             ("activated", activated.to_string()),
-        ],
+        ]
+        .into_iter()
+        .chain(crate::diagnostics::current_context_fields())
+        .collect::<Vec<_>>(),
     );
     activated
+}
+
+fn app_bundle_diagnostic_fields(
+    bundle_id: &str,
+    display_name: &str,
+) -> Vec<(&'static str, String)> {
+    let mut fields = vec![
+        ("bundle_id", bundle_id.to_string()),
+        ("display_name", display_name.to_string()),
+    ];
+    fields.extend(crate::diagnostics::current_context_fields());
+    fields
 }
 
 pub(super) fn activate_running_app_process(display_name: &str) -> bool {
@@ -181,7 +191,10 @@ return false
         &[
             ("display_name", display_name.to_string()),
             ("activated", activated.to_string()),
-        ],
+        ]
+        .into_iter()
+        .chain(crate::diagnostics::current_context_fields())
+        .collect::<Vec<_>>(),
     );
     activated
 }

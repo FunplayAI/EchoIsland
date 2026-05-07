@@ -739,6 +739,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.22.1",
+ "block2",
  "chrono",
  "echoisland-adapters",
  "echoisland-core",

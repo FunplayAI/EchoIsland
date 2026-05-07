@@ -432,24 +432,23 @@ pub(super) fn activate_terminal_window(
     bundle_id: &str,
     fallback_name: &str,
 ) -> bool {
-    crate::diagnostics::log_diagnostic_event(
-        "macos_activate_terminal_window_begin",
-        &[
-            ("session_id", target.session_id.clone()),
-            ("source", target.source.clone()),
-            ("bundle_id", bundle_id.to_string()),
-            ("fallback_name", fallback_name.to_string()),
-            ("cwd", target.cwd.clone().unwrap_or_default()),
-            (
-                "terminal_bundle",
-                target.terminal_bundle.clone().unwrap_or_default(),
-            ),
-            (
-                "terminal_app",
-                target.terminal_app.clone().unwrap_or_default(),
-            ),
-        ],
-    );
+    let mut fields = vec![
+        ("session_id", target.session_id.clone()),
+        ("source", target.source.clone()),
+        ("bundle_id", bundle_id.to_string()),
+        ("fallback_name", fallback_name.to_string()),
+        ("cwd", target.cwd.clone().unwrap_or_default()),
+        (
+            "terminal_bundle",
+            target.terminal_bundle.clone().unwrap_or_default(),
+        ),
+        (
+            "terminal_app",
+            target.terminal_app.clone().unwrap_or_default(),
+        ),
+    ];
+    fields.extend(crate::diagnostics::current_context_fields());
+    crate::diagnostics::log_diagnostic_event("macos_activate_terminal_window_begin", &fields);
     let candidates = terminal_window_title_candidates(target);
     if candidates.is_empty() {
         return activate_terminal_app_fallback(bundle_id, fallback_name);
@@ -539,25 +538,33 @@ return false
 }
 
 fn activate_terminal_app_fallback(bundle_id: &str, fallback_name: &str) -> bool {
+    let begin_fields = terminal_fallback_diagnostic_fields(bundle_id, fallback_name);
     crate::diagnostics::log_diagnostic_event(
         "macos_activate_terminal_fallback_begin",
-        &[
-            ("bundle_id", bundle_id.to_string()),
-            ("fallback_name", fallback_name.to_string()),
-        ],
+        &begin_fields,
     );
     let activated = (!bundle_id.is_empty()
         && activate_running_app_bundle(bundle_id, fallback_name))
         || activate_running_app_process(fallback_name);
+    let mut complete_fields = terminal_fallback_diagnostic_fields(bundle_id, fallback_name);
+    complete_fields.push(("activated", activated.to_string()));
     crate::diagnostics::log_diagnostic_event(
         "macos_activate_terminal_fallback_complete",
-        &[
-            ("bundle_id", bundle_id.to_string()),
-            ("fallback_name", fallback_name.to_string()),
-            ("activated", activated.to_string()),
-        ],
+        &complete_fields,
     );
     activated
+}
+
+fn terminal_fallback_diagnostic_fields(
+    bundle_id: &str,
+    fallback_name: &str,
+) -> Vec<(&'static str, String)> {
+    let mut fields = vec![
+        ("bundle_id", bundle_id.to_string()),
+        ("fallback_name", fallback_name.to_string()),
+    ];
+    fields.extend(crate::diagnostics::current_context_fields());
+    fields
 }
 
 pub(super) fn activate_ide_window(

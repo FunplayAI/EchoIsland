@@ -25,16 +25,8 @@ pub(super) const EXPANDED_CONTENT_BOTTOM_INSET: f64 =
 pub(super) const EXPANDED_CARDS_SIDE_INSET: f64 =
     crate::native_panel_core::EXPANDED_CARDS_SIDE_INSET;
 pub(super) const EXPANDED_CARD_OVERHANG: f64 = crate::native_panel_core::EXPANDED_CARD_OVERHANG;
-pub(super) const CARD_INSET_X: f64 = crate::native_panel_core::CARD_INSET_X;
-pub(super) const CARD_CHAT_PREFIX_WIDTH: f64 = crate::native_panel_core::CARD_CHAT_PREFIX_WIDTH;
-pub(super) const CARD_CONTENT_BOTTOM_INSET: f64 =
-    crate::native_panel_core::CARD_CONTENT_BOTTOM_INSET;
 pub(super) const CARD_CHAT_GAP: f64 = crate::native_panel_core::CARD_CHAT_GAP;
 pub(super) const CARD_TOOL_GAP: f64 = crate::native_panel_core::CARD_TOOL_GAP;
-pub(super) const CARD_PENDING_ACTION_Y: f64 = crate::native_panel_core::CARD_PENDING_ACTION_Y;
-pub(super) const CARD_PENDING_ACTION_HEIGHT: f64 =
-    crate::native_panel_core::CARD_PENDING_ACTION_HEIGHT;
-pub(super) const CARD_PENDING_ACTION_GAP: f64 = crate::native_panel_core::CARD_PENDING_ACTION_GAP;
 #[cfg(test)]
 pub(super) const STATUS_COMPLETION_VISIBLE_SECONDS: u64 =
     crate::native_panel_core::STATUS_COMPLETION_VISIBLE_SECONDS;
@@ -68,18 +60,10 @@ pub(super) const PANEL_CLOSE_SHOULDER_DELAY_MS: u64 =
     crate::native_panel_core::PANEL_CLOSE_SHOULDER_DELAY_MS;
 pub(super) const PANEL_DROP_DISTANCE: f64 = crate::native_panel_core::PANEL_DROP_DISTANCE;
 pub(super) const PANEL_MORPH_PILL_RADIUS: f64 = crate::native_panel_core::PANEL_MORPH_PILL_RADIUS;
-pub(super) const PANEL_CARD_REVEAL_MS: u64 = crate::native_panel_core::PANEL_CARD_REVEAL_MS;
-pub(super) const PANEL_CARD_REVEAL_STAGGER_MS: u64 =
-    crate::native_panel_core::PANEL_CARD_REVEAL_STAGGER_MS;
 pub(super) const PANEL_CARD_EXIT_MS: u64 = crate::native_panel_core::PANEL_CARD_EXIT_MS;
-pub(super) const PANEL_CARD_EXIT_STAGGER_MS: u64 =
-    crate::native_panel_core::PANEL_CARD_EXIT_STAGGER_MS;
+#[cfg(test)]
 pub(super) const PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS: f64 =
     crate::native_panel_core::PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS;
-pub(super) const PANEL_CARD_CONTENT_REVEAL_DELAY_PROGRESS: f64 =
-    crate::native_panel_core::PANEL_CARD_CONTENT_REVEAL_DELAY_PROGRESS;
-pub(super) const PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS: f64 =
-    crate::native_panel_core::PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS;
 pub(super) const PANEL_CARD_REVEAL_Y: f64 = crate::native_panel_core::PANEL_CARD_REVEAL_Y;
 pub(super) const ACTIVE_COUNT_SLOT_WIDTH: f64 = crate::native_panel_core::ACTIVE_COUNT_SLOT_WIDTH;
 pub(super) const ACTIVE_COUNT_SLOT_NUDGE_X: f64 =
@@ -103,9 +87,6 @@ pub(super) const MASCOT_ANIMATION_REFRESH_MS: u64 =
     crate::native_panel_core::MASCOT_ANIMATION_REFRESH_MS;
 pub(super) const MASCOT_STATE_TRANSITION_SECONDS: f64 =
     crate::native_panel_core::MASCOT_STATE_TRANSITION_SECONDS;
-pub(super) const MASCOT_IDLE_LONG_SECONDS: u64 = crate::native_panel_core::MASCOT_IDLE_LONG_SECONDS;
-pub(super) const MASCOT_WAKE_ANGRY_SECONDS: f64 =
-    crate::native_panel_core::MASCOT_WAKE_ANGRY_SECONDS;
 pub(super) const MASCOT_VERTICAL_NUDGE_Y: f64 = crate::native_panel_core::MASCOT_VERTICAL_NUDGE_Y;
 pub(super) const CARD_FOCUS_CLICK_DEBOUNCE_MS: u128 =
     crate::native_panel_core::CARD_FOCUS_CLICK_DEBOUNCE_MS;

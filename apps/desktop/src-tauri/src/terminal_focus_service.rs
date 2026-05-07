@@ -121,6 +121,12 @@ impl<'a> TerminalFocusService<'a> {
             let cache = self.app_runtime.focus_cache.lock().await;
             cache.get(session_id).cloned()
         };
+        let mut diagnostic_fields = focus_target_diagnostic_fields(&target);
+        diagnostic_fields.push(("has_cached_tab", cached_tab.is_some().to_string()));
+        crate::diagnostics::log_diagnostic_event(
+            "runtime_focus_session_target_resolved",
+            &diagnostic_fields,
+        );
         info!(
             session_id = %session_id,
             has_cached_tab = cached_tab.is_some(),
@@ -150,7 +156,10 @@ impl<'a> TerminalFocusService<'a> {
                     "terminal_app",
                     target.terminal_app.clone().unwrap_or_default(),
                 ),
-            ],
+            ]
+            .into_iter()
+            .chain(crate::diagnostics::current_context_fields())
+            .collect::<Vec<_>>(),
         );
         info!(
             session_id = %session_id,
@@ -222,6 +231,62 @@ impl<'a> TerminalFocusService<'a> {
             Ok(title)
         }
     }
+}
+
+fn focus_target_diagnostic_fields(target: &SessionFocusTarget) -> Vec<(&'static str, String)> {
+    let mut fields = vec![
+        ("session_id", target.session_id.clone()),
+        ("source", target.source.clone()),
+        (
+            "project_name",
+            target.project_name.clone().unwrap_or_default(),
+        ),
+        ("cwd", target.cwd.clone().unwrap_or_default()),
+        (
+            "terminal_app",
+            target.terminal_app.clone().unwrap_or_default(),
+        ),
+        (
+            "terminal_bundle",
+            target.terminal_bundle.clone().unwrap_or_default(),
+        ),
+        ("host_app", target.host_app.clone().unwrap_or_default()),
+        (
+            "window_title",
+            target.window_title.clone().unwrap_or_default(),
+        ),
+        ("tty", target.tty.clone().unwrap_or_default()),
+        (
+            "terminal_pid",
+            target
+                .terminal_pid
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+        ),
+        (
+            "cli_pid",
+            target
+                .cli_pid
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+        ),
+        (
+            "iterm_session_id",
+            target.iterm_session_id.clone().unwrap_or_default(),
+        ),
+        (
+            "kitty_window_id",
+            target.kitty_window_id.clone().unwrap_or_default(),
+        ),
+        ("tmux_env", target.tmux_env.clone().unwrap_or_default()),
+        ("tmux_pane", target.tmux_pane.clone().unwrap_or_default()),
+        (
+            "tmux_client_tty",
+            target.tmux_client_tty.clone().unwrap_or_default(),
+        ),
+    ];
+    fields.extend(crate::diagnostics::current_context_fields());
+    fields
 }
 
 pub(crate) async fn focus_runtime_session(

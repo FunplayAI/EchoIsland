@@ -2,13 +2,13 @@ use super::panel_shoulder;
 use super::panel_style;
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, MainThreadOnly};
-use objc2_app_kit::{NSColor, NSView};
+use objc2_app_kit::{NSColor, NSTextField, NSView};
 use objc2_foundation::{NSRect, NSSize};
 use objc2_quartz_core::CALayer;
 
 use super::completion_glow_view::create_completion_glow;
 use super::panel_action_buttons::{
-    close_action_color, create_edge_action_button, text_primary_color,
+    EdgeActionButtonViews, close_action_color, create_edge_action_button, text_primary_color,
 };
 use super::panel_base_container_views::{
     create_body_separator, create_content_view, create_expanded_container, create_top_highlight,
@@ -27,7 +27,9 @@ pub(super) struct PanelBaseViews {
     pub(super) top_highlight: Retained<NSView>,
     pub(super) body_separator: Retained<NSView>,
     pub(super) settings_button: Retained<NSView>,
+    pub(super) settings_button_label: Retained<NSTextField>,
     pub(super) quit_button: Retained<NSView>,
+    pub(super) quit_button_label: Retained<NSTextField>,
 }
 pub(super) fn create_panel_base_views(
     mtm: MainThreadMarker,
@@ -60,8 +62,14 @@ pub(super) fn create_panel_base_views(
     let top_highlight = create_top_highlight(mtm, pill_size, pill_highlight);
     let completion_glow = create_completion_glow(mtm, pill_size);
     let body_separator = create_body_separator(mtm, expanded_width, separator_color);
-    let settings_button = create_edge_action_button(mtm, "⚙", text_primary_color(), 20.0, 5.0);
-    let quit_button = create_edge_action_button(mtm, "⏻", close_action_color(), 16.0, 2.0);
+    let EdgeActionButtonViews {
+        button: settings_button,
+        label: settings_button_label,
+    } = create_edge_action_button(mtm, "⚙", text_primary_color(), 20.0, 5.0);
+    let EdgeActionButtonViews {
+        button: quit_button,
+        label: quit_button_label,
+    } = create_edge_action_button(mtm, "⏻", close_action_color(), 16.0, 2.0);
 
     PanelBaseViews {
         content_view,
@@ -74,7 +82,9 @@ pub(super) fn create_panel_base_views(
         top_highlight,
         body_separator,
         settings_button,
+        settings_button_label,
         quit_button,
+        quit_button_label,
     }
 }
 

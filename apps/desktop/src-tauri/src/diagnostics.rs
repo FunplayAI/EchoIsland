@@ -85,6 +85,48 @@ pub(crate) fn current_process_fields() -> Vec<(&'static str, String)> {
     ]
 }
 
+pub(crate) fn current_context_fields() -> Vec<(&'static str, String)> {
+    let mut fields = current_process_fields();
+    fields.extend(current_foreground_app_fields());
+    fields
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn current_foreground_app_fields() -> Vec<(&'static str, String)> {
+    use objc2_app_kit::NSWorkspace;
+
+    if !diagnostic_logging_enabled() {
+        return Vec::new();
+    }
+
+    let workspace = NSWorkspace::sharedWorkspace();
+    let Some(app) = workspace.frontmostApplication() else {
+        return vec![("frontmost_app_available", "false".to_string())];
+    };
+
+    vec![
+        ("frontmost_app_available", "true".to_string()),
+        (
+            "frontmost_app_name",
+            app.localizedName()
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+        ),
+        (
+            "frontmost_bundle_id",
+            app.bundleIdentifier()
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+        ),
+        ("frontmost_pid", app.processIdentifier().to_string()),
+    ]
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn current_foreground_app_fields() -> Vec<(&'static str, String)> {
+    Vec::new()
+}
+
 pub(crate) fn command_output_preview(bytes: &[u8]) -> String {
     const MAX_OUTPUT_CHARS: usize = 600;
     let output = String::from_utf8_lossy(bytes).trim().to_string();

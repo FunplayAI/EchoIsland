@@ -14,17 +14,16 @@ use objc2_quartz_core::{CALayer, kCAGravityResize};
 use tracing::warn;
 
 use super::panel_constants::COMPACT_PILL_RADIUS;
+use crate::native_panel_renderer::facade::presentation::{
+    COMPLETION_GLOW_IMAGE_HEIGHT, COMPLETION_GLOW_IMAGE_WIDTH, CompletionGlowImageSliceSpec,
+    resolve_completion_glow_image_slices,
+};
 
 const COMPLETION_GLOW_IMAGE_BYTES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../web/assets/island-completion-inner-glow-9slice.png"
 ));
 const COMPLETION_GLOW_IMAGE_FILE_NAME: &str = "echoisland-island-completion-inner-glow.png";
-const COMPLETION_GLOW_IMAGE_WIDTH: f64 = 480.0;
-const COMPLETION_GLOW_IMAGE_HEIGHT: f64 = 160.0;
-const COMPLETION_GLOW_IMAGE_RADIUS: f64 = 64.0;
-const COMPLETION_GLOW_SLICE_LEFT: f64 = 160.0;
-const COMPLETION_GLOW_SLICE_RIGHT: f64 = 160.0;
 const COMPLETION_GLOW_LEFT_LAYER_NAME: &str = "completion-glow-left";
 const COMPLETION_GLOW_CENTER_LAYER_NAME: &str = "completion-glow-center";
 const COMPLETION_GLOW_RIGHT_LAYER_NAME: &str = "completion-glow-right";
@@ -67,7 +66,27 @@ pub(super) fn update_completion_glow_layout(completion_glow: &NSView, bar_size: 
     let left_layer = sublayers.objectAtIndex(0);
     let center_layer = sublayers.objectAtIndex(1);
     let right_layer = sublayers.objectAtIndex(2);
-    layout_completion_glow_slice_layers(&left_layer, &center_layer, &right_layer, bar_size);
+    let slices = resolve_completion_glow_image_slices(panel_rect_from_ns_size(bar_size));
+    layout_completion_glow_slice_layers(&left_layer, &center_layer, &right_layer, &slices);
+}
+
+pub(super) fn update_completion_glow_layout_from_slices(
+    completion_glow: &NSView,
+    slices: &[CompletionGlowImageSliceSpec; 3],
+) {
+    let Some(root_layer) = completion_glow.layer() else {
+        return;
+    };
+    let Some(sublayers) = (unsafe { root_layer.sublayers() }) else {
+        return;
+    };
+    if sublayers.len() < 3 {
+        return;
+    }
+    let left_layer = sublayers.objectAtIndex(0);
+    let center_layer = sublayers.objectAtIndex(1);
+    let right_layer = sublayers.objectAtIndex(2);
+    layout_completion_glow_slice_layers(&left_layer, &center_layer, &right_layer, slices);
 }
 
 fn apply_completion_glow_image(root_layer: &CALayer, pill_size: NSSize) {
@@ -91,26 +110,23 @@ fn apply_completion_glow_image(root_layer: &CALayer, pill_size: NSSize) {
         return;
     };
 
+    let initial_slices = resolve_completion_glow_image_slices(panel_rect_from_ns_size(pill_size));
     let left_layer = create_completion_glow_slice_layer(
         AsRef::<AnyObject>::as_ref(&cg_image),
         COMPLETION_GLOW_LEFT_LAYER_NAME,
-        0.0,
-        COMPLETION_GLOW_SLICE_LEFT / COMPLETION_GLOW_IMAGE_WIDTH,
+        initial_slices[0].source,
     );
     let center_layer = create_completion_glow_slice_layer(
         AsRef::<AnyObject>::as_ref(&cg_image),
         COMPLETION_GLOW_CENTER_LAYER_NAME,
-        COMPLETION_GLOW_SLICE_LEFT / COMPLETION_GLOW_IMAGE_WIDTH,
-        (COMPLETION_GLOW_IMAGE_WIDTH - COMPLETION_GLOW_SLICE_LEFT - COMPLETION_GLOW_SLICE_RIGHT)
-            / COMPLETION_GLOW_IMAGE_WIDTH,
+        initial_slices[1].source,
     );
     let right_layer = create_completion_glow_slice_layer(
         AsRef::<AnyObject>::as_ref(&cg_image),
         COMPLETION_GLOW_RIGHT_LAYER_NAME,
-        (COMPLETION_GLOW_IMAGE_WIDTH - COMPLETION_GLOW_SLICE_RIGHT) / COMPLETION_GLOW_IMAGE_WIDTH,
-        COMPLETION_GLOW_SLICE_RIGHT / COMPLETION_GLOW_IMAGE_WIDTH,
+        initial_slices[2].source,
     );
-    layout_completion_glow_slice_layers(&left_layer, &center_layer, &right_layer, pill_size);
+    layout_completion_glow_slice_layers(&left_layer, &center_layer, &right_layer, &initial_slices);
     root_layer.addSublayer(&left_layer);
     root_layer.addSublayer(&center_layer);
     root_layer.addSublayer(&right_layer);
@@ -119,8 +135,7 @@ fn apply_completion_glow_image(root_layer: &CALayer, pill_size: NSSize) {
 fn create_completion_glow_slice_layer(
     cg_image: &AnyObject,
     name: &str,
-    rect_x: f64,
-    rect_width: f64,
+    source: crate::native_panel_core::PanelRect,
 ) -> Retained<CALayer> {
     let layer = CALayer::layer();
     layer.setName(Some(&NSString::from_str(name)));
@@ -128,10 +143,7 @@ fn create_completion_glow_slice_layer(
         layer.setContents(Some(cg_image));
         layer.setContentsGravity(kCAGravityResize);
     }
-    layer.setContentsRect(NSRect::new(
-        NSPoint::new(rect_x, 0.0),
-        NSSize::new(rect_width, 1.0),
-    ));
+    set_completion_glow_contents_rect(&layer, source);
     layer
 }
 
@@ -139,36 +151,41 @@ fn layout_completion_glow_slice_layers(
     left_layer: &CALayer,
     center_layer: &CALayer,
     right_layer: &CALayer,
-    bar_size: NSSize,
+    slices: &[CompletionGlowImageSliceSpec; 3],
 ) {
-    let bar_width = bar_size.width.max(0.0);
-    let display_scale = (COMPACT_PILL_RADIUS / COMPLETION_GLOW_IMAGE_RADIUS).max(0.0);
-    let display_height = (COMPLETION_GLOW_IMAGE_HEIGHT * display_scale)
-        .min(bar_size.height)
-        .max(0.0);
-    let mut left_width = COMPLETION_GLOW_SLICE_LEFT * display_scale;
-    let mut right_width = COMPLETION_GLOW_SLICE_RIGHT * display_scale;
+    apply_completion_glow_slice_layout(left_layer, slices[0]);
+    apply_completion_glow_slice_layout(center_layer, slices[1]);
+    apply_completion_glow_slice_layout(right_layer, slices[2]);
+}
 
-    let total_cap_width = left_width + right_width;
-    if total_cap_width > bar_width && total_cap_width > 0.0 {
-        let shrink = bar_width / total_cap_width;
-        left_width *= shrink;
-        right_width *= shrink;
+fn apply_completion_glow_slice_layout(layer: &CALayer, slice: CompletionGlowImageSliceSpec) {
+    layer.setFrame(NSRect::new(
+        NSPoint::new(slice.dest.x, slice.dest.y),
+        NSSize::new(slice.dest.width, slice.dest.height),
+    ));
+    set_completion_glow_contents_rect(layer, slice.source);
+}
+
+fn set_completion_glow_contents_rect(layer: &CALayer, source: crate::native_panel_core::PanelRect) {
+    layer.setContentsRect(NSRect::new(
+        NSPoint::new(
+            source.x / COMPLETION_GLOW_IMAGE_WIDTH,
+            source.y / COMPLETION_GLOW_IMAGE_HEIGHT,
+        ),
+        NSSize::new(
+            source.width / COMPLETION_GLOW_IMAGE_WIDTH,
+            source.height / COMPLETION_GLOW_IMAGE_HEIGHT,
+        ),
+    ));
+}
+
+fn panel_rect_from_ns_size(size: NSSize) -> crate::native_panel_core::PanelRect {
+    crate::native_panel_core::PanelRect {
+        x: 0.0,
+        y: 0.0,
+        width: size.width.max(0.0),
+        height: size.height.max(0.0),
     }
-
-    let center_width = (bar_width - left_width - right_width).max(0.0);
-    left_layer.setFrame(NSRect::new(
-        NSPoint::new(0.0, 0.0),
-        NSSize::new(left_width, display_height),
-    ));
-    center_layer.setFrame(NSRect::new(
-        NSPoint::new(left_width, 0.0),
-        NSSize::new(center_width, display_height),
-    ));
-    right_layer.setFrame(NSRect::new(
-        NSPoint::new((bar_width - right_width).max(0.0), 0.0),
-        NSSize::new(right_width, display_height),
-    ));
 }
 
 fn ensure_embedded_completion_glow_file() -> Option<&'static Path> {

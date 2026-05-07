@@ -1,4 +1,4 @@
-﻿use super::{
+use super::{
     direct2d::WindowsDirect2DFactory,
     directwrite::WindowsDirectWriteFactory,
     directwrite::WindowsDirectWriteTextLayoutRequest,
@@ -24,16 +24,6 @@ const COMPLETION_GLOW_IMAGE_BYTES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../web/assets/island-completion-inner-glow-9slice.png"
 ));
-#[cfg(all(windows, not(test)))]
-const COMPLETION_GLOW_IMAGE_WIDTH: f64 = 480.0;
-#[cfg(all(windows, not(test)))]
-const COMPLETION_GLOW_IMAGE_HEIGHT: f64 = 160.0;
-#[cfg(all(windows, not(test)))]
-const COMPLETION_GLOW_IMAGE_RADIUS: f64 = 64.0;
-#[cfg(all(windows, not(test)))]
-const COMPLETION_GLOW_SLICE_LEFT: f64 = 160.0;
-#[cfg(all(windows, not(test)))]
-const COMPLETION_GLOW_SLICE_RIGHT: f64 = 160.0;
 
 pub(super) fn directwrite_text_requests_from_paint_plan(
     plan: &WindowsNativePanelPaintPlan,
@@ -43,8 +33,17 @@ pub(super) fn directwrite_text_requests_from_paint_plan(
     }
     plan.primitives
         .iter()
-        .filter_map(|primitive| match primitive {
+        .filter_map(|primitive| {
+            match primitive {
             crate::native_panel_renderer::facade::visual::NativePanelVisualPrimitive::Text {
+                text,
+                max_width,
+                size,
+                weight,
+                alignment,
+                ..
+            }
+            | crate::native_panel_renderer::facade::visual::NativePanelVisualPrimitive::MascotText {
                 text,
                 max_width,
                 size,
@@ -59,6 +58,7 @@ pub(super) fn directwrite_text_requests_from_paint_plan(
                 *alignment,
             )),
             _ => None,
+        }
         })
         .collect()
 }
@@ -441,7 +441,13 @@ impl Direct2DWindowsNativePanelPainter {
                         ) else {
                             continue;
                         };
-                        draw_completion_glow_image(target, bitmap, coordinate_space, frame, opacity);
+                        draw_completion_glow_image(
+                            target,
+                            bitmap,
+                            coordinate_space,
+                            frame,
+                            opacity,
+                        );
                     }
                     WindowsNativePanelPaintOperation::FillHitTestBlocker { frame, alpha } => {
                         let brush = surface
@@ -666,17 +672,15 @@ fn ensure_completion_glow_bitmap_for_target<'a>(
 fn create_completion_glow_bitmap(
     target: &windows::Win32::Graphics::Direct2D::ID2D1DCRenderTarget,
 ) -> Result<windows::Win32::Graphics::Direct2D::ID2D1Bitmap, String> {
-    use windows::{
-        Win32::{
-            Foundation::RPC_E_CHANGED_MODE,
-            Graphics::Imaging::{
-                CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICBitmapSource,
-                IWICImagingFactory, WICBitmapDitherTypeNone, WICBitmapPaletteTypeMedianCut,
-                WICDecodeMetadataCacheOnLoad,
-            },
-            System::Com::{
-                CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
-            },
+    use windows::Win32::{
+        Foundation::RPC_E_CHANGED_MODE,
+        Graphics::Imaging::{
+            CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICBitmapSource,
+            IWICImagingFactory, WICBitmapDitherTypeNone, WICBitmapPaletteTypeMedianCut,
+            WICDecodeMetadataCacheOnLoad,
+        },
+        System::Com::{
+            CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
         },
     };
 
@@ -702,7 +706,8 @@ fn create_completion_glow_bitmap(
     }
     .map_err(|error| error.to_string())?;
     let frame = unsafe { decoder.GetFrame(0) }.map_err(|error| error.to_string())?;
-    let converter = unsafe { factory.CreateFormatConverter() }.map_err(|error| error.to_string())?;
+    let converter =
+        unsafe { factory.CreateFormatConverter() }.map_err(|error| error.to_string())?;
     unsafe {
         converter.Initialize(
             &frame,
@@ -728,66 +733,13 @@ fn draw_completion_glow_image(
 ) {
     use windows::Win32::Graphics::Direct2D::D2D1_BITMAP_INTERPOLATION_MODE_LINEAR;
 
-    let display_scale =
-        (crate::native_panel_core::COMPACT_PILL_RADIUS / COMPLETION_GLOW_IMAGE_RADIUS).max(0.0);
-    let display_height = (COMPLETION_GLOW_IMAGE_HEIGHT * display_scale)
-        .min(frame.height)
-        .max(0.0);
-    let mut left_width = COMPLETION_GLOW_SLICE_LEFT * display_scale;
-    let mut right_width = COMPLETION_GLOW_SLICE_RIGHT * display_scale;
-    let total_cap_width = left_width + right_width;
-    if total_cap_width > frame.width && total_cap_width > 0.0 {
-        let shrink = frame.width / total_cap_width;
-        left_width *= shrink;
-        right_width *= shrink;
-    }
-    let center_width = (frame.width - left_width - right_width).max(0.0);
-    let y = frame.y;
-    let slices = [
-        (
-            PanelRect {
-                x: frame.x,
-                y,
-                width: left_width,
-                height: display_height,
-            },
-            PanelRect {
-                x: 0.0,
-                y: 0.0,
-                width: COMPLETION_GLOW_SLICE_LEFT,
-                height: COMPLETION_GLOW_IMAGE_HEIGHT,
-            },
-        ),
-        (
-            PanelRect {
-                x: frame.x + left_width,
-                y,
-                width: center_width,
-                height: display_height,
-            },
-            PanelRect {
-                x: COMPLETION_GLOW_SLICE_LEFT,
-                y: 0.0,
-                width: COMPLETION_GLOW_IMAGE_WIDTH - COMPLETION_GLOW_SLICE_LEFT - COMPLETION_GLOW_SLICE_RIGHT,
-                height: COMPLETION_GLOW_IMAGE_HEIGHT,
-            },
-        ),
-        (
-            PanelRect {
-                x: frame.x + frame.width - right_width,
-                y,
-                width: right_width,
-                height: display_height,
-            },
-            PanelRect {
-                x: COMPLETION_GLOW_IMAGE_WIDTH - COMPLETION_GLOW_SLICE_RIGHT,
-                y: 0.0,
-                width: COMPLETION_GLOW_SLICE_RIGHT,
-                height: COMPLETION_GLOW_IMAGE_HEIGHT,
-            },
-        ),
-    ];
-    for (dest, source) in slices {
+    for slice in
+        crate::native_panel_renderer::facade::presentation::resolve_completion_glow_image_slices(
+            frame,
+        )
+    {
+        let dest = slice.dest;
+        let source = slice.source;
         if dest.width <= 0.0 || dest.height <= 0.0 || source.width <= 0.0 || source.height <= 0.0 {
             continue;
         }
@@ -1220,10 +1172,12 @@ mod tests {
             card_count: 0,
             cards: Vec::new(),
             glow_visible: false,
+            glow_opacity: 0.0,
             action_buttons_visible: false,
             action_buttons: Vec::new(),
             completion_count: 1,
             mascot_elapsed_ms: 0,
+            mascot_motion_frame: None,
             mascot_pose: SceneMascotPose::Idle,
             mascot_debug_mode_enabled: false,
         }
@@ -1340,6 +1294,7 @@ mod tests {
                 },
             ],
             glow_visible: true,
+            glow_opacity: 0.78,
             action_buttons_visible: true,
             action_buttons: vec![NativePanelVisualActionButtonInput {
                 action: NativePanelEdgeAction::Settings,
@@ -1352,6 +1307,7 @@ mod tests {
             }],
             completion_count: 0,
             mascot_elapsed_ms: 0,
+            mascot_motion_frame: None,
             mascot_pose: SceneMascotPose::Complete,
             mascot_debug_mode_enabled: false,
         }

@@ -1,15 +1,13 @@
 use std::time::Instant;
 
-use super::mascot_motion::{
-    native_mascot_color, native_mascot_lerp_motion, native_mascot_target_motion, smoothstep_unit,
-};
 use super::mascot_render::apply_native_mascot_frame;
 use super::mascot_scene::resolve_native_mascot_frame_input;
-use super::panel_constants::{
-    MASCOT_IDLE_LONG_SECONDS, MASCOT_STATE_TRANSITION_SECONDS, MASCOT_WAKE_ANGRY_SECONDS,
-};
+use super::panel_constants::MASCOT_STATE_TRANSITION_SECONDS;
 use super::panel_refs::native_panel_state;
 use super::panel_types::NativePanelHandles;
+use crate::native_panel_core::{
+    MascotRuntimeFrameInput, MascotRuntimeState, MascotVisualFrame, PanelMascotBaseState,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum NativeMascotState {
@@ -32,6 +30,7 @@ pub(super) struct NativeMascotMotion {
     pub(super) shell_alpha: f64,
     pub(super) shadow_opacity: f32,
     pub(super) shadow_radius: f64,
+    pub(super) eye_open: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -48,43 +47,14 @@ pub(super) struct NativeMascotFrame {
 
 pub(super) struct NativeMascotRuntime {
     animation_started_at: Instant,
-    last_non_idle_at: Instant,
-    last_resolved_state: NativeMascotState,
-    wake_started_at: Option<Instant>,
-    wake_next_state: NativeMascotState,
-    transition_target: NativeMascotState,
-    transition_started_at: Instant,
-    transition_start_motion: NativeMascotMotion,
-    last_motion: NativeMascotMotion,
-}
-
-impl NativeMascotMotion {
-    fn idle() -> Self {
-        Self {
-            offset_x: 0.0,
-            offset_y: 0.0,
-            scale_x: 1.0,
-            scale_y: 1.0,
-            shell_alpha: 1.0,
-            shadow_opacity: 0.34,
-            shadow_radius: 4.0,
-        }
-    }
+    runtime: MascotRuntimeState,
 }
 
 impl NativeMascotRuntime {
     pub(super) fn new(now: Instant) -> Self {
-        let idle_motion = NativeMascotMotion::idle();
         Self {
             animation_started_at: now,
-            last_non_idle_at: now,
-            last_resolved_state: NativeMascotState::Idle,
-            wake_started_at: None,
-            wake_next_state: NativeMascotState::Idle,
-            transition_target: NativeMascotState::Idle,
-            transition_started_at: now,
-            transition_start_motion: idle_motion,
-            last_motion: idle_motion,
+            runtime: MascotRuntimeState::new(0),
         }
     }
 
@@ -95,91 +65,65 @@ impl NativeMascotRuntime {
         completion_count: usize,
         now: Instant,
     ) -> NativeMascotFrame {
-        let t = now
+        let elapsed_ms = now
             .saturating_duration_since(self.animation_started_at)
-            .as_secs_f64();
-        let visual_state = self.resolve_visual_state(base_state, expanded, now);
-        let target_motion = native_mascot_target_motion(visual_state, t, self.wake_started_at, now);
-
-        if self.transition_target != visual_state {
-            self.transition_target = visual_state;
-            self.transition_started_at = now;
-            self.transition_start_motion = self.last_motion;
-        }
-
-        let transition_progress = now
-            .saturating_duration_since(self.transition_started_at)
-            .as_secs_f64()
-            / MASCOT_STATE_TRANSITION_SECONDS;
-        let motion = native_mascot_lerp_motion(
-            self.transition_start_motion,
-            target_motion,
-            smoothstep_unit(transition_progress),
-        );
-        self.last_motion = motion;
+            .as_millis();
+        let shared_frame = self.runtime.next_frame(MascotRuntimeFrameInput {
+            base_state: panel_mascot_state_from_native(base_state),
+            expanded,
+            elapsed_ms,
+            transition_duration_ms: (MASCOT_STATE_TRANSITION_SECONDS * 1000.0).round() as u128,
+        });
 
         NativeMascotFrame {
-            state: visual_state,
-            t,
-            motion,
-            color: native_mascot_color(visual_state, t, self.wake_started_at, now),
+            state: native_mascot_state_from_core(shared_frame.state),
+            t: elapsed_ms as f64 / 1000.0,
+            motion: native_mascot_motion_from_visual_frame(shared_frame.motion),
+            color: shared_frame.color,
             completion_count,
             mascot_hidden: false,
             debug_mode_enabled: false,
             completion_glow_opacity: 0.0,
         }
     }
+}
 
-    fn resolve_visual_state(
-        &mut self,
-        base_state: NativeMascotState,
-        expanded: bool,
-        now: Instant,
-    ) -> NativeMascotState {
-        let mut next_state = if base_state != NativeMascotState::Idle {
-            self.last_non_idle_at = now;
-            base_state
-        } else if expanded {
-            self.last_non_idle_at = now;
-            NativeMascotState::Idle
-        } else if now
-            .saturating_duration_since(self.last_non_idle_at)
-            .as_secs()
-            >= MASCOT_IDLE_LONG_SECONDS
-        {
-            NativeMascotState::Sleepy
-        } else {
-            NativeMascotState::Idle
-        };
+fn panel_mascot_state_from_native(state: NativeMascotState) -> PanelMascotBaseState {
+    match state {
+        NativeMascotState::Idle => PanelMascotBaseState::Idle,
+        NativeMascotState::Bouncing => PanelMascotBaseState::Running,
+        NativeMascotState::Approval => PanelMascotBaseState::Approval,
+        NativeMascotState::Question => PanelMascotBaseState::Question,
+        NativeMascotState::MessageBubble => PanelMascotBaseState::MessageBubble,
+        NativeMascotState::Complete => PanelMascotBaseState::Complete,
+        NativeMascotState::Sleepy => PanelMascotBaseState::Sleepy,
+        NativeMascotState::WakeAngry => PanelMascotBaseState::WakeAngry,
+    }
+}
 
-        let waking_from_sleep = next_state != NativeMascotState::Sleepy
-            && self.wake_started_at.is_none()
-            && self.last_resolved_state == NativeMascotState::Sleepy;
-        if waking_from_sleep {
-            self.wake_started_at = Some(now);
-            self.wake_next_state = next_state;
-            self.last_resolved_state = NativeMascotState::WakeAngry;
-            return NativeMascotState::WakeAngry;
-        }
+fn native_mascot_state_from_core(state: PanelMascotBaseState) -> NativeMascotState {
+    match state {
+        PanelMascotBaseState::Idle => NativeMascotState::Idle,
+        PanelMascotBaseState::Running => NativeMascotState::Bouncing,
+        PanelMascotBaseState::Approval => NativeMascotState::Approval,
+        PanelMascotBaseState::Question => NativeMascotState::Question,
+        PanelMascotBaseState::MessageBubble => NativeMascotState::MessageBubble,
+        PanelMascotBaseState::Complete => NativeMascotState::Complete,
+        PanelMascotBaseState::Sleepy => NativeMascotState::Sleepy,
+        PanelMascotBaseState::WakeAngry => NativeMascotState::WakeAngry,
+    }
+}
 
-        if let Some(started_at) = self.wake_started_at {
-            self.wake_next_state = if next_state == NativeMascotState::Sleepy {
-                NativeMascotState::Idle
-            } else {
-                next_state
-            };
-
-            if now.saturating_duration_since(started_at).as_secs_f64() < MASCOT_WAKE_ANGRY_SECONDS {
-                self.last_resolved_state = NativeMascotState::WakeAngry;
-                return NativeMascotState::WakeAngry;
-            }
-
-            self.wake_started_at = None;
-            next_state = self.wake_next_state;
-        }
-
-        self.last_resolved_state = next_state;
-        next_state
+fn native_mascot_motion_from_visual_frame(frame: MascotVisualFrame) -> NativeMascotMotion {
+    NativeMascotMotion {
+        offset_x: frame.offset_x,
+        offset_y: frame.offset_y,
+        scale_x: frame.scale_x,
+        scale_y: frame.scale_y,
+        shell_alpha: frame.shell_alpha,
+        shadow_opacity: frame.shadow_opacity as f32,
+        shadow_radius: frame.shadow_radius,
+        eye_open: frame.eye_open,
     }
 }
 

@@ -419,6 +419,10 @@ pub(crate) fn native_panel_visual_plan_input_from_presentation(
         glow_visible: presentation
             .map(|presentation| presentation.glow.is_some())
             .unwrap_or(false),
+        glow_opacity: presentation
+            .and_then(|presentation| presentation.glow.as_ref())
+            .map(|glow| glow.glow.opacity)
+            .unwrap_or(0.0),
         action_buttons_visible: presentation
             .map(|presentation| presentation.action_buttons.visible)
             .unwrap_or(false),
@@ -442,6 +446,7 @@ pub(crate) fn native_panel_visual_plan_input_from_presentation(
             .map(|presentation| presentation.compact_bar.completion_count)
             .unwrap_or(0),
         mascot_elapsed_ms: 0,
+        mascot_motion_frame: None,
         mascot_pose: presentation
             .map(|presentation| presentation.mascot.pose)
             .unwrap_or(crate::native_panel_scene::SceneMascotPose::Idle),

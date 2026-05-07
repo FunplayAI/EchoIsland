@@ -2,7 +2,7 @@ use crate::{
     native_panel_core::{
         PanelPoint, PanelRect, StatusQueuePayload, card_transition_total_ms,
         completion_preview_text, default_panel_card_metric_constants, display_snippet,
-        ease_out_cubic, format_source, format_status, is_long_idle_session, lerp,
+        ease_in_cubic, ease_out_cubic, format_source, format_status, is_long_idle_session, lerp,
         resolve_card_chat_body_width, resolve_estimated_text_width, session_has_visible_card_body,
         session_meta_line, session_prompt_preview, session_reply_preview, session_title,
         session_tool_preview, settings_surface_row_frame, short_session_id,
@@ -646,11 +646,11 @@ pub(crate) fn card_visual_badge_paint_spec(
     badge: &CardVisualBadgeSpec,
 ) -> CardVisualBadgePaintSpec {
     CardVisualBadgePaintSpec {
-        width: card_visual_badge_width(&badge.text),
+        width: card_visual_badge_width(badge.role, &badge.text),
         height: 22.0,
         radius: 11.0,
         text_inset_x: 7.0,
-        text_offset_y: 4.0,
+        text_offset_y: 2.0,
         text_size: 10,
         background_color: card_visual_badge_background_color(style, badge),
         foreground_color: card_visual_badge_foreground_color(style, badge),
@@ -672,7 +672,7 @@ pub(crate) fn card_visual_settings_row_paint_spec(
             height: 18.0,
             radius: 9.0,
             text_inset_x: 9.0,
-            text_offset_y: 4.0,
+            text_offset_y: 2.0,
             text_size: 10,
             background_color: card_visual_settings_value_badge_background(row.active),
             foreground_color: card_visual_settings_value_badge_foreground(row.active),
@@ -824,6 +824,49 @@ pub(crate) fn card_visual_stack_reveal_frame(
         card_phase: ((elapsed_ms - delay_ms)
             / crate::native_panel_core::PANEL_CARD_REVEAL_MS as f64)
             .clamp(0.0, 1.0),
+    }
+}
+
+pub(crate) fn card_visual_staggered_phase(
+    progress: f64,
+    index: usize,
+    total: usize,
+    entering: bool,
+) -> f64 {
+    let progress = progress.clamp(0.0, 1.0);
+    let duration_ms = if entering {
+        crate::native_panel_core::PANEL_CARD_REVEAL_MS
+    } else {
+        crate::native_panel_core::PANEL_CARD_EXIT_MS
+    };
+    let stagger_ms = if entering {
+        crate::native_panel_core::PANEL_CARD_REVEAL_STAGGER_MS
+    } else {
+        crate::native_panel_core::PANEL_CARD_EXIT_STAGGER_MS
+    };
+    let total_ms = card_transition_total_ms(total, duration_ms, stagger_ms) as f64;
+    let order_index = if entering {
+        index
+    } else {
+        total.saturating_sub(index + 1)
+    };
+    let elapsed_ms = progress * total_ms;
+    let delay_ms = order_index as f64 * stagger_ms as f64;
+
+    ((elapsed_ms - delay_ms) / duration_ms as f64).clamp(0.0, 1.0)
+}
+
+pub(crate) fn card_visual_content_visibility_phase(phase: f64, entering: bool) -> f64 {
+    let phase = phase.clamp(0.0, 1.0);
+    if entering {
+        let delay = crate::native_panel_core::PANEL_CARD_CONTENT_REVEAL_DELAY_PROGRESS;
+        ease_out_cubic(((phase - delay) / (1.0 - delay)).clamp(0.0, 1.0))
+    } else if phase <= crate::native_panel_core::PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS {
+        let exit = crate::native_panel_core::PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS;
+        1.0 - (0.06 * (phase / exit).clamp(0.0, 1.0))
+    } else {
+        let exit = crate::native_panel_core::PANEL_CARD_CONTENT_EARLY_EXIT_PROGRESS;
+        0.94 * (1.0 - ease_in_cubic(((phase - exit) / (1.0 - exit)).clamp(0.0, 1.0)))
     }
 }
 
@@ -1118,7 +1161,14 @@ fn card_visual_settings_value_badge_width(value: &str) -> f64 {
     (resolve_estimated_text_width(value, 10.0) + 18.0).max(44.0)
 }
 
-fn card_visual_badge_width(text: &str) -> f64 {
+fn card_visual_badge_width(role: CardVisualBadgeRole, text: &str) -> f64 {
+    if matches!(
+        role,
+        CardVisualBadgeRole::Status | CardVisualBadgeRole::Source
+    ) {
+        return 64.0;
+    }
+
     (text.chars().count() as f64 * 10.0 * 0.58 + 16.0).max(24.0)
 }
 
@@ -1471,7 +1521,11 @@ mod tests {
         );
         assert_eq!(completion_status.height, 22.0);
         assert_eq!(completion_status.radius, 11.0);
-        assert!(completion_status.width >= 24.0);
+        assert_eq!(completion_status.text_offset_y, 2.0);
+        assert_eq!(completion_status.width, 64.0);
+        assert_eq!(source.width, 64.0);
+        assert_eq!(pending.width, 64.0);
+        assert_eq!(question.width, 64.0);
     }
 
     #[test]
@@ -1512,6 +1566,7 @@ mod tests {
         assert_eq!(active.title_size, 11);
         assert_eq!(active.value_badge.text_size, 10);
         assert_eq!(active.value_badge.width, 44.0);
+        assert_eq!(active.value_badge.text_offset_y, 2.0);
     }
 
     #[test]
@@ -1665,6 +1720,29 @@ mod tests {
     }
 
     #[test]
+    fn card_spec_exposes_shared_stack_stagger_phase_for_enter_and_exit() {
+        let first_entering = card_visual_staggered_phase(0.5, 0, 3, true);
+        let second_entering = card_visual_staggered_phase(0.5, 1, 3, true);
+        let first_exiting = card_visual_staggered_phase(0.5, 0, 3, false);
+        let last_exiting = card_visual_staggered_phase(0.5, 2, 3, false);
+
+        assert!(first_entering > second_entering);
+        assert!(last_exiting > first_exiting);
+        assert_eq!(card_visual_staggered_phase(0.0, 0, 3, true), 0.0);
+        assert_eq!(card_visual_staggered_phase(1.0, 2, 3, false), 1.0);
+    }
+
+    #[test]
+    fn card_spec_exposes_shared_content_visibility_phase() {
+        assert_eq!(card_visual_content_visibility_phase(0.10, true), 0.0);
+        assert_eq!(card_visual_content_visibility_phase(0.18, true), 0.0);
+        assert!(card_visual_content_visibility_phase(0.24, true) > 0.0);
+        assert_eq!(card_visual_content_visibility_phase(0.0, false), 1.0);
+        assert!(card_visual_content_visibility_phase(0.30, false) < 1.0);
+        assert_eq!(card_visual_content_visibility_phase(1.0, false), 0.0);
+    }
+
+    #[test]
     fn card_spec_exposes_shared_shell_reveal_frame() {
         let expanded = PanelRect {
             x: 10.0,
@@ -1782,7 +1860,7 @@ mod tests {
         assert_eq!(layout.badge_frame.height, 22.0);
         assert_eq!(layout.badge_frame.x + layout.badge_frame.width, 210.0);
         assert_eq!(layout.text_origin.x, layout.badge_frame.x + 7.0);
-        assert_eq!(layout.text_origin.y, 97.0);
+        assert_eq!(layout.text_origin.y, 95.0);
         assert_eq!(
             layout.paint.foreground_color,
             CardVisualColorSpec::rgb(102, 222, 145)
@@ -1829,6 +1907,6 @@ mod tests {
         assert_eq!(layout.title_origin.y, 51.0);
         assert_eq!(layout.title_max_width, 95.0);
         assert_eq!(layout.value_origin.x, 151.0);
-        assert_eq!(layout.value_origin.y, 54.0);
+        assert_eq!(layout.value_origin.y, 52.0);
     }
 }

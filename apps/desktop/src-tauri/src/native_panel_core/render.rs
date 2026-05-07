@@ -241,7 +241,18 @@ pub(crate) struct MascotVisualFrame {
     pub(crate) offset_y: f64,
     pub(crate) scale_x: f64,
     pub(crate) scale_y: f64,
+    pub(crate) shell_alpha: f64,
+    pub(crate) shadow_opacity: f64,
+    pub(crate) shadow_radius: f64,
     pub(crate) eye_open: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct MascotVisualFrameTransitionInput {
+    pub(crate) start: MascotVisualFrame,
+    pub(crate) target: MascotVisualFrame,
+    pub(crate) elapsed_ms: u128,
+    pub(crate) duration_ms: u128,
 }
 
 pub(crate) fn resolve_compact_bar_content_layout(
@@ -344,80 +355,153 @@ pub(crate) fn resolve_active_count_marquee_frame(
 
 pub(crate) fn resolve_mascot_visual_frame(input: MascotVisualFrameInput) -> MascotVisualFrame {
     let t = input.elapsed_ms as f64 / 1000.0;
-    let (offset_x, offset_y, scale_x, scale_y) = match input.state {
-        PanelMascotBaseState::Running => {
-            let bounce = (t * 5.8).sin().abs();
-            let hang = bounce.powf(0.72);
-            let landing = (1.0 - bounce).powf(3.2);
-            (
-                (t * 3.1).sin() * 0.28,
-                hang * 5.6,
-                1.0 + landing * 0.18 + hang * 0.018,
-                1.0 - landing * 0.16 + hang * 0.018,
-            )
-        }
-        PanelMascotBaseState::Approval => {
-            let pulse = ((t * 7.2).sin() + 1.0) * 0.5;
-            (
-                (t * 9.0).sin() * 0.34,
-                0.0,
-                1.0 + pulse * 0.025,
-                1.0 - pulse * 0.018,
-            )
-        }
-        PanelMascotBaseState::Question => {
-            let tilt = (t * 4.4).sin();
-            (
-                tilt * 0.28,
-                (t * 5.1).sin() * 0.55,
-                1.0 + tilt.abs() * 0.012,
-                1.0,
-            )
-        }
-        PanelMascotBaseState::MessageBubble => {
-            let bob = ((t * 3.2).sin() + 1.0) * 0.5;
-            (0.0, bob * 1.6, 1.0 + bob * 0.012, 1.0 - bob * 0.008)
-        }
-        PanelMascotBaseState::Complete => {
-            let bob = ((t * 2.4).sin() + 1.0) * 0.5;
-            (0.0, bob * 0.8, 1.0 + bob * 0.010, 1.0 - bob * 0.006)
-        }
-        PanelMascotBaseState::Sleepy => {
-            let breath = ((t * 0.9).sin() + 1.0) * 0.5;
-            let sleepy_phase = (t + 0.9).rem_euclid(7.6);
-            let nod = if sleepy_phase > 5.1 && sleepy_phase < 5.95 {
-                (((sleepy_phase - 5.1) / 0.85) * std::f64::consts::PI).sin()
-            } else {
-                0.0
-            };
-            (
-                0.0,
-                nod * -0.7,
-                1.0 + breath * 0.012,
-                0.96 - breath * 0.012 + nod * 0.01,
-            )
-        }
-        PanelMascotBaseState::WakeAngry => {
-            let fade = 1.0 - smoothstep_range(0.52, MASCOT_WAKE_ANGRY_SECONDS, t);
-            (
-                (t * 30.0).sin() * 1.85 * fade,
-                0.0,
-                1.0 + 0.045 * fade,
-                1.0 - 0.04 * fade,
-            )
-        }
-        PanelMascotBaseState::Idle => {
-            let breath = ((t * 1.1).sin() + 1.0) * 0.5;
-            (0.0, 0.0, 1.0 + breath * 0.006, 1.0 - breath * 0.004)
-        }
-    };
+    let (offset_x, offset_y, scale_x, scale_y, shell_alpha, shadow_opacity, shadow_radius) =
+        match input.state {
+            PanelMascotBaseState::Running => {
+                let bounce = (t * 5.8).sin().abs();
+                let hang = bounce.powf(0.72);
+                let landing = (1.0 - bounce).powf(3.2);
+                (
+                    (t * 3.1).sin() * 0.28,
+                    hang * 5.6,
+                    1.0 + landing * 0.18 + hang * 0.018,
+                    1.0 - landing * 0.16 + hang * 0.018,
+                    1.0,
+                    0.46,
+                    5.4,
+                )
+            }
+            PanelMascotBaseState::Approval => {
+                let pulse = ((t * 7.2).sin() + 1.0) * 0.5;
+                (
+                    (t * 9.0).sin() * 0.34,
+                    0.0,
+                    1.0 + pulse * 0.025,
+                    1.0 - pulse * 0.018,
+                    1.0,
+                    0.52,
+                    6.0,
+                )
+            }
+            PanelMascotBaseState::Question => {
+                let tilt = (t * 4.4).sin();
+                (
+                    tilt * 0.28,
+                    (t * 5.1).sin() * 0.55,
+                    1.0 + tilt.abs() * 0.012,
+                    1.0,
+                    1.0,
+                    0.50,
+                    5.8,
+                )
+            }
+            PanelMascotBaseState::MessageBubble => {
+                let bob = ((t * 3.2).sin() + 1.0) * 0.5;
+                (
+                    0.0,
+                    bob * 1.6,
+                    1.0 + bob * 0.012,
+                    1.0 - bob * 0.008,
+                    1.0,
+                    0.46,
+                    5.2,
+                )
+            }
+            PanelMascotBaseState::Complete => {
+                let bob = ((t * 2.4).sin() + 1.0) * 0.5;
+                (
+                    0.0,
+                    bob * 0.8,
+                    1.0 + bob * 0.010,
+                    1.0 - bob * 0.006,
+                    1.0,
+                    0.48,
+                    5.4,
+                )
+            }
+            PanelMascotBaseState::Sleepy => {
+                let breath = ((t * 0.9).sin() + 1.0) * 0.5;
+                let sleepy_phase = (t + 0.9).rem_euclid(7.6);
+                let nod = if sleepy_phase > 5.1 && sleepy_phase < 5.95 {
+                    (((sleepy_phase - 5.1) / 0.85) * std::f64::consts::PI).sin()
+                } else {
+                    0.0
+                };
+                (
+                    0.0,
+                    nod * -0.7,
+                    1.0 + breath * 0.012,
+                    0.96 - breath * 0.012 + nod * 0.01,
+                    0.70,
+                    0.18,
+                    3.0,
+                )
+            }
+            PanelMascotBaseState::WakeAngry => {
+                let fade = 1.0 - smoothstep_range(0.52, MASCOT_WAKE_ANGRY_SECONDS, t);
+                (
+                    (t * 30.0).sin() * 1.85 * fade,
+                    0.0,
+                    1.0 + 0.045 * fade,
+                    1.0 - 0.04 * fade,
+                    1.0,
+                    0.56,
+                    6.4,
+                )
+            }
+            PanelMascotBaseState::Idle => {
+                let breath = ((t * 1.1).sin() + 1.0) * 0.5;
+                (
+                    0.0,
+                    0.0,
+                    1.0 + breath * 0.006,
+                    1.0 - breath * 0.004,
+                    1.0,
+                    0.34,
+                    4.0,
+                )
+            }
+        };
 
     MascotVisualFrame {
         offset_x,
         offset_y,
         scale_x,
         scale_y,
+        shell_alpha,
+        shadow_opacity,
+        shadow_radius,
         eye_open: resolve_mascot_eye_open(input.state, input.elapsed_ms),
+    }
+}
+
+pub(crate) fn resolve_mascot_visual_frame_transition(
+    input: MascotVisualFrameTransitionInput,
+) -> MascotVisualFrame {
+    let progress = if input.duration_ms == 0 {
+        1.0
+    } else {
+        input.elapsed_ms as f64 / input.duration_ms as f64
+    };
+    let progress = smoothstep_unit(progress);
+
+    MascotVisualFrame {
+        offset_x: lerp(input.start.offset_x, input.target.offset_x, progress),
+        offset_y: lerp(input.start.offset_y, input.target.offset_y, progress),
+        scale_x: lerp(input.start.scale_x, input.target.scale_x, progress),
+        scale_y: lerp(input.start.scale_y, input.target.scale_y, progress),
+        shell_alpha: lerp(input.start.shell_alpha, input.target.shell_alpha, progress),
+        shadow_opacity: lerp(
+            input.start.shadow_opacity,
+            input.target.shadow_opacity,
+            progress,
+        ),
+        shadow_radius: lerp(
+            input.start.shadow_radius,
+            input.target.shadow_radius,
+            progress,
+        ),
+        eye_open: lerp(input.start.eye_open, input.target.eye_open, progress),
     }
 }
 
@@ -461,7 +545,11 @@ fn smoothstep_range(edge0: f64, edge1: f64, value: f64) -> f64 {
     if (edge1 - edge0).abs() <= f64::EPSILON {
         return if value >= edge1 { 1.0 } else { 0.0 };
     }
-    let progress = ((value - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    smoothstep_unit((value - edge0) / (edge1 - edge0))
+}
+
+fn smoothstep_unit(progress: f64) -> f64 {
+    let progress = progress.clamp(0.0, 1.0);
     progress * progress * (3.0 - (2.0 * progress))
 }
 

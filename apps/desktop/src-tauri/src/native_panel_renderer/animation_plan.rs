@@ -23,6 +23,19 @@ pub(crate) struct NativePanelCardStackAnimationPlan {
     pub(crate) separator_visibility: f64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct NativePanelTransitionCardPhase {
+    pub(crate) progress: f64,
+    pub(crate) entering: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct NativePanelTransitionLifecyclePlan {
+    pub(crate) request: NativePanelTransitionRequest,
+    pub(crate) initial_card_phase: NativePanelTransitionCardPhase,
+    pub(crate) final_card_phase: NativePanelTransitionCardPhase,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct NativePanelStatusClosePreservationInput {
     pub(crate) last_transition_request: Option<NativePanelTransitionRequest>,
@@ -83,6 +96,46 @@ pub(crate) fn resolve_native_panel_animation_plan(
     }
 }
 
+pub(crate) fn resolve_native_panel_transition_lifecycle_plan(
+    request: NativePanelTransitionRequest,
+) -> NativePanelTransitionLifecyclePlan {
+    match request {
+        NativePanelTransitionRequest::Open => NativePanelTransitionLifecyclePlan {
+            request,
+            initial_card_phase: NativePanelTransitionCardPhase {
+                progress: 0.0,
+                entering: true,
+            },
+            final_card_phase: NativePanelTransitionCardPhase {
+                progress: 1.0,
+                entering: true,
+            },
+        },
+        NativePanelTransitionRequest::Close => NativePanelTransitionLifecyclePlan {
+            request,
+            initial_card_phase: NativePanelTransitionCardPhase {
+                progress: 0.0,
+                entering: false,
+            },
+            final_card_phase: NativePanelTransitionCardPhase {
+                progress: 0.0,
+                entering: false,
+            },
+        },
+        NativePanelTransitionRequest::SurfaceSwitch => NativePanelTransitionLifecyclePlan {
+            request,
+            initial_card_phase: NativePanelTransitionCardPhase {
+                progress: crate::native_panel_core::PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS,
+                entering: true,
+            },
+            final_card_phase: NativePanelTransitionCardPhase {
+                progress: 1.0,
+                entering: true,
+            },
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -93,6 +146,7 @@ mod tests {
     use super::{
         NativePanelStatusClosePreservationInput, resolve_native_panel_animation_plan,
         resolve_native_panel_status_close_preservation_plan,
+        resolve_native_panel_transition_lifecycle_plan,
     };
 
     #[test]
@@ -180,5 +234,36 @@ mod tests {
         assert!(!active.should_store_pending_stack);
         assert!(active.should_preserve_frame_after_refresh);
         assert!(!active.should_prepare_close_animation_stack);
+    }
+
+    #[test]
+    fn transition_lifecycle_plan_keeps_card_phase_semantics_shared() {
+        let open = resolve_native_panel_transition_lifecycle_plan(
+            crate::native_panel_renderer::facade::transition::NativePanelTransitionRequest::Open,
+        );
+        let close = resolve_native_panel_transition_lifecycle_plan(
+            crate::native_panel_renderer::facade::transition::NativePanelTransitionRequest::Close,
+        );
+        let surface = resolve_native_panel_transition_lifecycle_plan(
+            crate::native_panel_renderer::facade::transition::NativePanelTransitionRequest::SurfaceSwitch,
+        );
+
+        assert_eq!(open.initial_card_phase.progress, 0.0);
+        assert!(open.initial_card_phase.entering);
+        assert_eq!(open.final_card_phase.progress, 1.0);
+        assert!(open.final_card_phase.entering);
+
+        assert_eq!(close.initial_card_phase.progress, 0.0);
+        assert!(!close.initial_card_phase.entering);
+        assert_eq!(close.final_card_phase.progress, 0.0);
+        assert!(!close.final_card_phase.entering);
+
+        assert_eq!(
+            surface.initial_card_phase.progress,
+            crate::native_panel_core::PANEL_SURFACE_SWITCH_INITIAL_CARD_PROGRESS
+        );
+        assert!(surface.initial_card_phase.entering);
+        assert_eq!(surface.final_card_phase.progress, 1.0);
+        assert!(surface.final_card_phase.entering);
     }
 }

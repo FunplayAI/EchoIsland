@@ -3,10 +3,7 @@ use objc2_foundation::{NSPoint, NSRect, NSSize};
 
 use super::card_animation::clear_card_animation_layouts;
 use super::card_views::{
-    apply_status_queue_item_visual_state, clear_subviews, create_empty_card,
-    create_pending_permission_card, create_pending_question_card, create_prompt_assist_card,
-    create_session_card, create_settings_surface_card, create_status_queue_card,
-    settings_surface_card_content_from_scene_card, settings_surface_card_height,
+    apply_status_queue_item_visual_state, clear_subviews, create_visual_scene_card,
 };
 use super::panel_constants::{EXPANDED_CARD_GAP, EXPANDED_CARD_OVERHANG};
 use super::panel_geometry::expanded_cards_width;
@@ -39,15 +36,15 @@ pub(super) unsafe fn render_expanded_cards_with_plan(
 
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn render_settings_surface(cards_container: &NSView, cards_width: f64, card: &SceneCard) {
-    let Some(content) = settings_surface_card_content_from_scene_card(card) else {
+    let SceneCard::Settings { .. } = card else {
         return;
     };
-    let body_height = settings_surface_card_height(content.rows.len());
+    let body_height = estimated_scene_card_height(card);
     set_cards_container_body_height(cards_container, cards_width, body_height);
     let mut cursor_y = body_height;
     if let Some(frame) = next_expanded_card_frame(&mut cursor_y, false, body_height, cards_width) {
-        let card = create_settings_surface_card(frame, &content);
-        cards_container.addSubview(&card);
+        let view = create_visual_scene_card(frame, card);
+        cards_container.addSubview(&view);
     }
 }
 
@@ -75,9 +72,9 @@ unsafe fn render_status_queue_cards(
         else {
             break;
         };
-        let card = create_status_queue_card(frame, item);
-        apply_status_queue_item_visual_state(&card, item);
-        cards_container.addSubview(&card);
+        let view = create_visual_scene_card(frame, card);
+        apply_status_queue_item_visual_state(&view, item);
+        cards_container.addSubview(&view);
         rendered_count += 1;
     }
 }
@@ -102,25 +99,13 @@ unsafe fn render_default_cards(
             break;
         };
         match card {
-            SceneCard::PendingPermission { pending, count } => {
-                let view = create_pending_permission_card(frame, pending, *count);
+            SceneCard::PendingPermission { .. }
+            | SceneCard::PendingQuestion { .. }
+            | SceneCard::PromptAssist { .. }
+            | SceneCard::Session { .. }
+            | SceneCard::Empty => {
+                let view = create_visual_scene_card(frame, card);
                 cards_container.addSubview(&view);
-            }
-            SceneCard::PendingQuestion { pending, count } => {
-                let view = create_pending_question_card(frame, pending, *count);
-                cards_container.addSubview(&view);
-            }
-            SceneCard::PromptAssist { session } => {
-                let view = create_prompt_assist_card(frame, session);
-                cards_container.addSubview(&view);
-            }
-            SceneCard::Session { session, .. } => {
-                let view = create_session_card(frame, session, false);
-                cards_container.addSubview(&view);
-            }
-            SceneCard::Empty => {
-                let empty = create_empty_card(frame);
-                cards_container.addSubview(&empty);
             }
             SceneCard::Settings { .. }
             | SceneCard::StatusApproval { .. }

@@ -27,8 +27,8 @@ Current status:
 - Task 10 is completed in `5850555`: Windows native hit testing uses shared pointer regions, transparent margins pass through via `WM_NCHITTEST`, and whole-window `WS_EX_TRANSPARENT` passthrough is no longer used for the island.
 - Task 11 is in progress. First checkpoint is committed in `589171b`: platform loop records physical window rect and surface resource revision. Current local work extends that boundary so DPI scale changes also advance the surface revision, paint dispatch records the revision used for resource rebuilds, and tests cover display repositioning, negative monitor origins, and DPI scale changes.
 - Direct2D/DirectWrite factory smoke initialization is implemented: Windows tests create real `ID2D1Factory` and `IDWriteFactory` instances successfully.
-- Windows native UI is still opt-in with `ECHOISLAND_WINDOWS_NATIVE_UI=1`; Task 12 has not been started.
-- Direct2D/DirectWrite bindings, factory initialization, painter abstractions, and the first real layered-window Direct2D paint path exist. Do not treat visual parity or default enablement as complete yet.
+- Windows native UI is now enabled by default on Windows. Use `ECHOISLAND_WINDOWS_NATIVE_UI=0/off/false` to temporarily disable it during regression.
+- Direct2D/DirectWrite bindings, factory initialization, painter abstractions, and the first real layered-window Direct2D paint path exist. Do not treat visual parity as complete yet.
 
 Last verified commands:
 
@@ -807,18 +807,12 @@ Update tests so:
 
 - Windows native UI is enabled by default on Windows.
 - `ECHOISLAND_WINDOWS_NATIVE_UI=0` disables native renderer.
-- `ECHOISLAND_WINDOWS_NATIVE_UI=1` enables native renderer.
+- `ECHOISLAND_WINDOWS_NATIVE_UI=1` explicitly enables native renderer.
 - non-Windows remains disabled for this backend.
 
 **Step 2: Flip default**
 
-Change:
-
-```rust
-windows_native_ui_enabled_from_env(false, ...)
-```
-
-back to:
+Current expected default:
 
 ```rust
 windows_native_ui_enabled_from_env(true, ...)

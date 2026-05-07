@@ -3,6 +3,11 @@ use objc2::{MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{NSColor, NSFont, NSTextAlignment, NSTextField, NSView};
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 
+pub(super) struct EdgeActionButtonViews {
+    pub(super) button: Retained<NSView>,
+    pub(super) label: Retained<NSTextField>,
+}
+
 pub(super) fn text_primary_color() -> Retained<NSColor> {
     NSColor::colorWithSRGBRed_green_blue_alpha(0.96, 0.97, 0.99, 0.88)
 }
@@ -17,7 +22,7 @@ pub(super) fn create_edge_action_button(
     text_color: Retained<NSColor>,
     font_size: f64,
     label_y: f64,
-) -> Retained<NSView> {
+) -> EdgeActionButtonViews {
     let button = NSView::initWithFrame(
         NSView::alloc(mtm),
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(26.0, 26.0)),
@@ -47,5 +52,5 @@ pub(super) fn create_edge_action_button(
     label.setSelectable(false);
     button.addSubview(&label);
 
-    button
+    EdgeActionButtonViews { button, label }
 }

@@ -261,7 +261,7 @@ pub fn open_settings_location() -> Result<(), String> {
     let paths = current_platform_paths();
     let settings_dir = std::path::PathBuf::from(paths.echoisland_app_dir);
     std::fs::create_dir_all(&settings_dir).map_err(|error| error.to_string())?;
-    open_path_with_system(&settings_dir)
+    open_path_with_system(&settings_dir, "open_settings_location")
 }
 
 #[tauri::command]
@@ -297,12 +297,16 @@ pub fn quit_application(app: AppHandle) {
 
 #[tauri::command]
 pub fn open_release_page() -> Result<(), String> {
-    open_url_with_system("https://github.com/FunplayAI/EchoIsland/releases/latest")
+    open_url_with_system(
+        "https://github.com/FunplayAI/EchoIsland/releases/latest",
+        "open_release_page",
+    )
 }
 
-fn open_path_with_system(path: &Path) -> Result<(), String> {
+fn open_path_with_system(path: &Path, caller: &str) -> Result<(), String> {
     let program = system_open_program();
     let mut fields = path_open_diagnostic_fields(path, program);
+    fields.push(("caller", caller.to_string()));
     crate::diagnostics::log_diagnostic_event("system_open_path_begin", &fields);
 
     let output = match Command::new(program).arg(path).output() {
@@ -337,9 +341,10 @@ fn open_path_with_system(path: &Path) -> Result<(), String> {
     }
 }
 
-fn open_url_with_system(url: &str) -> Result<(), String> {
+fn open_url_with_system(url: &str, caller: &str) -> Result<(), String> {
     let program = system_open_program();
     let mut fields = url_open_diagnostic_fields(url, program);
+    fields.push(("caller", caller.to_string()));
     crate::diagnostics::log_diagnostic_event("system_open_url_begin", &fields);
 
     let output = match Command::new(program).arg(url).output() {
@@ -396,7 +401,7 @@ fn path_open_diagnostic_fields(path: &Path, program: &'static str) -> Vec<(&'sta
                 .unwrap_or_else(|error| format!("error:{error}")),
         ),
     ];
-    fields.extend(crate::diagnostics::current_process_fields());
+    fields.extend(crate::diagnostics::current_context_fields());
     fields
 }
 
@@ -406,7 +411,7 @@ fn url_open_diagnostic_fields(url: &str, program: &'static str) -> Vec<(&'static
         ("target_type", "url".to_string()),
         ("url", url.to_string()),
     ];
-    fields.extend(crate::diagnostics::current_process_fields());
+    fields.extend(crate::diagnostics::current_context_fields());
     fields
 }
 

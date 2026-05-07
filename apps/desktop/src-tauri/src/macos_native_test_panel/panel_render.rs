@@ -1,4 +1,7 @@
 use super::compact_bar_layout::relayout_compact_content;
+use super::macos_visual_plan::{
+    apply_macos_visual_plan_compact_primitives, resolve_macos_native_panel_visual_plan,
+};
 use super::panel_geometry::{
     apply_panel_frame, native_panel_core_layout, native_panel_geometry_metrics,
     resolve_native_panel_layout,
@@ -16,14 +19,19 @@ use super::panel_style::apply_panel_layer_styles;
 use super::panel_types::{NativePanelHandles, NativePanelLayout, NativePanelTransitionFrame};
 use crate::macos_shared_expanded_window;
 use crate::native_panel_core::{
-    PanelRenderProgress, PanelRenderState, PanelRenderStateInput, resolve_panel_render_progress,
+    PanelRenderProgress, PanelRenderState, PanelRenderStateInput,
+    resolve_compact_action_button_layout, resolve_panel_render_progress,
     resolve_panel_render_state,
 };
 use crate::native_panel_renderer::facade::{
     descriptor::{
         NativePanelEdgeAction, NativePanelEdgeActionFrames, NativePanelPointerRegionInput,
     },
-    presentation::{NativePanelActionButtonCommand, resolve_native_panel_presentation},
+    presentation::{
+        ActionButtonVisibilitySpecInput, NativePanelActionButtonCommand,
+        action_button_transition_progress_from_compact_width, action_button_visual_frame_for_phase,
+        resolve_action_button_visibility_spec, resolve_native_panel_presentation,
+    },
 };
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(super) unsafe fn apply_panel_geometry(
@@ -107,7 +115,10 @@ fn sync_native_panel_pointer_regions(
     runtime_state: crate::native_panel_scene::PanelRuntimeRenderState,
     render_state: PanelRenderState,
 ) {
-    let pointer_region_input = Some(edge_action_pointer_region_input(layout, refs));
+    let pointer_region_input = Some(edge_action_pointer_region_input(
+        layout,
+        render_state.layer_style,
+    ));
     let resolved = native_panel_state()
         .and_then(|state| state.lock().ok())
         .and_then(|mut guard| {
@@ -131,11 +142,13 @@ fn sync_native_panel_pointer_regions(
     let Some(resolved) = resolved else {
         return;
     };
+    let visual_plan = resolve_macos_native_panel_visual_plan(layout, &resolved.presentation);
     apply_edge_action_button_commands(
         refs,
         layout,
         &resolved.presentation.action_button_commands(),
     );
+    apply_macos_visual_plan_compact_primitives(refs, layout, &resolved.presentation, &visual_plan);
 }
 
 fn apply_edge_action_button_commands(
@@ -171,31 +184,42 @@ fn edge_action_command_local_frame(
 
 fn edge_action_pointer_region_input(
     layout: &NativePanelLayout,
-    refs: &NativePanelRefs,
+    layer_style: crate::native_panel_core::PanelRenderLayerStyleState,
 ) -> NativePanelPointerRegionInput {
+    let frames = edge_action_visual_frames(layout, layer_style);
     NativePanelPointerRegionInput {
-        edge_action_frames: NativePanelEdgeActionFrames {
-            settings_action: Some(edge_action_button_pointer_frame(
-                layout,
-                refs.settings_button.frame(),
-            )),
-            quit_action: Some(edge_action_button_pointer_frame(
-                layout,
-                refs.quit_button.frame(),
-            )),
-        },
+        edge_action_frames: frames,
     }
 }
 
-fn edge_action_button_pointer_frame(
+fn edge_action_visual_frames(
     layout: &NativePanelLayout,
-    button_frame: objc2_foundation::NSRect,
-) -> crate::native_panel_core::PanelRect {
-    crate::native_panel_core::PanelRect {
-        x: layout.panel_frame.origin.x + layout.pill_frame.origin.x + button_frame.origin.x,
-        y: layout.panel_frame.origin.y + layout.pill_frame.origin.y + button_frame.origin.y,
-        width: button_frame.size.width,
-        height: button_frame.size.height,
+    layer_style: crate::native_panel_core::PanelRenderLayerStyleState,
+) -> NativePanelEdgeActionFrames {
+    let compact_frame = crate::native_panel_core::PanelRect {
+        x: layout.panel_frame.origin.x + layout.pill_frame.origin.x,
+        y: layout.panel_frame.origin.y + layout.pill_frame.origin.y,
+        width: layout.pill_frame.size.width,
+        height: layout.pill_frame.size.height,
+    };
+    let action_layout = resolve_compact_action_button_layout(compact_frame);
+    let visibility = resolve_action_button_visibility_spec(ActionButtonVisibilitySpecInput {
+        semantic_visible: layer_style.edge_actions_visible,
+        expanded_display_mode: layer_style.shell_visible,
+        transition_visibility_progress: action_button_transition_progress_from_compact_width(
+            compact_frame.width,
+        ),
+    });
+
+    NativePanelEdgeActionFrames {
+        settings_action: Some(action_button_visual_frame_for_phase(
+            action_layout.settings,
+            visibility,
+        )),
+        quit_action: Some(action_button_visual_frame_for_phase(
+            action_layout.quit,
+            visibility,
+        )),
     }
 }
 
@@ -242,9 +266,12 @@ unsafe fn sync_shared_expanded_render_frame(
 mod tests {
     use objc2_foundation::{NSPoint, NSRect, NSSize};
 
-    use super::edge_action_button_pointer_frame;
+    use super::{edge_action_command_local_frame, edge_action_visual_frames};
     use crate::{
-        macos_native_test_panel::panel_types::NativePanelLayout, native_panel_core::PanelRect,
+        macos_native_test_panel::panel_types::NativePanelLayout,
+        native_panel_core::{
+            PanelRect, PanelRenderLayerStyleState, resolve_compact_action_button_layout,
+        },
     };
 
     fn layout() -> NativePanelLayout {
@@ -264,21 +291,56 @@ mod tests {
     }
 
     #[test]
-    fn edge_action_pointer_frame_uses_actual_button_frame() {
-        let frame = edge_action_button_pointer_frame(
-            &layout(),
-            NSRect::new(NSPoint::new(72.0, 6.0), NSSize::new(26.0, 26.0)),
-        );
+    fn edge_action_pointer_frames_use_shared_visual_frames() {
+        let layout = layout();
+        let layer_style = PanelRenderLayerStyleState {
+            shell_visible: true,
+            separator_visibility: 1.0,
+            shared_visible: false,
+            bar_progress: 1.0,
+            height_progress: 1.0,
+            shoulder_progress: 0.0,
+            headline_emphasized: false,
+            edge_actions_visible: true,
+        };
+        let frames = edge_action_visual_frames(&layout, layer_style);
+        let compact_frame = PanelRect {
+            x: layout.panel_frame.origin.x + layout.pill_frame.origin.x,
+            y: layout.panel_frame.origin.y + layout.pill_frame.origin.y,
+            width: layout.pill_frame.size.width,
+            height: layout.pill_frame.size.height,
+        };
+        let expected = resolve_compact_action_button_layout(compact_frame);
 
-        assert_eq!(
-            frame,
-            PanelRect {
-                x: 640.5,
-                y: 824.0,
-                width: 26.0,
-                height: 26.0,
-            }
-        );
+        assert_eq!(frames.settings_action, Some(expected.settings));
+        assert_eq!(frames.quit_action, Some(expected.quit));
+    }
+
+    #[test]
+    fn edge_action_command_local_frame_preserves_shared_visual_frame_position() {
+        let layout = layout();
+        let compact_frame = PanelRect {
+            x: layout.panel_frame.origin.x + layout.pill_frame.origin.x,
+            y: layout.panel_frame.origin.y + layout.pill_frame.origin.y,
+            width: layout.pill_frame.size.width,
+            height: layout.pill_frame.size.height,
+        };
+        let action_layout = resolve_compact_action_button_layout(compact_frame);
+
+        for expected in [action_layout.settings, action_layout.quit] {
+            let local = edge_action_command_local_frame(&layout, expected);
+
+            assert_eq!(
+                local.origin.x,
+                expected.x - layout.panel_frame.origin.x - layout.pill_frame.origin.x
+            );
+            assert_eq!(
+                local.origin.y,
+                expected.y - layout.panel_frame.origin.y - layout.pill_frame.origin.y
+            );
+            assert_eq!(local.size.width, expected.width);
+            assert_eq!(local.size.height, expected.height);
+        }
     }
 }
 

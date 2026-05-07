@@ -4,6 +4,7 @@ mod action_button_visual_spec;
 mod animation_plan;
 mod animation_scheduler;
 mod card_visual_spec;
+mod completion_glow_visual_spec;
 mod descriptors;
 mod env_flags;
 mod host_runtime_facade;
@@ -109,6 +110,7 @@ pub(crate) mod facade {
         };
         pub(crate) use super::super::runtime_interaction::{
             NativePanelClickStateBridge, NativePanelCoreStateBridge,
+            NativePanelHostBehaviorCommand, NativePanelHostBehaviorPlan,
             NativePanelHostInteractionStateBridge, NativePanelHostPollingInteractionResult,
             NativePanelHoverFallbackFrames, NativePanelHoverSyncResult,
             NativePanelPointerInputRuntimeBridge, NativePanelPointerRegionInteractionBridge,
@@ -124,7 +126,8 @@ pub(crate) mod facade {
         pub(crate) use super::super::runtime_polling::{
             native_panel_interactive_inside_from_host_facts,
             native_panel_polling_interaction_input_from_host_facts,
-            resolve_native_panel_hover_fallback_frames,
+            resolve_native_panel_host_behavior_plan, resolve_native_panel_hover_fallback_frames,
+            sync_native_panel_host_behavior_for_interactive_inside,
             sync_native_panel_host_polling_interaction_for_state,
             sync_native_panel_host_polling_interaction_from_host_facts_for_state,
             sync_native_panel_mouse_passthrough_for_interactive_inside,
@@ -137,11 +140,32 @@ pub(crate) mod facade {
     }
 
     pub(crate) mod presentation {
+        pub(crate) use super::super::action_button_visual_spec::{
+            ActionButtonVisibilitySpecInput, action_button_transition_progress_from_compact_width,
+            action_button_visual_frame_for_phase, resolve_action_button_visibility_spec,
+        };
         pub(crate) use super::super::card_visual_spec::{
             CardVisualAnimationSpec, CardVisualBadgeRole, CardVisualBadgeSpec, CardVisualBodyRole,
             CardVisualBodySpec, CardVisualColorSpec, CardVisualRowSpec, CardVisualShellSpec,
-            CardVisualSpec, CardVisualStyle, card_visual_shell_border_color,
-            card_visual_shell_fill_color, card_visual_spec_from_scene_card_with_height,
+            CardVisualSpec, CardVisualStyle, card_visual_action_hint_layout,
+            card_visual_badge_layout, card_visual_body_layout, card_visual_body_line_paint_spec,
+            card_visual_content_layout, card_visual_content_visibility_phase,
+            card_visual_header_text_paint_spec, card_visual_settings_row_layout,
+            card_visual_shell_border_color, card_visual_shell_fill_color,
+            card_visual_spec_from_scene_card_with_height, card_visual_staggered_phase,
+            card_visual_tool_pill_layout,
+        };
+        pub(crate) use super::super::completion_glow_visual_spec::{
+            COMPLETION_GLOW_IMAGE_HEIGHT, COMPLETION_GLOW_IMAGE_RADIUS,
+            COMPLETION_GLOW_IMAGE_WIDTH, COMPLETION_GLOW_SLICE_LEFT, COMPLETION_GLOW_SLICE_RIGHT,
+            COMPLETION_GLOW_VISIBLE_THRESHOLD, CompletionGlowImageSliceSpec,
+            CompletionGlowVisualSpecInput, resolve_completion_glow_image_slices,
+            resolve_completion_glow_visual_spec,
+        };
+        pub(crate) use super::super::mascot_visual_spec::{
+            MascotCompletionBadgeVisualSpec, MascotEllipseVisualSpec,
+            MascotMessageBubbleVisualSpec, MascotTextVisualSpec, MascotVisualSpec,
+            MascotVisualSpecInput, resolve_mascot_visual_spec,
         };
         pub(crate) use super::super::presentation_model::{
             NativePanelActionButtonsPresentation, NativePanelCardStackPresentation,
@@ -164,14 +188,17 @@ pub(crate) mod facade {
             NativePanelVisualDisplayMode, NativePanelVisualPlanInput,
             native_panel_visual_card_input_from_scene_card,
         };
+        pub(crate) use super::super::visual_primitives::NativePanelVisualColor;
     }
 
     pub(crate) mod renderer {
         pub(crate) use super::super::animation_plan::{
             NativePanelAnimationPlan, NativePanelCardStackAnimationPlan,
             NativePanelStatusClosePreservationInput, NativePanelStatusClosePreservationPlan,
+            NativePanelTransitionCardPhase, NativePanelTransitionLifecyclePlan,
             resolve_native_panel_animation_plan,
             resolve_native_panel_status_close_preservation_plan,
+            resolve_native_panel_transition_lifecycle_plan,
         };
         pub(crate) use super::super::animation_scheduler::{
             NativePanelAnimationFrame, NativePanelAnimationFrameScheduler,
@@ -277,9 +304,10 @@ pub(crate) mod facade {
     pub(crate) mod visual {
         pub(crate) use super::super::visual_plan::resolve_native_panel_visual_plan;
         pub(crate) use super::super::visual_primitives::{
-            NativePanelVisualColor, NativePanelVisualPlan, NativePanelVisualPrimitive,
-            NativePanelVisualShoulderSide, NativePanelVisualTextAlignment,
-            NativePanelVisualTextWeight,
+            NativePanelVisualColor, NativePanelVisualMascotEllipseRole,
+            NativePanelVisualMascotRoundRectRole, NativePanelVisualMascotTextRole,
+            NativePanelVisualPlan, NativePanelVisualPrimitive, NativePanelVisualShoulderSide,
+            NativePanelVisualTextAlignment, NativePanelVisualTextRole, NativePanelVisualTextWeight,
         };
     }
 }
