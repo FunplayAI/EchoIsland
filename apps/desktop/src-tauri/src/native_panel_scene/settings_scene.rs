@@ -3,6 +3,7 @@ use serde::Serialize;
 use crate::{
     native_panel_core::{PanelHitAction, PanelSettingsState, settings_row_action},
     native_panel_scene::PanelDisplayOptionState,
+    updater_service::{AppUpdatePhase, AppUpdateStatus},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -23,12 +24,14 @@ pub(crate) struct SettingsSurfaceRowScene {
     pub(crate) checked: Option<bool>,
     pub(crate) enabled: bool,
     pub(crate) action_key: String,
+    pub(crate) update_phase: Option<String>,
+    pub(crate) can_install: bool,
+    pub(crate) can_open_release_page: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SettingsSurfaceControlKind {
-    Select,
     Toggle,
     Action,
 }
@@ -37,6 +40,7 @@ pub(crate) fn build_settings_surface_scene(
     display_options: &[PanelDisplayOptionState],
     settings: PanelSettingsState,
     app_version: &str,
+    update_status: &AppUpdateStatus,
 ) -> SettingsSurfaceScene {
     let selected_display_label = display_options
         .iter()
@@ -52,11 +56,14 @@ pub(crate) fn build_settings_surface_scene(
             SettingsSurfaceRowScene {
                 id: "island_display".to_string(),
                 label: "Island Display".to_string(),
-                control_kind: SettingsSurfaceControlKind::Select,
+                control_kind: SettingsSurfaceControlKind::Action,
                 value_text: selected_display_label,
                 checked: None,
                 enabled: !display_options.is_empty(),
                 action_key: settings_action_key(0),
+                update_phase: None,
+                can_install: false,
+                can_open_release_page: false,
             },
             SettingsSurfaceRowScene {
                 id: "completion_sound".to_string(),
@@ -70,6 +77,9 @@ pub(crate) fn build_settings_surface_scene(
                 checked: Some(!settings.completion_sound_enabled),
                 enabled: true,
                 action_key: settings_action_key(1),
+                update_phase: None,
+                can_install: false,
+                can_open_release_page: false,
             },
             SettingsSurfaceRowScene {
                 id: "mascot".to_string(),
@@ -83,15 +93,27 @@ pub(crate) fn build_settings_surface_scene(
                 checked: Some(!settings.mascot_enabled),
                 enabled: true,
                 action_key: settings_action_key(2),
+                update_phase: None,
+                can_install: false,
+                can_open_release_page: false,
             },
             SettingsSurfaceRowScene {
                 id: "update".to_string(),
-                label: "Update & Upgrade".to_string(),
+                label: update_status.label.clone(),
                 control_kind: SettingsSurfaceControlKind::Action,
-                value_text: "Open".to_string(),
+                value_text: update_status.value_text.clone(),
                 checked: None,
-                enabled: true,
+                enabled: !matches!(
+                    update_status.phase,
+                    AppUpdatePhase::Checking
+                        | AppUpdatePhase::Downloading
+                        | AppUpdatePhase::Installing
+                        | AppUpdatePhase::Installed
+                ),
                 action_key: settings_action_key(3),
+                update_phase: Some(update_phase_key(update_status.phase).to_string()),
+                can_install: update_status.can_install,
+                can_open_release_page: update_status.can_open_release_page,
             },
         ],
     }
@@ -112,4 +134,18 @@ fn settings_action_key(index: usize) -> String {
         None => "unknown",
     }
     .to_string()
+}
+
+fn update_phase_key(phase: AppUpdatePhase) -> &'static str {
+    match phase {
+        AppUpdatePhase::Idle => "idle",
+        AppUpdatePhase::Checking => "checking",
+        AppUpdatePhase::UpToDate => "up_to_date",
+        AppUpdatePhase::Available => "available",
+        AppUpdatePhase::Downloading => "downloading",
+        AppUpdatePhase::Installing => "installing",
+        AppUpdatePhase::Installed => "installed",
+        AppUpdatePhase::Failed => "failed",
+        AppUpdatePhase::UnsupportedPortable => "unsupported_portable",
+    }
 }

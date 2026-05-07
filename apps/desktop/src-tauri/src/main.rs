@@ -24,12 +24,11 @@ mod island_window;
 #[cfg(target_os = "macos")]
 mod macos_lifecycle_diagnostics;
 #[cfg(target_os = "macos")]
-mod macos_native_test_panel;
+mod macos_native_panel;
 #[cfg(not(target_os = "macos"))]
-#[path = "macos_native_test_panel_stub.rs"]
-mod macos_native_test_panel;
+#[path = "macos_native_panel_stub.rs"]
+mod macos_native_panel;
 mod macos_panel;
-mod macos_shared_expanded_window;
 mod native_panel_core;
 mod native_panel_renderer;
 mod native_panel_runtime;
@@ -37,6 +36,7 @@ mod native_panel_scene;
 mod native_panel_scene_input;
 mod native_ui_refresh;
 mod notification_sound;
+mod panel_scene_service;
 mod platform;
 mod platform_stub;
 mod session_scan_runner;
@@ -44,7 +44,7 @@ mod startup_service;
 mod terminal_focus;
 mod terminal_focus_service;
 mod tray;
-mod web_panel_scene_service;
+mod updater_service;
 mod window_surface_service;
 mod windows_native_panel;
 
@@ -53,21 +53,22 @@ use claude_scan::spawn_claude_scan_loop;
 use codex_scan::spawn_codex_scan_loop;
 use commands::{
     answer_question, approve_permission, bind_session_terminal, build_status_surface_scene,
-    claude_status, codex_status, deny_permission, focus_session_terminal, get_app_settings,
-    get_available_displays, get_snapshot, get_snapshot_status_surface_bundle, hide_main_window,
+    check_for_update, claude_status, codex_status, cycle_display, deny_permission,
+    download_and_install_update, focus_session_terminal, get_app_settings, get_available_displays,
+    get_snapshot, get_snapshot_status_surface_bundle, get_update_status, hide_main_window,
     http_receiver_status, ingest_sample, ipc_addr, open_release_page, open_settings_location,
     openclaw_status, platform_capabilities, platform_paths, quit_application,
     set_completion_sound_enabled, set_island_bar_stage, set_island_bar_stage_passive,
     set_island_expanded, set_island_expanded_passive, set_island_panel_stage,
-    set_island_panel_stage_passive, set_macos_shared_expanded_height, set_mascot_enabled,
-    set_preferred_display_index, show_main_window_interactive, skip_question,
+    set_island_panel_stage_passive, set_mascot_enabled, set_preferred_display_index,
+    show_main_window_interactive, skip_question,
 };
 use http_receiver::spawn_http_receiver;
 use native_panel_renderer::facade::runtime::{
     NativePanelRuntimeBackend, current_native_panel_runtime_backend,
 };
+use panel_scene_service::PanelSceneState;
 use startup_service::AppStartupService;
-use web_panel_scene_service::WebPanelSceneState;
 
 fn main() {
     setup_tracing();
@@ -94,8 +95,11 @@ fn main() {
     let builder = builder.plugin(tauri_nspanel::init());
 
     builder
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(app_runtime.clone())
-        .manage(WebPanelSceneState::default())
+        .manage(updater_service::AppUpdateState::default())
+        .manage(PanelSceneState::default())
         .on_window_event(|window, event| {
             diagnostics::log_diagnostic_event(
                 "tauri_window_event",
@@ -121,10 +125,6 @@ fn main() {
                 native_panel_backend
                     .create_panel()
                     .map_err(std::io::Error::other)?;
-                if macos_shared_expanded_window::shared_expanded_enabled() {
-                    macos_shared_expanded_window::create_shared_expanded_window(&app_handle)
-                        .map_err(std::io::Error::other)?;
-                }
                 native_panel_backend
                     .hide_main_webview_window(&app_handle)
                     .map_err(std::io::Error::other)?;
@@ -171,13 +171,16 @@ fn main() {
             set_island_expanded,
             set_island_expanded_passive,
             show_main_window_interactive,
-            set_macos_shared_expanded_height,
             hide_main_window,
             open_settings_location,
             open_release_page,
+            get_update_status,
+            check_for_update,
+            download_and_install_update,
             set_completion_sound_enabled,
             set_mascot_enabled,
             set_preferred_display_index,
+            cycle_display,
             quit_application,
             focus_session_terminal,
             bind_session_terminal

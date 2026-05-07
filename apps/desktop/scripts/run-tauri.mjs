@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -128,6 +128,17 @@ const tauriEnv = {
   CARGO_TARGET_DIR: cargoTargetDir,
 };
 
+if (
+  mode !== "dev" &&
+  !tauriEnv.TAURI_SIGNING_PRIVATE_KEY &&
+  !tauriEnv.TAURI_SIGNING_PRIVATE_KEY_PATH
+) {
+  const localUpdaterKey = path.join(os.homedir(), ".tauri", "echoisland-updater.key");
+  if (existsSync(localUpdaterKey)) {
+    tauriEnv.TAURI_SIGNING_PRIVATE_KEY_PATH = localUpdaterKey;
+  }
+}
+
 const builtBridge = await prepareHookBridge(mode, tauriEnv);
 
 const child = spawn(process.execPath, [resolveTauriEntry(), tauriMode, ...tauriArgs], {
@@ -147,6 +158,7 @@ child.on("exit", (code, signal) => {
     const outputDir = path.join(projectRoot, "dist");
     const portableBinary = path.join(outputDir, "EchoIsland.exe");
     const portableBridge = path.join(outputDir, bridgeBinaryName);
+    const portableMarker = path.join(outputDir, "EchoIsland.portable");
 
     if (!existsSync(builtBinary)) {
       console.error(`Portable build succeeded but binary was not found: ${builtBinary}`);
@@ -159,6 +171,7 @@ child.on("exit", (code, signal) => {
     if (builtBridge && existsSync(builtBridge)) {
       copyFileSync(builtBridge, portableBridge);
     }
+    writeFileSync(portableMarker, "portable\n", "utf8");
     console.log(`Portable executable created: ${portableBinary}`);
   }
 

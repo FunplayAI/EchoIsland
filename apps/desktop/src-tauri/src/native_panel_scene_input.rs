@@ -27,6 +27,7 @@ pub(crate) fn panel_scene_build_input_from_app_settings(
         display_options: sanitize_panel_display_options(display_options),
         settings: panel_settings_state_from_app_settings(selected_display_index, settings),
         app_version: env!("CARGO_PKG_VERSION").to_string(),
+        update_status: crate::updater_service::current_update_status(),
     }
 }
 

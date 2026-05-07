@@ -19,8 +19,9 @@ use crate::{
     command_services::{SampleIngestService, SnapshotCommandService},
     display_settings::{DisplayOption, list_available_displays},
     http_receiver::{HttpReceiverStatus, default_http_receiver_status},
-    native_panel_renderer::facade::runtime::{
-        NativePanelRuntimeBackend, current_native_panel_runtime_backend,
+    native_panel_renderer::facade::{
+        command::execute_native_panel_cycle_display_command,
+        runtime::{NativePanelRuntimeBackend, current_native_panel_runtime_backend},
     },
     native_panel_scene::{
         PanelSceneBuildInput, SessionSurfaceScene, SettingsSurfaceScene, StatusSurfaceScene,
@@ -31,12 +32,13 @@ use crate::{
         resolve_selected_display_index_from_display_options,
     },
     native_ui_refresh::maybe_refresh_native_ui_for_event,
+    panel_scene_service::PanelSceneState,
     platform::{
         PlatformCapabilities, PlatformPathsPayload, current_platform_capabilities,
         current_platform_paths,
     },
     terminal_focus_service::TerminalFocusService,
-    web_panel_scene_service::WebPanelSceneState,
+    updater_service::{self, AppUpdateState, AppUpdateStatus},
     window_surface_service::WindowSurfaceService,
 };
 const PANEL_STAGE_HEIGHT: f64 = 580.0;
@@ -62,12 +64,12 @@ pub async fn get_snapshot(runtime: State<'_, AppRuntime>) -> Result<RuntimeSnaps
 pub async fn get_snapshot_status_surface_bundle(
     app: AppHandle,
     runtime: State<'_, AppRuntime>,
-    scene_state: State<'_, WebPanelSceneState>,
+    scene_state: State<'_, PanelSceneState>,
 ) -> Result<SnapshotStatusSurfaceBundle, String> {
     let snapshot = SnapshotCommandService::new(runtime.inner())
         .get_snapshot()
         .await?;
-    let input = web_panel_scene_build_input(&app);
+    let input = panel_scene_build_input(&app);
     let (surface_scene, status_surface_scene, session_surface_scene, settings_surface_scene) =
         scene_state.build_surface_scenes(&snapshot, &input)?;
     Ok(SnapshotStatusSurfaceBundle {
@@ -79,7 +81,7 @@ pub async fn get_snapshot_status_surface_bundle(
     })
 }
 
-fn web_panel_scene_build_input(app: &AppHandle) -> PanelSceneBuildInput {
+fn panel_scene_build_input(app: &AppHandle) -> PanelSceneBuildInput {
     let settings = current_app_settings();
     let displays = list_available_displays(app).unwrap_or_default();
     panel_scene_build_input_from_display_options(
@@ -92,7 +94,7 @@ fn web_panel_scene_build_input(app: &AppHandle) -> PanelSceneBuildInput {
 #[tauri::command]
 pub async fn build_status_surface_scene(
     runtime: State<'_, AppRuntime>,
-    scene_state: State<'_, WebPanelSceneState>,
+    scene_state: State<'_, PanelSceneState>,
 ) -> Result<StatusSurfaceScene, String> {
     let snapshot = SnapshotCommandService::new(runtime.inner())
         .get_snapshot()
@@ -291,6 +293,15 @@ pub fn set_preferred_display_index(index: usize, app: AppHandle) -> Result<AppSe
 }
 
 #[tauri::command]
+pub fn cycle_display(app: AppHandle) -> Result<AppSettings, String> {
+    let settings = execute_native_panel_cycle_display_command(&app, |app| {
+        reposition_desktop_to_selected_display(app)
+    })?;
+    refresh_desktop_after_settings_change(&app);
+    Ok(settings)
+}
+
+#[tauri::command]
 pub fn quit_application(app: AppHandle) {
     app.exit(0);
 }
@@ -301,6 +312,27 @@ pub fn open_release_page() -> Result<(), String> {
         "https://github.com/FunplayAI/EchoIsland/releases/latest",
         "open_release_page",
     )
+}
+
+#[tauri::command]
+pub fn get_update_status(state: State<'_, AppUpdateState>) -> AppUpdateStatus {
+    updater_service::app_update_status_from_state(state.inner())
+}
+
+#[tauri::command]
+pub async fn check_for_update(
+    app: AppHandle,
+    state: State<'_, AppUpdateState>,
+) -> Result<AppUpdateStatus, String> {
+    Ok(updater_service::check_for_update(&app, state.inner()).await)
+}
+
+#[tauri::command]
+pub async fn download_and_install_update(
+    app: AppHandle,
+    state: State<'_, AppUpdateState>,
+) -> Result<AppUpdateStatus, String> {
+    Ok(updater_service::download_and_install_update(&app, state.inner()).await)
 }
 
 fn open_path_with_system(path: &Path, caller: &str) -> Result<(), String> {
@@ -431,17 +463,6 @@ fn reposition_desktop_to_selected_display<R: tauri::Runtime>(
     }
 
     crate::window_surface_service::WindowSurfaceService::new(app).reposition_to_selected_display()
-}
-
-#[tauri::command]
-pub fn set_macos_shared_expanded_height(height: f64, app: AppHandle) -> Result<(), String> {
-    let native_panel_backend = current_native_panel_runtime_backend();
-    if native_panel_backend.native_ui_enabled() {
-        return native_panel_backend.set_shared_expanded_body_height(&app, height);
-    }
-
-    let _ = (height, app);
-    Ok(())
 }
 
 #[tauri::command]

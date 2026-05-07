@@ -436,7 +436,7 @@ impl<T> NativePanelRuntimeBackend for T where T: NativePanelPlatformRuntimeBacke
 
 #[cfg(target_os = "macos")]
 pub(crate) type CurrentNativePanelRuntimeBackend =
-    crate::macos_native_test_panel::MacosNativePanelRuntimeBackendFacade;
+    crate::macos_native_panel::MacosNativePanelRuntimeBackendFacade;
 
 #[cfg(target_os = "windows")]
 pub(crate) type CurrentNativePanelRuntimeBackend =
@@ -448,7 +448,7 @@ pub(crate) struct CurrentNativePanelRuntimeBackend;
 
 #[cfg(target_os = "macos")]
 pub(crate) fn current_native_panel_runtime_backend() -> CurrentNativePanelRuntimeBackend {
-    crate::macos_native_test_panel::current_macos_native_panel_runtime_backend()
+    crate::macos_native_panel::current_macos_native_panel_runtime_backend()
 }
 
 #[cfg(target_os = "windows")]
@@ -764,6 +764,7 @@ mod tests {
                     ..Default::default()
                 },
                 app_version: env!("CARGO_PKG_VERSION").to_string(),
+                update_status: crate::updater_service::AppUpdateStatus::idle(),
             },
             screen_frame,
         };

@@ -565,6 +565,7 @@ mod tests {
                 &[crate::native_panel_scene::fallback_panel_display_option()],
                 crate::native_panel_core::PanelSettingsState::default(),
                 "0.0.0",
+                &crate::updater_service::AppUpdateStatus::idle(),
             ),
             cards: vec![],
             glow: None,

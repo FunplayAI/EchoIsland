@@ -16,10 +16,8 @@ use std::process::Command;
 use tracing::warn;
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-const CLICK_SOUND_BYTES: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../web/assets/click.mp3"
-));
+const CLICK_SOUND_BYTES: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/click.mp3"));
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 const CLICK_SOUND_FILE_NAME: &str = "echoisland-click.mp3";

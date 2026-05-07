@@ -428,6 +428,45 @@ fn windows_runtime_first_snapshot_renders_without_seeded_animation_descriptor() 
 }
 
 #[test]
+fn windows_runtime_rerender_hides_mascot_when_setting_is_disabled() {
+    let mut runtime = super::WindowsNativePanelRuntime::default();
+    let input = runtime_input_descriptor();
+    runtime.create_panel().expect("create panel");
+    runtime.pump_platform_loop().expect("pump create");
+    runtime
+        .sync_snapshot_bundle(&snapshot(), &input)
+        .expect("sync first snapshot");
+    runtime.pump_platform_loop().expect("pump first snapshot");
+
+    let mut hidden_input = runtime_input_descriptor();
+    hidden_input.scene_input.settings.mascot_enabled = false;
+    let rerendered = runtime
+        .rerender_from_last_snapshot_with_input(&hidden_input)
+        .expect("rerender after mascot setting change");
+    runtime.pump_platform_loop().expect("pump hidden rerender");
+
+    assert!(rerendered);
+    assert_eq!(
+        runtime
+            .host
+            .renderer
+            .scene_cache
+            .last_scene
+            .as_ref()
+            .map(|scene| scene.mascot_pose),
+        Some(SceneMascotPose::Hidden)
+    );
+    assert_eq!(
+        runtime
+            .host
+            .shell
+            .display_snapshot()
+            .map(|display| display.visual_input.mascot_pose),
+        Some(SceneMascotPose::Hidden)
+    );
+}
+
+#[test]
 fn windows_runtime_snapshot_sync_exposes_shared_message_sound_reminder() {
     let mut runtime = super::WindowsNativePanelRuntime::default();
     let input = runtime_input_descriptor();

@@ -5,6 +5,7 @@
   "identifier": "com.echoisland.desktop",
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -53,6 +54,17 @@
     ],
     "security": {
       "csp": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU5ODAzQTlENkVBNzZFNzkKUldSNWJxZHVuVHFBV1dhSXRPY3VycjhVQ2pyZXczNEtCemJpVTN3aFJkTU1zWmFxQTJPelhCN1EK",
+      "endpoints": [
+        "https://github.com/FunplayAI/EchoIsland/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

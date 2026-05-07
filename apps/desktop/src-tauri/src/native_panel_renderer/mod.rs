@@ -49,6 +49,7 @@ pub(crate) mod facade {
             dispatch_drained_native_panel_platform_events_with_app_handle,
             dispatch_native_panel_click_command_with_app_handle,
             dispatch_native_panel_platform_events_with_app_handle,
+            execute_native_panel_cycle_display_command,
             execute_native_panel_settings_surface_command,
             run_native_panel_pointer_input_with_queued_command_dispatch,
             run_native_panel_runtime_with_queued_command_dispatch,

@@ -10,8 +10,8 @@ use tracing::warn;
 use crate::{
     app_runtime::AppRuntime,
     app_settings::{
-        current_app_settings, update_completion_sound_enabled, update_debug_mode_enabled,
-        update_mascot_enabled, update_preferred_display_selection,
+        AppSettings, current_app_settings, update_completion_sound_enabled,
+        update_debug_mode_enabled, update_mascot_enabled, update_preferred_display_selection,
     },
     diagnostics::{log_debug_mode_snapshot, log_diagnostic_event},
     display_settings::list_available_displays,
@@ -51,20 +51,21 @@ pub(crate) fn execute_native_panel_quit_application_command<R: tauri::Runtime>(a
 pub(crate) fn execute_native_panel_cycle_display_command<R: tauri::Runtime>(
     app: &AppHandle<R>,
     reposition: impl FnOnce(&AppHandle<R>) -> Result<(), String>,
-) -> Result<(), String> {
+) -> Result<AppSettings, String> {
     let displays = list_available_displays(app)?;
     let settings = current_app_settings();
     let Some(next_selection) =
         resolve_next_display_selection_update_from_display_options(&displays, &settings)
     else {
-        return Ok(());
+        return Ok(settings);
     };
-    update_preferred_display_selection(
+    let settings = update_preferred_display_selection(
         next_selection.selected_display_index,
         Some(next_selection.selected_display_key),
     )
     .map_err(|error| error.to_string())?;
-    reposition(app)
+    reposition(app)?;
+    Ok(settings)
 }
 
 pub(crate) fn execute_native_panel_toggle_completion_sound_command(
@@ -141,8 +142,11 @@ pub(crate) fn execute_native_panel_open_settings_location_command() -> Result<()
     crate::commands::open_settings_location()
 }
 
-pub(crate) fn execute_native_panel_open_release_page_command() -> Result<(), String> {
-    crate::commands::open_release_page()
+pub(crate) fn execute_native_panel_open_release_page_command<R: tauri::Runtime + 'static>(
+    app: AppHandle<R>,
+) -> Result<(), String> {
+    crate::updater_service::spawn_native_update_flow(app);
+    Ok(())
 }
 
 pub(crate) fn execute_native_panel_settings_surface_command(
@@ -419,6 +423,7 @@ pub(crate) trait NativePanelAppHandleRuntimeCommandBackend {
                 execute_native_panel_cycle_display_command(&app, |app| {
                     Self::reposition_to_selected_display_with_app(app)
                 })
+                .and_then(|_| Self::refresh_from_last_snapshot_with_app(&app))
             },
             "failed to update preferred display",
         )
@@ -465,9 +470,9 @@ pub(crate) trait NativePanelAppHandleRuntimeCommandBackend {
     }
 
     fn open_release_page_command(&mut self) -> Result<(), String> {
-        self.dispatch_command(
+        self.dispatch_app_command(
             execute_native_panel_open_release_page_command,
-            "failed to open release page",
+            "failed to start update flow",
         )
     }
 }

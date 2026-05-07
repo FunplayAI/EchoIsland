@@ -33,6 +33,7 @@ pub(crate) struct PanelSceneBuildInput {
     pub(crate) display_options: Vec<PanelDisplayOptionState>,
     pub(crate) settings: PanelSettingsState,
     pub(crate) app_version: String,
+    pub(crate) update_status: crate::updater_service::AppUpdateStatus,
 }
 
 #[derive(Clone, Debug)]
@@ -48,6 +49,7 @@ impl Default for PanelSceneBuildInput {
             display_options: vec![fallback_panel_display_option()],
             settings: PanelSettingsState::default(),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
+            update_status: crate::updater_service::AppUpdateStatus::idle(),
         }
     }
 }
@@ -61,8 +63,12 @@ pub(crate) fn build_panel_scene(
     let surface_scene = build_surface_scene(state, &compact_bar);
     let status_surface = build_status_surface_scene(state, snapshot);
     let session_surface = build_session_surface_scene(state, snapshot);
-    let settings_surface =
-        build_settings_surface_scene(&input.display_options, input.settings, &input.app_version);
+    let settings_surface = build_settings_surface_scene(
+        &input.display_options,
+        input.settings,
+        &input.app_version,
+        &input.update_status,
+    );
     let glow = build_completion_glow(state);
     let mascot_pose = build_mascot_pose(state, snapshot, input.settings.mascot_enabled);
     let mut cards = Vec::new();

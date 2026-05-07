@@ -1603,6 +1603,28 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(hit_regions.len(), 4);
+        let display_region = hit_regions
+            .iter()
+            .find(|region| {
+                matches!(
+                    region.kind,
+                    NativePanelPointerRegionKind::HitTarget(PanelHitTarget {
+                        action: PanelHitAction::CycleDisplay,
+                        ..
+                    })
+                )
+            })
+            .expect("display cycle region");
+        assert_eq!(
+            native_panel_platform_event_at_point(
+                &regions,
+                PanelPoint {
+                    x: display_region.frame.x + 8.0,
+                    y: display_region.frame.y + 2.0,
+                },
+            ),
+            Some(NativePanelPlatformEvent::CycleDisplay)
+        );
         assert!(!hit_regions.iter().any(|region| matches!(
             region.kind,
             NativePanelPointerRegionKind::HitTarget(PanelHitTarget {

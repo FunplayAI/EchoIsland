@@ -1457,72 +1457,6 @@ fn stacked_cards_total_height_uses_empty_height_and_gap_sum() {
 }
 
 #[test]
-fn shared_expanded_content_waits_for_reveal_before_interaction() {
-    let waiting = resolve_shared_expanded_content_state(SharedExpandedContentInput {
-        enabled: true,
-        shell_visible: true,
-        height_progress: 1.0,
-        bar_progress: 1.0,
-        cards_height: 120.0,
-        status_surface_active: false,
-        content_visibility: 0.80,
-    });
-    assert!(!waiting.visible);
-    assert!(!waiting.interactive);
-
-    let ready = resolve_shared_expanded_content_state(SharedExpandedContentInput {
-        content_visibility: 1.0,
-        ..SharedExpandedContentInput {
-            enabled: true,
-            shell_visible: true,
-            height_progress: 1.0,
-            bar_progress: 1.0,
-            cards_height: 120.0,
-            status_surface_active: false,
-            content_visibility: 0.80,
-        }
-    });
-    assert!(ready.visible);
-    assert!(ready.interactive);
-}
-
-#[test]
-fn shared_expanded_render_state_suppresses_visibility_while_transitioning() {
-    let input = SharedExpandedRenderInput {
-        enabled: true,
-        shell_visible: true,
-        height_progress: 1.0,
-        bar_progress: 1.0,
-        cards_height: 120.0,
-        status_surface_active: false,
-        content_visibility: 1.0,
-        transitioning: false,
-    };
-    let visible = resolve_shared_expanded_render_state(input);
-    let transitioning = resolve_shared_expanded_render_state(SharedExpandedRenderInput {
-        transitioning: true,
-        ..input
-    });
-
-    assert_eq!(
-        visible,
-        SharedExpandedRenderState {
-            enabled: true,
-            visible: true,
-            interactive: true,
-        }
-    );
-    assert_eq!(
-        transitioning,
-        SharedExpandedRenderState {
-            enabled: true,
-            visible: false,
-            interactive: false,
-        }
-    );
-}
-
-#[test]
 fn panel_render_layer_style_state_preserves_render_flags() {
     let state = resolve_panel_render_layer_style_state(PanelRenderLayerStyleInput {
         shell_visible: true,
@@ -1548,62 +1482,6 @@ fn panel_render_layer_style_state_preserves_render_flags() {
             edge_actions_visible: true,
         }
     );
-}
-
-#[test]
-fn panel_render_state_combines_shared_visibility_and_layer_style() {
-    let state = resolve_panel_render_state(PanelRenderStateInput {
-        shared_expanded_enabled: true,
-        shell_visible: true,
-        separator_visibility: 0.42,
-        bar_progress: 1.0,
-        height_progress: 1.0,
-        shoulder_progress: 0.0,
-        cards_height: 120.0,
-        status_surface_active: false,
-        content_visibility: 1.0,
-        transitioning: false,
-        headline_emphasized: true,
-        edge_actions_visible: true,
-    });
-
-    assert_eq!(
-        state.shared,
-        SharedExpandedRenderState {
-            enabled: true,
-            visible: true,
-            interactive: true,
-        }
-    );
-    assert_eq!(
-        state.layer_style,
-        PanelRenderLayerStyleState {
-            shell_visible: true,
-            separator_visibility: 0.42,
-            shared_visible: true,
-            bar_progress: 1.0,
-            height_progress: 1.0,
-            shoulder_progress: 0.0,
-            headline_emphasized: true,
-            edge_actions_visible: true,
-        }
-    );
-}
-
-#[test]
-fn shared_expanded_content_stays_hidden_for_status_surface() {
-    let state = resolve_shared_expanded_content_state(SharedExpandedContentInput {
-        enabled: true,
-        shell_visible: true,
-        height_progress: 1.0,
-        bar_progress: 1.0,
-        cards_height: 120.0,
-        status_surface_active: true,
-        content_visibility: 1.0,
-    });
-
-    assert!(!state.visible);
-    assert!(!state.interactive);
 }
 
 #[test]

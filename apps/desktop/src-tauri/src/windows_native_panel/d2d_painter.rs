@@ -22,7 +22,7 @@ use super::{
 #[cfg(all(windows, not(test)))]
 const COMPLETION_GLOW_IMAGE_BYTES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../web/assets/island-completion-inner-glow-9slice.png"
+    "/resources/island-completion-inner-glow-9slice.png"
 ));
 
 pub(super) fn directwrite_text_requests_from_paint_plan(

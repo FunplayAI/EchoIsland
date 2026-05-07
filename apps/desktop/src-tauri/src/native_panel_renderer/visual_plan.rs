@@ -504,6 +504,10 @@ fn push_mascot_primitives(
     primitives: &mut Vec<NativePanelVisualPrimitive>,
     spec: &MascotVisualSpec,
 ) {
+    if spec.pose == SceneMascotPose::Hidden {
+        return;
+    }
+
     primitives.push(NativePanelVisualPrimitive::MascotDot {
         center: spec.body.center,
         frame: spec.body.frame,
@@ -2869,6 +2873,21 @@ mod tests {
                     && *size == 15
                     && *weight == crate::native_panel_renderer::visual_primitives::NativePanelVisualTextWeight::Semibold
                     && *alignment == crate::native_panel_renderer::visual_primitives::NativePanelVisualTextAlignment::Left
+        )));
+    }
+
+    #[test]
+    fn compact_visual_plan_omits_mascot_primitives_when_mascot_is_hidden() {
+        let mut input = visual_input(NativePanelVisualDisplayMode::Compact);
+        input.mascot_pose = SceneMascotPose::Hidden;
+        let plan = resolve_native_panel_visual_plan(&input);
+
+        assert!(!plan.primitives.iter().any(|primitive| matches!(
+            primitive,
+            NativePanelVisualPrimitive::MascotDot { .. }
+                | NativePanelVisualPrimitive::MascotEllipse { .. }
+                | NativePanelVisualPrimitive::MascotRoundRect { .. }
+                | NativePanelVisualPrimitive::MascotText { .. }
         )));
     }
 

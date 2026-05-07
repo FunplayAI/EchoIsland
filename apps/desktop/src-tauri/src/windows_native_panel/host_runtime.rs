@@ -22,6 +22,7 @@ use super::{
     },
 };
 use crate::{
+    app_settings::current_app_settings,
     native_panel_core::{
         HoverTransition, PanelAnimationDescriptor, PanelPoint, PanelSnapshotSyncResult, PanelState,
         panel_state_needs_status_queue_refresh, take_pending_status_reopen_after_transition,
@@ -79,6 +80,8 @@ use crate::{
         shell::pump_native_panel_host_shell_runtime,
         transition::NativePanelTransitionRequest,
     },
+    native_panel_scene::fallback_panel_display_option,
+    native_panel_scene_input::panel_scene_build_input_from_app_settings,
 };
 
 #[derive(Default)]
@@ -279,10 +282,7 @@ impl WindowsNativePanelRuntime {
             );
         }
         let had_unstarted_hover_open = self.has_unstarted_hover_open_request();
-        let input = NativePanelRuntimeInputDescriptor {
-            scene_input: Default::default(),
-            screen_frame: self.host.window.descriptor.screen_frame,
-        };
+        let input = self.platform_loop_runtime_input_descriptor();
         let status_queue_refresh =
             self.refresh_status_queue_from_last_raw_snapshot_with_input(&input)?;
         let result = pump_native_panel_host_shell_runtime(self);
@@ -323,6 +323,18 @@ impl WindowsNativePanelRuntime {
         self.panel_state.status_auto_expanded = false;
         self.panel_state.surface_mode = crate::native_panel_core::ExpandedSurface::Default;
         self.panel_state.pointer_inside_since = None;
+    }
+
+    fn platform_loop_runtime_input_descriptor(&self) -> NativePanelRuntimeInputDescriptor {
+        let settings = current_app_settings();
+        NativePanelRuntimeInputDescriptor {
+            scene_input: panel_scene_build_input_from_app_settings(
+                vec![fallback_panel_display_option()],
+                self.host.window.descriptor.preferred_display_index,
+                &settings,
+            ),
+            screen_frame: self.host.window.descriptor.screen_frame,
+        }
     }
 
     pub(super) fn pump_window_messages(&mut self) -> Result<(), String> {

@@ -430,6 +430,7 @@ fn scene_builder_emits_settings_rows_and_value_badges() {
             debug_mode_enabled: false,
         },
         app_version: "0.5.0".to_string(),
+        update_status: crate::updater_service::AppUpdateStatus::idle(),
     };
 
     let scene = build_panel_scene(&state, &snapshot(0, 0), &input);
@@ -447,11 +448,50 @@ fn scene_builder_emits_settings_rows_and_value_badges() {
     assert_eq!(scene.settings_surface.title, "Settings");
     assert_eq!(scene.settings_surface.version_text, "EchoIsland v0.5.0");
     assert_eq!(scene.settings_surface.rows[0].id, "island_display");
+    assert_eq!(
+        scene.settings_surface.rows[0].control_kind,
+        crate::native_panel_scene::SettingsSurfaceControlKind::Action
+    );
+    assert_eq!(scene.settings_surface.rows[0].action_key, "cycle_display");
     assert_eq!(scene.settings_surface.rows[1].label, "Mute Sound");
     assert_eq!(scene.settings_surface.rows[1].checked, Some(true));
     assert_eq!(scene.settings_surface.rows[2].checked, Some(false));
     assert_eq!(scene.settings_surface.rows[3].id, "update");
     assert_eq!(scene.settings_surface.rows[3].label, "Update & Upgrade");
+    assert_eq!(scene.settings_surface.rows[3].value_text, "Check");
+}
+
+#[test]
+fn settings_scene_projects_available_update_status() {
+    let input = PanelSceneBuildInput {
+        update_status: crate::updater_service::AppUpdateStatus {
+            phase: crate::updater_service::AppUpdatePhase::Available,
+            label: "Version 0.5.1 available".to_string(),
+            value_text: "Install".to_string(),
+            version: Some("0.5.1".to_string()),
+            notes: Some("Bug fixes".to_string()),
+            error: None,
+            can_check: true,
+            can_install: true,
+            can_open_release_page: true,
+        },
+        ..PanelSceneBuildInput::default()
+    };
+    let scene = build_panel_scene(
+        &PanelState {
+            expanded: true,
+            surface_mode: ExpandedSurface::Settings,
+            ..PanelState::default()
+        },
+        &snapshot(0, 0),
+        &input,
+    );
+
+    let row = &scene.settings_surface.rows[3];
+    assert_eq!(row.label, "Version 0.5.1 available");
+    assert_eq!(row.value_text, "Install");
+    assert!(row.can_install);
+    assert_eq!(row.update_phase.as_deref(), Some("available"));
 }
 
 #[test]
@@ -771,6 +811,7 @@ fn scene_cards_total_height_delegates_card_height_resolution() {
             &[crate::native_panel_scene::fallback_panel_display_option()],
             PanelSettingsState::default(),
             env!("CARGO_PKG_VERSION"),
+            &crate::updater_service::AppUpdateStatus::idle(),
         ),
         cards: vec![SceneCard::Empty, SceneCard::Empty, SceneCard::Empty],
         glow: None,
