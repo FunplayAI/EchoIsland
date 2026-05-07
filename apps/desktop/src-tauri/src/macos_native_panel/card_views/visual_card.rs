@@ -9,11 +9,12 @@ use super::super::panel_helpers::{estimated_chat_body_height, ns_color};
 use super::common::{apply_card_layer, make_label};
 use crate::native_panel_core::{PanelPoint, PanelRect};
 use crate::native_panel_renderer::facade::presentation::{
-    CardVisualBadgeRole, CardVisualBodyRole, CardVisualColorSpec, CardVisualSpec, CardVisualStyle,
+    CardVisualBodyRole, CardVisualColorSpec, CardVisualSpec, CardVisualStyle,
     card_visual_action_hint_layout, card_visual_badge_layout, card_visual_body_layout,
     card_visual_body_line_paint_spec, card_visual_content_layout,
     card_visual_header_text_paint_spec, card_visual_settings_row_layout,
-    card_visual_spec_from_scene_card_with_height, card_visual_tool_pill_layout,
+    card_visual_single_line_text_box_frame, card_visual_spec_from_scene_card_with_height,
+    card_visual_tool_pill_layout,
 };
 use crate::native_panel_scene::SceneCard;
 
@@ -32,8 +33,8 @@ unsafe fn create_visual_card(frame: NSRect, spec: &CardVisualSpec) -> objc2::rc:
     let view = NSView::initWithFrame(NSView::alloc(mtm), frame);
     apply_card_layer(
         &view,
-        macos_shell_fill_color(spec.style),
-        macos_shell_border_color(spec.style),
+        card_color(spec.shell.fill_color),
+        card_color(spec.shell.border_color),
     );
     register_card_animation_layout(&view, frame, spec.animation.collapsed_height);
 
@@ -115,8 +116,8 @@ unsafe fn add_card_header(
             badge_layout.paint.text_inset_x,
             badge_layout.paint.text_offset_y,
             badge_layout.paint.text_size as f64,
-            macos_badge_background_color(spec.style, badge.role, badge.emphasized, &badge.text),
-            macos_badge_foreground_color(spec.style, badge.role, badge.emphasized, &badge.text),
+            card_color(badge_layout.paint.background_color),
+            card_color(badge_layout.paint.foreground_color),
         );
         badge_view.setFrame(ns_rect(badge_layout.badge_frame));
         view.addSubview(&badge_view);
@@ -198,7 +199,7 @@ unsafe fn add_card_body(
                     height: 12.0,
                 }),
                 line_paint.prefix_size as f64,
-                macos_body_prefix_color(spec.style, prefix),
+                card_color(line_paint.prefix_color),
                 true,
                 true,
             );
@@ -217,11 +218,7 @@ unsafe fn add_card_body(
             width: body_layout.body_width,
             height: body_height,
         }));
-        body_label.setTextColor(Some(&ns_color(macos_body_text_color(
-            spec.style,
-            line.role,
-            line.prefix.as_deref(),
-        ))));
+        body_label.setTextColor(Some(&ns_color(card_color(line_paint.text_color))));
         body_label.setFont(Some(&NSFont::systemFontOfSize(line_paint.text_size as f64)));
         body_label.setDrawsBackground(false);
         body_label.setBezeled(false);
@@ -254,7 +251,9 @@ unsafe fn add_tool_pill(
     if let Some(layer) = pill.layer() {
         layer.setCornerRadius(layout.paint.radius);
         layer.setMasksToBounds(true);
-        layer.setBackgroundColor(Some(&ns_color([1.0, 1.0, 1.0, 0.04]).CGColor()));
+        layer.setBackgroundColor(Some(
+            &ns_color(card_color(layout.paint.background_color)).CGColor(),
+        ));
         layer.setBorderWidth(1.0);
         layer.setBorderColor(Some(&ns_color([1.0, 1.0, 1.0, 0.06]).CGColor()));
     }
@@ -290,7 +289,7 @@ unsafe fn add_tool_pill(
                 layout.pill_frame,
             )),
             layout.paint.text_size as f64,
-            [1.0, 1.0, 1.0, 0.70],
+            card_color(layout.paint.description_color),
             false,
             true,
         );
@@ -318,8 +317,8 @@ unsafe fn add_action_hint(view: &NSView, mtm: MainThreadMarker, frame: PanelRect
         layout.paint.text_inset_x,
         layout.paint.text_offset_y,
         layout.paint.text_size as f64,
-        [1.0, 1.0, 1.0, 0.07],
-        [0.90, 0.92, 0.96, 0.86],
+        card_color(layout.paint.background_color),
+        card_color(layout.paint.foreground_color),
     );
     badge.setFrame(ns_rect(layout.pill_frame));
     view.addSubview(&badge);
@@ -342,11 +341,11 @@ unsafe fn add_settings_rows(
             layer.setCornerRadius(layout.paint.border_radius);
             layer.setMasksToBounds(true);
             layer.setBackgroundColor(Some(
-                &ns_color(settings_row_fill_color(row.active)).CGColor(),
+                &ns_color(card_color(layout.paint.fill_color)).CGColor(),
             ));
             layer.setBorderWidth(1.0);
             layer.setBorderColor(Some(
-                &ns_color(settings_row_border_color(row.active)).CGColor(),
+                &ns_color(card_color(layout.paint.border_color)).CGColor(),
             ));
         }
 
@@ -379,8 +378,8 @@ unsafe fn add_settings_rows(
             layout.paint.value_badge.text_inset_x,
             layout.paint.value_badge.text_offset_y,
             layout.paint.value_badge.text_size as f64,
-            settings_value_badge_background(row.active),
-            settings_value_badge_foreground(row.active),
+            card_color(layout.paint.value_badge.background_color),
+            card_color(layout.paint.value_badge.foreground_color),
         );
         badge.setFrame(ns_rect(badge_frame));
         row_view.addSubview(&badge);
@@ -415,7 +414,16 @@ unsafe fn make_visual_badge_view(
     let label = make_label(
         mtm,
         text,
-        macos_badge_label_frame(width, height, text_inset_x, text_offset_y),
+        ns_rect(
+            card_visual_single_line_text_box_frame(
+                width,
+                height,
+                text_inset_x,
+                text_offset_y,
+                text_size,
+            )
+            .frame,
+        ),
         text_size,
         foreground,
         true,
@@ -435,157 +443,6 @@ fn card_color(color: CardVisualColorSpec) -> [f64; 4] {
         color.b as f64 / 255.0,
         1.0,
     ]
-}
-
-fn macos_shell_fill_color(style: CardVisualStyle) -> [f64; 4] {
-    match style {
-        CardVisualStyle::Completion => [0.40, 0.87, 0.57, 0.08],
-        CardVisualStyle::Pending | CardVisualStyle::PendingApproval => [1.0, 0.61, 0.26, 0.13],
-        CardVisualStyle::PendingQuestion => [0.69, 0.55, 1.0, 0.13],
-        CardVisualStyle::PromptAssist => [1.0, 0.61, 0.26, 0.08],
-        CardVisualStyle::Default | CardVisualStyle::Settings | CardVisualStyle::Empty => {
-            [1.0, 1.0, 1.0, 0.055]
-        }
-    }
-}
-
-fn macos_shell_border_color(style: CardVisualStyle) -> [f64; 4] {
-    match style {
-        CardVisualStyle::Completion => [0.40, 0.87, 0.57, 0.28],
-        CardVisualStyle::Pending | CardVisualStyle::PendingApproval => [1.0, 0.61, 0.26, 0.24],
-        CardVisualStyle::PendingQuestion => [0.69, 0.55, 1.0, 0.24],
-        CardVisualStyle::PromptAssist => [1.0, 0.61, 0.26, 0.32],
-        CardVisualStyle::Default | CardVisualStyle::Settings | CardVisualStyle::Empty => {
-            [1.0, 1.0, 1.0, 0.08]
-        }
-    }
-}
-
-fn macos_badge_background_color(
-    style: CardVisualStyle,
-    role: CardVisualBadgeRole,
-    emphasized: bool,
-    text: &str,
-) -> [f64; 4] {
-    if role == CardVisualBadgeRole::Source {
-        return [0.47, 0.65, 1.0, 0.12];
-    }
-
-    if emphasized {
-        return match style {
-            CardVisualStyle::Pending | CardVisualStyle::PendingApproval => [1.0, 1.0, 1.0, 0.08],
-            CardVisualStyle::PendingQuestion => [1.0, 1.0, 1.0, 0.08],
-            _ => [0.40, 0.87, 0.57, 0.14],
-        };
-    }
-
-    match text.to_ascii_lowercase().as_str() {
-        "running" => [0.30, 0.87, 0.46, 0.14],
-        "thinking" | "processing" => [1.0, 0.74, 0.41, 0.14],
-        "approval" | "question" => [1.0, 0.61, 0.26, 0.16],
-        _ => [1.0, 1.0, 1.0, 0.08],
-    }
-}
-
-fn macos_badge_foreground_color(
-    style: CardVisualStyle,
-    role: CardVisualBadgeRole,
-    emphasized: bool,
-    text: &str,
-) -> [f64; 4] {
-    if role == CardVisualBadgeRole::Source {
-        return [0.47, 0.65, 1.0, 1.0];
-    }
-
-    if emphasized {
-        return match style {
-            CardVisualStyle::Pending | CardVisualStyle::PendingApproval => [1.0, 0.68, 0.40, 1.0],
-            CardVisualStyle::PendingQuestion => [0.79, 0.69, 1.0, 1.0],
-            _ => [0.40, 0.87, 0.57, 1.0],
-        };
-    }
-
-    match text.to_ascii_lowercase().as_str() {
-        "running" => [0.49, 0.95, 0.64, 1.0],
-        "thinking" | "processing" => [1.0, 0.81, 0.46, 1.0],
-        "approval" | "question" => [1.0, 0.68, 0.40, 1.0],
-        _ => [0.96, 0.97, 0.99, 1.0],
-    }
-}
-
-fn macos_body_prefix_color(style: CardVisualStyle, prefix: &str) -> [f64; 4] {
-    match (style, prefix) {
-        (CardVisualStyle::Default, "$") => [0.85, 0.47, 0.34, 0.96],
-        (CardVisualStyle::Default, ">") | (CardVisualStyle::Completion, _) => {
-            [0.40, 0.87, 0.57, 0.96]
-        }
-        (CardVisualStyle::PendingQuestion, _) => [0.79, 0.69, 1.0, 1.0],
-        _ => [1.0, 0.70, 0.40, 1.0],
-    }
-}
-
-fn macos_body_text_color(
-    style: CardVisualStyle,
-    role: CardVisualBodyRole,
-    prefix: Option<&str>,
-) -> [f64; 4] {
-    match (style, role, prefix) {
-        (CardVisualStyle::Default, CardVisualBodyRole::User, _)
-        | (CardVisualStyle::Default, _, Some(">")) => [0.96, 0.97, 0.99, 0.86],
-        (CardVisualStyle::Default, _, _) => [0.86, 0.88, 0.92, 0.74],
-        (CardVisualStyle::Completion, _, _) => [0.86, 0.88, 0.92, 0.78],
-        _ => [0.86, 0.88, 0.92, 0.78],
-    }
-}
-
-fn settings_row_fill_color(active: bool) -> [f64; 4] {
-    if active {
-        [0.40, 0.87, 0.57, 0.10]
-    } else {
-        [1.0, 1.0, 1.0, 0.04]
-    }
-}
-
-fn settings_row_border_color(active: bool) -> [f64; 4] {
-    if active {
-        [0.40, 0.87, 0.57, 0.22]
-    } else {
-        [1.0, 1.0, 1.0, 0.08]
-    }
-}
-
-fn settings_value_badge_background(active: bool) -> [f64; 4] {
-    if active {
-        [0.40, 0.87, 0.57, 0.12]
-    } else {
-        [1.0, 1.0, 1.0, 0.08]
-    }
-}
-
-fn settings_value_badge_foreground(active: bool) -> [f64; 4] {
-    if active {
-        [0.40, 0.87, 0.57, 1.0]
-    } else {
-        [0.90, 0.92, 0.96, 0.92]
-    }
-}
-
-fn macos_badge_label_frame(
-    width: f64,
-    height: f64,
-    text_inset_x: f64,
-    text_offset_y: f64,
-) -> NSRect {
-    let label_y = if height >= 22.0 { 4.0 } else { text_offset_y };
-    let label_height = if height >= 22.0 {
-        13.0
-    } else {
-        (height - label_y).max(1.0)
-    };
-    NSRect::new(
-        NSPoint::new(text_inset_x, label_y),
-        NSSize::new((width - text_inset_x * 2.0).max(1.0), label_height),
-    )
 }
 
 fn ns_rect(rect: PanelRect) -> NSRect {

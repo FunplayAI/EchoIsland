@@ -99,6 +99,8 @@ mod panel_window;
 #[cfg(all(test, target_os = "macos"))]
 mod queue_logic;
 #[cfg(target_os = "macos")]
+mod text_metrics;
+#[cfg(target_os = "macos")]
 mod transition_logic;
 #[cfg(target_os = "macos")]
 mod transition_runner;

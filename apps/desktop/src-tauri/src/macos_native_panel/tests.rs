@@ -699,6 +699,15 @@ fn macos_layout_feeds_shared_pointer_regions() {
 
 #[test]
 fn macos_settings_display_row_click_dispatches_cycle_display_command() {
+    assert_macos_settings_display_row_click_dispatches_cycle_display_command(true);
+}
+
+#[test]
+fn macos_settings_display_row_click_uses_hit_target_when_cards_container_reports_hidden() {
+    assert_macos_settings_display_row_click_dispatches_cycle_display_command(false);
+}
+
+fn assert_macos_settings_display_row_click_dispatches_cycle_display_command(cards_visible: bool) {
     let layout = resolve_native_panel_layout(
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1440.0, 900.0)),
         NativePanelGeometryMetrics {
@@ -747,6 +756,7 @@ fn macos_settings_display_row_click_dispatches_cycle_display_command() {
     state.expanded = true;
     state.surface_mode = NativeExpandedSurface::Settings;
     state.last_snapshot = Some(snapshot(0, 0));
+    let last_snapshot = state.last_snapshot.clone();
 
     let result = sync_native_panel_host_polling_interaction_from_host_facts_for_state(
         &mut state,
@@ -769,8 +779,8 @@ fn macos_settings_display_row_click_dispatches_cycle_display_command() {
                 interactive_expanded_frame: None,
             },
             primary_mouse_down: true,
-            cards_visible: true,
-            snapshot: state.last_snapshot.clone(),
+            cards_visible,
+            snapshot: last_snapshot,
         },
         Instant::now(),
         HOVER_DELAY_MS,

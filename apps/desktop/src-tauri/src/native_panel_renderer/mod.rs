@@ -86,6 +86,7 @@ pub(crate) mod facade {
             NativePanelHostDisplayReposition, NativePanelRuntimeHostController,
             NativePanelRuntimeHostState, create_native_panel_via_host_controller,
             hide_native_panel_via_host_controller, native_panel_host_display_reposition,
+            native_panel_host_display_reposition_from_input_descriptor,
             reposition_native_panel_host_from_input_descriptor_via_controller,
             set_native_panel_host_shared_body_height_via_controller,
             sync_runtime_host_display_reposition_in_state, sync_runtime_host_screen_frame_in_state,
@@ -153,8 +154,8 @@ pub(crate) mod facade {
             card_visual_content_layout, card_visual_content_visibility_phase,
             card_visual_header_text_paint_spec, card_visual_settings_row_layout,
             card_visual_shell_border_color, card_visual_shell_fill_color,
-            card_visual_spec_from_scene_card_with_height, card_visual_staggered_phase,
-            card_visual_tool_pill_layout,
+            card_visual_single_line_text_box_frame, card_visual_spec_from_scene_card_with_height,
+            card_visual_staggered_phase, card_visual_tool_pill_layout,
         };
         pub(crate) use super::super::completion_glow_visual_spec::{
             COMPLETION_GLOW_IMAGE_HEIGHT, COMPLETION_GLOW_IMAGE_RADIUS,

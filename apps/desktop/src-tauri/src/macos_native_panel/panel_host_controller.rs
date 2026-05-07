@@ -3,7 +3,7 @@ use tauri::AppHandle;
 use crate::native_panel_renderer::facade::host::{
     NativePanelHostDisplayReposition, NativePanelRuntimeHostController,
     hide_native_panel_via_host_controller,
-    reposition_native_panel_host_from_input_descriptor_via_controller,
+    native_panel_host_display_reposition_from_input_descriptor,
     set_native_panel_host_shared_body_height_via_controller,
 };
 
@@ -11,6 +11,7 @@ use super::{
     panel_entry::create_native_island_panel,
     panel_host_commands::{
         current_native_panel_window_frame, order_out_native_panel_window_with_app,
+        reposition_native_panel_window_resolving_on_main_with_app,
         reposition_native_panel_window_with_app, sync_order_out_in_runtime_state,
         sync_reposition_in_runtime_state,
     },
@@ -29,10 +30,17 @@ pub(super) fn reposition_native_panel_to_selected_display_with_host_controller<
 >(
     app: &AppHandle<R>,
 ) -> Result<(), String> {
-    let input = native_panel_runtime_input_descriptor();
-    with_macos_native_panel_host_controller(app, |controller| {
-        reposition_native_panel_host_from_input_descriptor_via_controller(controller, &input)
-    })
+    reposition_native_panel_window_resolving_on_main_with_app(
+        app,
+        || {
+            let input = native_panel_runtime_input_descriptor();
+            Some(native_panel_host_display_reposition_from_input_descriptor(
+                &input,
+            ))
+        },
+        || unsafe { current_native_panel_window_frame() },
+        |reposition| sync_reposition_in_runtime_state(reposition, |_| {}),
+    )
 }
 
 pub(super) fn set_shared_expanded_body_height_with_host_controller<R: tauri::Runtime>(

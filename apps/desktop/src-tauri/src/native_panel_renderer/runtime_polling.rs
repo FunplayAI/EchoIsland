@@ -203,11 +203,12 @@ where
             hit_target: None,
         }
     };
+    let cards_visible_for_click = input.cards_visible || click_pointer_state.hit_target.is_some();
     let click_command = resolve_native_panel_click_command_for_pointer_state(
         state,
         &click_pointer_state,
         primary_click_started,
-        input.cards_visible,
+        cards_visible_for_click,
         now,
         focus_debounce_ms,
     );

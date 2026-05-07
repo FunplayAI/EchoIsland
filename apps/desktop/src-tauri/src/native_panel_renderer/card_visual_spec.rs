@@ -144,6 +144,11 @@ pub(crate) struct CardVisualTextLayoutSpec {
     pub(crate) max_width: f64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CardVisualSingleLineTextBoxFrameSpec {
+    pub(crate) frame: PanelRect,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CardVisualBadgeLayoutSpec {
     pub(crate) paint: CardVisualBadgePaintSpec,
@@ -924,6 +929,31 @@ pub(crate) fn card_visual_action_hint_layout(
         pill_frame,
         paint,
     })
+}
+
+pub(crate) fn card_visual_single_line_text_box_frame(
+    width: f64,
+    height: f64,
+    text_inset_x: f64,
+    text_offset_y: f64,
+    text_size: f64,
+) -> CardVisualSingleLineTextBoxFrameSpec {
+    let height = height.max(1.0);
+    let label_height = (text_size + 3.0).max(1.0).min(height);
+    let centered_y = ((height - label_height) / 2.0).round();
+    let label_y = if height >= 22.0 {
+        centered_y
+    } else {
+        centered_y.max(text_offset_y.round())
+    };
+    CardVisualSingleLineTextBoxFrameSpec {
+        frame: PanelRect {
+            x: text_inset_x,
+            y: label_y,
+            width: (width - text_inset_x * 2.0).max(1.0),
+            height: label_height,
+        },
+    }
 }
 
 pub(crate) fn card_visual_tool_pill_layout(
@@ -1864,6 +1894,32 @@ mod tests {
         assert_eq!(
             layout.paint.foreground_color,
             CardVisualColorSpec::rgb(102, 222, 145)
+        );
+    }
+
+    #[test]
+    fn card_spec_exposes_shared_single_line_text_box_frame() {
+        let settings_value =
+            card_visual_single_line_text_box_frame(44.0, 18.0, 9.0, 2.0, 10.0).frame;
+        let status_badge = card_visual_single_line_text_box_frame(64.0, 22.0, 7.0, 2.0, 10.0).frame;
+
+        assert_eq!(
+            settings_value,
+            PanelRect {
+                x: 9.0,
+                y: 3.0,
+                width: 26.0,
+                height: 13.0,
+            }
+        );
+        assert_eq!(
+            status_badge,
+            PanelRect {
+                x: 7.0,
+                y: 5.0,
+                width: 50.0,
+                height: 13.0,
+            }
         );
     }
 

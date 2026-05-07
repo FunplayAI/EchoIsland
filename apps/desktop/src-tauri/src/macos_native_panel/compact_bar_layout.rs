@@ -169,13 +169,14 @@ pub(super) unsafe fn sync_active_count_marquee(refs: &NativePanelRefs) {
     active_count_next.setHidden(chars.len() < 2);
     active_count.setStringValue(&NSString::from_str(&current));
     active_count_next.setStringValue(&NSString::from_str(&next));
+    let label_height = active_count_clip.frame().size.height.max(1.0);
     active_count.setFrame(NSRect::new(
         NSPoint::new(ACTIVE_COUNT_TEXT_OFFSET_X, 0.0),
-        NSSize::new(ACTIVE_COUNT_TEXT_WIDTH, ACTIVE_COUNT_LABEL_HEIGHT),
+        NSSize::new(ACTIVE_COUNT_TEXT_WIDTH, label_height),
     ));
     active_count_next.setFrame(NSRect::new(
         NSPoint::new(ACTIVE_COUNT_SCROLL_TRAVEL + ACTIVE_COUNT_TEXT_OFFSET_X, 0.0),
-        NSSize::new(ACTIVE_COUNT_TEXT_WIDTH, ACTIVE_COUNT_LABEL_HEIGHT),
+        NSSize::new(ACTIVE_COUNT_TEXT_WIDTH, label_height),
     ));
     active_count_clip.scrollToPoint(NSPoint::new(-current_x, 0.0));
 }

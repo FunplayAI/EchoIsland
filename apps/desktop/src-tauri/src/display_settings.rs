@@ -86,13 +86,21 @@ pub fn display_options_from_monitors(monitors: &[tauri::Monitor]) -> Vec<Display
 pub fn list_available_displays<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Vec<DisplayOption>, String> {
-    let window = app
-        .get_webview_window(MAIN_WINDOW_LABEL)
-        .ok_or_else(|| "main window not found".to_string())?;
-    let monitors = window
-        .available_monitors()
-        .map_err(|error| error.to_string())?;
-    Ok(display_options_from_monitors(&monitors))
+    match app.available_monitors() {
+        Ok(monitors) if !monitors.is_empty() => Ok(display_options_from_monitors(&monitors)),
+        Ok(_) | Err(_) => {
+            let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+                return app
+                    .available_monitors()
+                    .map(|monitors| display_options_from_monitors(&monitors))
+                    .map_err(|error| error.to_string());
+            };
+            window
+                .available_monitors()
+                .map(|monitors| display_options_from_monitors(&monitors))
+                .map_err(|error| error.to_string())
+        }
+    }
 }
 
 pub fn resolve_preferred_display_index(
